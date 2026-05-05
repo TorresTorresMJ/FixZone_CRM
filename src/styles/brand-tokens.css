@@ -1,0 +1,15 @@
+:root {
+  --fz-blue-primary: #2f6fff;
+  --fz-blue-secondary: #4a8dff;
+  --fz-blue-deep: #1f4fcc;
+  --fz-black-base: #0a0a0a;
+  --fz-gray-dark: #1c1c1c;
+  --fz-white: #ffffff;
+  --fz-gray-light: #bfbfbf;
+
+  --fz-font-heading: "Montserrat", "Poppins", system-ui, sans-serif;
+  --fz-font-body: "Montserrat", "Inter", system-ui, sans-serif;
+
+  --fz-glow-blue: 0 0 32px rgba(47, 111, 255, 0.42);
+  --fz-shadow-deep: 0 18px 48px rgba(31, 79, 204, 0.28);
+}

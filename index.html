@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FixZone CRM</title>
+    <link rel="stylesheet" href="./src/styles/brand-tokens.css" />
+    <link rel="stylesheet" href="./src/styles/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navegacion principal">
+        <div class="brand">
+          <img src="./assets/brand/fixzone-logo.png" alt="FixZone" />
+          <div>
+            <strong>FIXZONE</strong>
+            <span>CRM OPERATIVO</span>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item is-active" data-view="dashboard" title="Panel">
+            <span aria-hidden="true">H</span>
+            Panel
+          </button>
+          <button class="nav-item" data-view="clients" title="Clientes">
+            <span aria-hidden="true">C</span>
+            Clientes
+          </button>
+          <button class="nav-item" data-view="products" title="Productos">
+            <span aria-hidden="true">P</span>
+            Productos
+          </button>
+          <button class="nav-item" data-view="tickets" title="Tickets">
+            <span aria-hidden="true">T</span>
+            Tickets
+          </button>
+          <button class="nav-item" data-view="supplies" title="Insumos">
+            <span aria-hidden="true">I</span>
+            Insumos
+          </button>
+          <button class="nav-item" data-view="finance" title="Finanzas">
+            <span aria-hidden="true">$</span>
+            Finanzas
+          </button>
+          <button class="nav-item" data-view="reports" title="Reportes">
+            <span aria-hidden="true">R</span>
+            Reportes
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span>Base local activa</span>
+          <strong id="record-count">0 registros</strong>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">WE FIX FAST. YOU RELAX.</p>
+            <h1 id="view-title">Panel</h1>
+          </div>
+          <div class="topbar-actions">
+            <div class="auth-box" id="auth-box">
+              <span id="auth-status">Modo local</span>
+              <button class="ghost-button" id="login-button">Google</button>
+              <button class="ghost-button is-hidden" id="logout-button">Salir</button>
+            </div>
+            <label class="search-box">
+              <span aria-hidden="true">?</span>
+              <input id="global-search" type="search" placeholder="Buscar cliente, ticket, producto..." />
+            </label>
+            <button class="icon-button" id="export-data" title="Exportar Excel" aria-label="Exportar Excel">XLS</button>
+            <button class="primary-action" id="quick-ticket">+ Ticket</button>
+          </div>
+        </header>
+
+        <section class="view is-visible" id="dashboard-view" data-title="Panel">
+          <div class="metric-grid" id="metric-grid"></div>
+          <div class="split-layout">
+            <section class="panel">
+              <div class="section-heading">
+                <h2>Tickets activos</h2>
+                <button class="ghost-button" data-view-target="tickets">Ver todos</button>
+              </div>
+              <div class="ticket-stack" id="active-ticket-list"></div>
+            </section>
+            <section class="panel">
+              <div class="section-heading">
+                <h2>Movimiento reciente</h2>
+                <button class="ghost-button" data-view-target="finance">Finanzas</button>
+              </div>
+              <div class="activity-list" id="recent-activity"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="clients-view" data-title="Clientes">
+          <div class="section-heading">
+            <h2>Registro de clientes</h2>
+            <div class="action-row">
+              <button class="ghost-button" data-export-sheet="clients">Excel</button>
+              <button class="primary-action" data-open-form="client">+ Cliente</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Contacto</th>
+                  <th>Equipo</th>
+                  <th>Ultima visita</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="clients-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view" id="products-view" data-title="Productos">
+          <div class="section-heading">
+            <h2>Productos y refacciones</h2>
+            <div class="action-row">
+              <button class="ghost-button" data-export-sheet="products">Excel</button>
+              <button class="primary-action" data-open-form="product">+ Producto</button>
+            </div>
+          </div>
+          <div class="inventory-grid" id="products-grid"></div>
+        </section>
+
+        <section class="view" id="tickets-view" data-title="Tickets">
+          <div class="section-heading">
+            <h2>Tickets de servicio</h2>
+            <div class="action-row">
+              <button class="ghost-button" data-export-sheet="tickets">Excel</button>
+              <button class="primary-action" data-open-form="ticket">+ Ticket</button>
+            </div>
+          </div>
+          <div class="kanban" id="ticket-board"></div>
+        </section>
+
+        <section class="view" id="supplies-view" data-title="Insumos">
+          <div class="section-heading">
+            <h2>Compras de insumos</h2>
+            <div class="action-row">
+              <button class="ghost-button" data-export-sheet="supplies">Excel</button>
+              <button class="primary-action" data-open-form="supply">+ Compra</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Proveedor</th>
+                  <th>Insumo</th>
+                  <th>Cantidad</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody id="supplies-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view" id="finance-view" data-title="Finanzas">
+          <div class="section-heading">
+            <h2>Ingresos y egresos</h2>
+            <div class="action-row">
+              <button class="ghost-button" data-export-sheet="transactions">Excel</button>
+              <button class="primary-action" data-open-form="transaction">+ Movimiento</button>
+            </div>
+          </div>
+          <div class="finance-summary" id="finance-summary"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Tipo</th>
+                  <th>Concepto</th>
+                  <th>Categoria</th>
+                  <th>Monto</th>
+                </tr>
+              </thead>
+              <tbody id="transactions-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view" id="reports-view" data-title="Reportes">
+          <div class="section-heading">
+            <h2>Records y analitica</h2>
+            <button class="primary-action" id="seed-data">Restaurar demo</button>
+          </div>
+          <div class="report-grid" id="reports-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="modal" id="record-modal">
+      <form method="dialog" id="record-form">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Nuevo registro</p>
+            <h2 id="modal-title">Registro</h2>
+          </div>
+          <button class="icon-button" type="button" id="close-modal" aria-label="Cerrar">x</button>
+        </div>
+        <div class="form-grid" id="form-fields"></div>
+        <menu class="modal-actions">
+          <button class="ghost-button" type="button" id="cancel-record">Cancelar</button>
+          <button class="primary-action" id="save-record" value="default">Guardar</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <section class="print-receipt" id="print-receipt" aria-hidden="true"></section>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./src/supabase-config.js"></script>
+    <script src="./src/app.js"></script>
+  </body>
+</html>
