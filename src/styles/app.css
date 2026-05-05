@@ -153,7 +153,7 @@ h2 {
 }
 
 h1 {
-  font-size: clamp(30px, 5vw, 56px);
+  font-size: clamp(20px, 3vw, 32px);
   line-height: 1;
 }
 
@@ -165,6 +165,38 @@ h2 {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.branch-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.branch-tab {
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fz-gray-light);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.branch-tab:hover {
+  background: rgba(47, 111, 255, 0.12);
+  color: var(--fz-white);
+  border-color: rgba(74, 141, 255, 0.4);
+}
+
+.branch-tab.is-active {
+  background: linear-gradient(135deg, var(--fz-blue-primary), var(--fz-blue-secondary));
+  color: var(--fz-white);
+  border-color: transparent;
+  box-shadow: var(--fz-shadow-deep);
 }
 
 .auth-box {
@@ -269,7 +301,7 @@ h2 {
 .metric,
 .product-card,
 .report-card,
-.panel,
+.home,
 .kanban-column {
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 8px;
@@ -303,7 +335,7 @@ h2 {
   margin-top: 14px;
 }
 
-.panel {
+.home {
   padding: 18px;
 }
 
@@ -674,7 +706,7 @@ th {
     color: #ffffff;
   }
 
-  .receipt-brand-panel {
+  .receipt-brand-home {
     display: grid;
     width: 55%;
     min-height: 150px;
@@ -685,7 +717,7 @@ th {
       #1c1c1c;
   }
 
-  .receipt-brand-panel img {
+  .receipt-brand-home img {
     width: 100%;
     max-width: 360px;
     height: auto;

@@ -19,9 +19,9 @@
         </div>
 
         <nav class="nav-list">
-          <button class="nav-item is-active" data-view="dashboard" title="Panel">
+          <button class="nav-item is-active" data-view="dashboard" title="Home">
             <span aria-hidden="true">H</span>
-            Panel
+            Home
           </button>
           <button class="nav-item" data-view="clients" title="Clientes">
             <span aria-hidden="true">C</span>
@@ -59,12 +59,16 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">WE FIX FAST. YOU RELAX.</p>
-            <h1 id="view-title">Panel</h1>
+            <h1 id="view-title">Home</h1>
+
+            <div class="branch-tabs">
+              <button onclick="setActiveBranch('Puerto Vallarta')">Puerto Vallarta</button>
+              <button onclick="setActiveBranch('Puebla')">Puebla</button>
+            </div>
           </div>
           <div class="topbar-actions">
             <div class="auth-box" id="auth-box">
-              <span id="auth-status">Modo local</span>
-              <button class="ghost-button" id="login-button">Google</button>
+              <button class="ghost-button" id="login-button">Acceder</button>
               <button class="ghost-button is-hidden" id="logout-button">Salir</button>
             </div>
             <label class="search-box">
@@ -76,17 +80,17 @@
           </div>
         </header>
 
-        <section class="view is-visible" id="dashboard-view" data-title="Panel">
+        <section class="view is-visible" id="dashboard-view" data-title="Home">
           <div class="metric-grid" id="metric-grid"></div>
           <div class="split-layout">
-            <section class="panel">
+            <section class="home">
               <div class="section-heading">
                 <h2>Tickets activos</h2>
                 <button class="ghost-button" data-view-target="tickets">Ver todos</button>
               </div>
               <div class="ticket-stack" id="active-ticket-list"></div>
             </section>
-            <section class="panel">
+            <section class="home">
               <div class="section-heading">
                 <h2>Movimiento reciente</h2>
                 <button class="ghost-button" data-view-target="finance">Finanzas</button>

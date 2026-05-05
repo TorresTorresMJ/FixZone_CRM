@@ -2,6 +2,7 @@ const storageKey = "fixzone-crm-v1";
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entregado", "Garantia"];
 const branches = ["Puerto Vallarta", "Puebla"];
+let activeBranchId = "Puerto Vallarta"; //Default
 const employees = [
   "Kevin Mijangos",
   "Carlos Mijangos",
@@ -10,7 +11,7 @@ const employees = [
   "Diego Mijangos",
   "Daniel Mijangos"
 ];
-const localModeLabel = "Modo local";
+const localModeLabel = " ";
 const remoteModeLabel = "Supabase";
 
 const seed = {
@@ -19,11 +20,12 @@ const seed = {
     { id: "c-2", name: "Carlos Medina", phone: "55 8102 4488", email: "carlos@email.com", device: "Samsung S23", lastVisit: "2026-04-29", status: "Garantia" },
     { id: "c-3", name: "Ana Ruiz", phone: "55 7201 8890", email: "ana@email.com", device: "MacBook Air M2", lastVisit: "2026-04-27", status: "Nuevo" }
   ],
+  branches: branches.map((name, index) => ({ id: `b-${index + 3}`, name })),
   products: [
-    { id: "p-1", name: "Pantalla iPhone 13", sku: "P-IPH13-OLED", category: "Refaccion", stock: 8, minStock: 4, price: 1850 },
-    { id: "p-2", name: "Bateria Samsung A54", sku: "B-SAMA54", category: "Bateria", stock: 3, minStock: 5, price: 620 },
-    { id: "p-3", name: "Mica premium", sku: "ACC-MICA-01", category: "Accesorio", stock: 42, minStock: 15, price: 180 },
-    { id: "p-4", name: "Conector USB-C", sku: "R-USBC-10", category: "Microsoldadura", stock: 11, minStock: 8, price: 95 }
+    { id: "p-1", name: "Pantalla iPhone 13", sku: "P-IPH13-OLED", category: "Refaccion", stock: 8, minStock: 4, price: 1850, branch: "Puerto Vallarta" },
+    { id: "p-2", name: "Bateria Samsung A54", sku: "B-SAMA54", category: "Bateria", stock: 3, minStock: 5, price: 620, branch: "Puerto Vallarta" },
+    { id: "p-3", name: "Mica premium", sku: "ACC-MICA-01", category: "Accesorio", stock: 42, minStock: 15, price: 180, branch: "Puebla" },
+    { id: "p-4", name: "Conector USB-C", sku: "R-USBC-10", category: "Microsoldadura", stock: 11, minStock: 8, price: 95, branch: "Puebla" }
   ],
   branches: branches.map((name, index) => ({ id: `b-${index + 1}`, name })),
   employees: employees.map((name, index) => ({ id: `e-${index + 1}`, name, role: index === 3 ? "owner" : "staff", status: "active" })),
@@ -65,7 +67,6 @@ const formFields = document.querySelector("#form-fields");
 const modalTitle = document.querySelector("#modal-title");
 const searchInput = document.querySelector("#global-search");
 const authStatus = document.querySelector("#auth-status");
-const loginButton = document.querySelector("#login-button");
 const logoutButton = document.querySelector("#logout-button");
 
 const formSchemas = {
@@ -81,7 +82,7 @@ const formSchemas = {
     title: "Producto",
     collection: "products",
     fields: [
-      ["name", "Nombre", "text"], ["sku", "SKU", "text"], ["category", "Categoria", "text"],
+      ["branch", "Sucursal", "select", branches], ["name", "Nombre", "text"], ["sku", "SKU", "text"], ["category", "Categoria", "text"],
       ["stock", "Stock", "number"], ["minStock", "Minimo", "number"], ["price", "Precio", "number"]
     ]
   },
@@ -220,8 +221,7 @@ async function loadRemoteOrLocal() {
 }
 
 function setAuthUi(label, signedIn) {
-  authStatus.textContent = label;
-  loginButton.classList.toggle("is-hidden", signedIn);
+  authStatus.textContent = signedIn ? label : " ";
   logoutButton.classList.toggle("is-hidden", !signedIn);
   document.querySelector(".sidebar-footer span").textContent = signedIn ? "Base Supabase activa" : "Base local activa";
 }
@@ -290,7 +290,8 @@ async function loadSupabaseState() {
       category: product.category,
       stock: Number(product.stock || 0),
       minStock: Number(product.min_stock || 0),
-      price: Number(product.sale_price || product.unit_cost || 0)
+      price: Number(product.sale_price || product.unit_cost || 0),
+      branch: branchRows.find((branch) => branch.id === product.branch_id)?.name || branches[0]
     })),
     tickets: (ticketsResult.data || []).map((ticket) => ({
       id: ticket.id,
@@ -330,7 +331,7 @@ function setView(name) {
   views.forEach((view) => view.classList.toggle("is-visible", view.id === `${name}-view`));
   navItems.forEach((item) => item.classList.toggle("is-active", item.dataset.view === name));
   const view = document.querySelector(`#${name}-view`);
-  document.querySelector("#view-title").textContent = view?.dataset.title || "Panel";
+  document.querySelector("#view-title").textContent = view?.dataset.title || "Home";
 }
 
 function render() {
@@ -348,10 +349,29 @@ function totalRecords() {
   return Object.values(state).reduce((sum, records) => sum + (Array.isArray(records) ? records.length : 0), 0);
 }
 
+function branchTickets() {
+  return state.tickets.filter((ticket) => ticket.branch === activeBranchId);
+}
+
+function branchProducts() {
+  return state.products.filter((product) => product.branch === activeBranchId);
+}
+
+function branchTransactions() {
+  return state.transactions.filter((t) => t.branch === activeBranchId);
+}
+
+function sumByType(txList, type) {
+  return txList
+    .filter((item) => item.type === type)
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+}
+
 function renderMetrics() {
-  const income = sumTransactions("Ingreso");
-  const expenses = sumTransactions("Egreso");
-  const openTickets = state.tickets.filter((ticket) => ticket.status !== "Entregado").length;
+  const branchTxs = branchTransactions();
+  const income = sumByType(branchTxs, "Ingreso");
+  const expenses = sumByType(branchTxs, "Egreso");
+  const openTickets = branchTickets().filter((ticket) => ticket.status !== "Entregado").length;
   const lowStock = state.products.filter((product) => Number(product.stock) <= Number(product.minStock)).length;
 
   document.querySelector("#metric-grid").innerHTML = [
@@ -361,13 +381,22 @@ function renderMetrics() {
     ["Stock bajo", lowStock]
   ].map(([label, value]) => `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`).join("");
 
-  document.querySelector("#active-ticket-list").innerHTML = state.tickets
+  document.querySelector("#active-ticket-list").innerHTML = branchTickets()
     .filter((ticket) => ticket.status !== "Entregado")
     .slice(0, 5)
     .map(ticketCard)
     .join("") || emptyMessage("No hay tickets activos.");
 
-  document.querySelector("#recent-activity").innerHTML = state.transactions
+const productList = document.querySelector("#active-product-list");
+if (productList) {
+  productList.innerHTML = branchProducts()
+    .filter((product) => product.status !== "Disponible")
+    .slice(0, 5)
+    .map(productCard)
+    .join("") || emptyMessage("No hay productos activos.");
+}
+
+  document.querySelector("#recent-activity").innerHTML = branchTransactions()
     .slice()
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 6)
@@ -392,7 +421,7 @@ function renderClients() {
 }
 
 function renderProducts() {
-  document.querySelector("#products-grid").innerHTML = bySearch(state.products).map((product) => {
+  document.querySelector("#products-grid").innerHTML = bySearch(branchProducts()).map((product) => {
     const stock = Number(product.stock);
     const min = Number(product.minStock);
     const percent = Math.min(100, Math.round((stock / Math.max(min * 2, 1)) * 100));
@@ -412,7 +441,7 @@ function renderProducts() {
 
 function renderTickets() {
   document.querySelector("#ticket-board").innerHTML = ticketStages.map((status) => {
-    const tickets = bySearch(state.tickets).filter((ticket) => ticket.status === status);
+    const tickets = bySearch(branchTickets()).filter((ticket) => ticket.status === status);
     return `
       <section class="kanban-column">
         <h3>${status} <span>${tickets.length}</span></h3>
@@ -468,8 +497,9 @@ function renderSupplies() {
 }
 
 function renderFinance() {
-  const income = sumTransactions("Ingreso");
-  const expenses = sumTransactions("Egreso");
+  const branchTxs = branchTransactions();
+  const income = sumByType(branchTxs, "Ingreso");
+  const expenses = sumByType(branchTxs, "Egreso");
   const balance = income - expenses;
   document.querySelector("#finance-summary").innerHTML = [
     ["Ingresos", money.format(income)],
@@ -478,7 +508,7 @@ function renderFinance() {
     ["Margen", income ? `${Math.round((balance / income) * 100)}%` : "0%"]
   ].map(([label, value]) => `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`).join("");
 
-  document.querySelector("#transactions-table").innerHTML = bySearch(state.transactions).map((item) => `
+  document.querySelector("#transactions-table").innerHTML = bySearch(branchTransactions()).map((item) => `
     <tr>
       <td>${item.date}</td>
       <td><span class="type-pill ${item.type === "Ingreso" ? "type-income" : "type-expense"}">${item.type}</span></td>
@@ -490,10 +520,12 @@ function renderFinance() {
 }
 
 function renderReports() {
-  const finished = state.tickets.filter((ticket) => ["Listo", "Entregado"].includes(ticket.status)).length;
-  const ticketRevenue = state.tickets.reduce((sum, ticket) => sum + Number(ticket.repairAmount ?? ticket.total ?? 0), 0);
+  const bTickets = branchTickets();
+  const bSupplies = state.supplies.filter((s) => !s.branch || s.branch === activeBranchId);
+  const finished = bTickets.filter((ticket) => ["Listo", "Entregado"].includes(ticket.status)).length;
+  const ticketRevenue = bTickets.reduce((sum, ticket) => sum + Number(ticket.repairAmount ?? ticket.total ?? 0), 0);
   const inventoryValue = state.products.reduce((sum, product) => sum + Number(product.price || 0) * Number(product.stock || 0), 0);
-  const lastSupply = state.supplies.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  const lastSupply = bSupplies.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
 
   document.querySelector("#reports-grid").innerHTML = [
     ["Servicios cerrados", finished, "Tickets listos o entregados"],
@@ -520,6 +552,19 @@ function openForm(type) {
   const schema = formSchemas[type];
   modalTitle.textContent = schema.title;
   formFields.innerHTML = schema.fields.map(([name, label, fieldType, options, wide]) => fieldTemplate(name, label, fieldType, options, wide)).join("");
+
+  // Pre-select active branch in ticket form
+  if (type === "ticket") {
+    const branchSelect = formFields.querySelector("#branch");
+    if (branchSelect) branchSelect.value = activeBranchId;
+  }
+
+    // Pre-select active branch in product form
+  if (type === "product") {
+    const branchSelect = formFields.querySelector("#branch");
+    if (branchSelect) branchSelect.value = activeBranchId;
+  }
+
   modal.showModal();
 }
 
@@ -730,19 +775,6 @@ document.querySelectorAll("[data-open-form]").forEach((button) => {
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
 document.querySelector("#close-modal").addEventListener("click", () => modal.close());
 document.querySelector("#cancel-record").addEventListener("click", () => modal.close());
-loginButton.addEventListener("click", async () => {
-  if (!supabaseClient) {
-    alert("Supabase no esta cargado. Abre la app desde http://localhost para probar login.");
-    return;
-  }
-
-  const redirectTo = location.protocol === "file:" ? "http://localhost:5173/" : location.origin + location.pathname;
-  const { error } = await supabaseClient.auth.signInWithOAuth({
-    provider: "google",
-    options: { redirectTo }
-  });
-  if (error) alert(error.message);
-});
 
 logoutButton.addEventListener("click", async () => {
   if (supabaseClient) await supabaseClient.auth.signOut();
@@ -858,7 +890,7 @@ function printTicket(ticket) {
   document.querySelector("#print-receipt").innerHTML = `
     <article class="receipt-page">
       <header class="receipt-hero">
-        <div class="receipt-brand-panel">
+        <div class="receipt-brand-home">
           <img src="./assets/brand/fixzone-logo.png" alt="FixZone" />
         </div>
         <div class="receipt-title">
@@ -971,5 +1003,19 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+function setActiveBranch(branchName) {
+  activeBranchId = branchName;
+
+  // Update tab button styles
+  document.querySelectorAll(".branch-tab").forEach((btn) => {
+    const isActive = btn.textContent.trim() === branchName;
+    btn.classList.toggle("is-active", isActive);
+  });
+
+  render();
+}
+
+window.setActiveBranch = setActiveBranch;
 
 initializeApp();

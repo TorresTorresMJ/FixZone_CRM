@@ -26,7 +26,7 @@
 ## Fase 3: Migrar app actual a Supabase
 
 - [ ] Reemplazar `localStorage` por Supabase.
-- [ ] Agregar pantalla de login con Google.
+- [ ] $Agregar pantalla de login con Google.$ Log in será con creación de usuarios y contraseña.  Usuarios internos de base de datos. 
 - [ ] Bloquear la app si el correo no existe en `employees`.
 - [ ] Conectar clientes a la base de datos.
 - [ ] Conectar productos e inventario a la base de datos.
