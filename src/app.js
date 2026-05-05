@@ -852,52 +852,101 @@ function printTicket(ticket) {
   const client = state.clients.find((item) => item.name.toLowerCase() === ticket.client.toLowerCase());
   const repairAmount = Number(ticket.repairAmount ?? ticket.total ?? 0);
   const paidAmount = Number(ticket.paidAmount ?? 0);
+  const paidLabel = ticket.paymentStatus === "Pagado" ? money.format(paidAmount || repairAmount) : escapeHtml(ticket.paymentStatus);
+  const qrTarget = receiptQrTarget();
+  const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=12&data=${encodeURIComponent(qrTarget)}`;
   document.querySelector("#print-receipt").innerHTML = `
-    <div class="receipt-header">
-      <img src="./assets/brand/fixzone-logo.png" alt="FixZone" />
-      <div class="receipt-title">
-        <h1>RECIBO</h1>
-        <strong>${escapeHtml(ticket.tracking || ticket.id.toUpperCase())}</strong><br>
-        <span>${escapeHtml(ticket.createdAt || dateStamp())}</span>
+    <article class="receipt-page">
+      <header class="receipt-hero">
+        <div class="receipt-brand-panel">
+          <img src="./assets/brand/fixzone-logo.png" alt="FixZone" />
+        </div>
+        <div class="receipt-title">
+          <span>RECIBO DE SERVICIO</span>
+          <h1>${escapeHtml(ticket.tracking || ticket.id.toUpperCase())}</h1>
+          <p>${escapeHtml(ticket.createdAt || dateStamp())}</p>
+        </div>
+      </header>
+
+      <section class="receipt-strip">
+        <div>
+          <span>Sucursal</span>
+          <strong>${escapeHtml(ticket.branch || "FixZone")}</strong>
+        </div>
+        <div>
+          <span>Atendio</span>
+          <strong>${escapeHtml(ticket.assignedTo || "Equipo FixZone")}</strong>
+        </div>
+        <div>
+          <span>Estado</span>
+          <strong>${escapeHtml(ticket.status)}</strong>
+        </div>
+      </section>
+
+      <div class="receipt-grid">
+        <section class="receipt-box">
+          <h2>Cliente</h2>
+          <strong>${escapeHtml(ticket.client)}</strong>
+          <span>${escapeHtml(client?.phone || "Telefono no registrado")}</span>
+          <span>${escapeHtml(client?.email || "Email no registrado")}</span>
+        </section>
+        <section class="receipt-box">
+          <h2>Producto / equipo</h2>
+          <strong>${escapeHtml(ticket.productName || ticket.device)}</strong>
+          <span>Prioridad: ${escapeHtml(ticket.priority || "Normal")}</span>
+          <span>Pago: ${paidLabel}</span>
+        </section>
       </div>
-    </div>
-    <div class="receipt-grid">
-      <section class="receipt-box">
-        <h2>CLIENTE</h2>
-        <strong>${escapeHtml(ticket.client)}</strong><br>
-        <span>${escapeHtml(client?.phone || "Telefono no registrado")}</span><br>
-        <span>${escapeHtml(client?.email || "Email no registrado")}</span>
+
+      <table class="receipt-table">
+        <thead>
+          <tr>
+            <th>Descripcion del servicio</th>
+            <th>Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${escapeHtml(ticket.issue)}</td>
+            <td>${money.format(repairAmount)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <section class="receipt-summary">
+        <div>
+          <span>Total</span>
+          <strong>${money.format(repairAmount)}</strong>
+        </div>
+        <div>
+          <span>Pagado</span>
+          <strong>${paidLabel}</strong>
+        </div>
       </section>
-      <section class="receipt-box">
-        <h2>EQUIPO</h2>
-        <strong>${escapeHtml(ticket.productName || ticket.device)}</strong><br>
-        <span>Estado: ${escapeHtml(ticket.status)}</span><br>
-        <span>Sucursal: ${escapeHtml(ticket.branch)}</span><br>
-        <span>Atendio: ${escapeHtml(ticket.assignedTo)}</span>
+
+      <section class="receipt-footer-grid">
+        <p class="receipt-note">
+          Gracias por confiar en FixZone. Conserve este recibo para seguimiento, garantia o aclaraciones.
+          El servicio queda sujeto a diagnostico, disponibilidad de refacciones y condiciones del equipo recibido.
+        </p>
+        <div class="receipt-qr">
+          <img src="${qrImage}" alt="QR de seguimiento" />
+          <strong>Escanea aqui</strong>
+          <span>${escapeHtml(qrTarget)}</span>
+        </div>
+        <div class="receipt-signature">
+          <span></span>
+          <strong>Firma de recibido</strong>
+        </div>
       </section>
-    </div>
-    <table class="receipt-table">
-      <thead>
-        <tr>
-          <th>Descripcion</th>
-          <th>Importe</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>${escapeHtml(ticket.issue)}</td>
-          <td>${money.format(repairAmount)}</td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="receipt-total">Total: ${money.format(repairAmount)}</div>
-    <div class="receipt-total">Pagado: ${ticket.paymentStatus === "Pagado" ? money.format(paidAmount || repairAmount) : escapeHtml(ticket.paymentStatus)}</div>
-    <p class="receipt-note">
-      Gracias por confiar en FixZone. Este recibo corresponde al diagnostico, reparacion o servicio descrito.
-      Conserve este documento para seguimiento, garantia o aclaraciones.
-    </p>
+    </article>
   `;
   window.print();
+}
+
+function receiptQrTarget() {
+  const baseUrl = location.protocol === "file:" ? "https://fixzone-crm.pages.dev" : location.origin;
+  return `${baseUrl}/detente-jochis.html`;
 }
 
 function downloadFile(content, filename, type) {
