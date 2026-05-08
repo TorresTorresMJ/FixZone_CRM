@@ -1,0 +1,44 @@
+[
+  {
+    "full_name": "Carlos Mijangos",
+    "username": "carlos",
+    "role": "admin",
+    "auth_user_id": "16536a61-8159-4e14-b561-49bb23925ba9"
+  },
+  {
+    "full_name": "Daniel Mijangos",
+    "username": "daniel",
+    "role": "standard",
+    "auth_user_id": "82442f40-79c4-42a6-a039-dbfa4085d633"
+  },
+  {
+    "full_name": "Diego Mijangos",
+    "username": "diego",
+    "role": "admin",
+    "auth_user_id": "d25215ae-008f-4f58-904a-ee4ccd869809"
+  },
+  {
+    "full_name": "Gigi Vargas",
+    "username": "gigi",
+    "role": "marketing",
+    "auth_user_id": "71524f87-3407-4d30-a081-a8d749c8207f"
+  },
+  {
+    "full_name": "Kevin Mijangos",
+    "username": "kevin",
+    "role": "admin",
+    "auth_user_id": "fc902808-2f2c-4c89-aa9c-ec873cc7f249"
+  },
+  {
+    "full_name": "Mar",
+    "username": "mar",
+    "role": "standard",
+    "auth_user_id": "1205e1e2-90f6-49bf-b324-10256fbbaa65"
+  },
+  {
+    "full_name": "Monica Torres",
+    "username": "monica",
+    "role": "it",
+    "auth_user_id": "859321f5-6805-4b96-acc2-d98f93d78c52"
+  }
+]

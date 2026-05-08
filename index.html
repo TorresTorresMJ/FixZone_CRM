@@ -4,14 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>FixZone CRM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./src/styles/brand-tokens.css" />
     <link rel="stylesheet" href="./src/styles/app.css" />
   </head>
   <body>
-    <div class="app-shell">
+
+    <!-- ── App shell (hidden until login) ─────────────────────────────────── -->
+    <div class="app-shell" style="display:none">
       <aside class="sidebar" aria-label="Navegacion principal">
         <div class="brand">
-          <img src="./assets/brand/fixzone-logo.png" alt="FixZone" />
+          <img src="./assets/brand/fixzone-logo.png" alt="FixZone" onerror="this.style.display='none'" />
           <div>
             <strong>FIXZONE</strong>
             <span>CRM OPERATIVO</span>
@@ -20,32 +25,40 @@
 
         <nav class="nav-list">
           <button class="nav-item is-active" data-view="dashboard" title="Home">
-            <span aria-hidden="true">H</span>
-            Home
+            <span aria-hidden="true">⌂</span> Home
           </button>
           <button class="nav-item" data-view="clients" title="Clientes">
-            <span aria-hidden="true">C</span>
-            Clientes
+            <span aria-hidden="true">◎</span> Clientes
           </button>
           <button class="nav-item" data-view="products" title="Productos">
-            <span aria-hidden="true">P</span>
-            Productos
+            <span aria-hidden="true">◈</span> Productos
           </button>
           <button class="nav-item" data-view="tickets" title="Tickets">
-            <span aria-hidden="true">T</span>
-            Tickets
+            <span aria-hidden="true">✦</span> Tickets
           </button>
           <button class="nav-item" data-view="supplies" title="Insumos">
-            <span aria-hidden="true">I</span>
-            Insumos
+            <span aria-hidden="true">◉</span> Insumos
           </button>
           <button class="nav-item" data-view="finance" title="Finanzas">
-            <span aria-hidden="true">$</span>
-            Finanzas
+            <span aria-hidden="true">$</span> Finanzas
           </button>
           <button class="nav-item" data-view="reports" title="Reportes">
-            <span aria-hidden="true">R</span>
-            Reportes
+            <span aria-hidden="true">≡</span> Reportes
+          </button>
+          <!-- Admin + IT only -->
+          <button class="nav-item" data-view="users" title="Usuarios">
+            <span aria-hidden="true">👥</span> Usuarios
+          </button>
+          <!-- IT only -->
+          <button class="nav-item" data-view="soporte" title="Soporte IT">
+            <span aria-hidden="true">⚙</span> Soporte
+          </button>
+          <!-- Marketing only -->
+          <button class="nav-item" data-view="diseno" title="Diseño">
+            <span aria-hidden="true">✦</span> Diseño
+          </button>
+          <button class="nav-item" data-view="automatizacion" title="Automatización">
+            <span aria-hidden="true">⚡</span> Automatización
           </button>
         </nav>
 
@@ -60,26 +73,29 @@
           <div>
             <p class="eyebrow">WE FIX FAST. YOU RELAX.</p>
             <h1 id="view-title">Home</h1>
-
             <div class="branch-tabs">
-              <button onclick="setActiveBranch('Puerto Vallarta')">Puerto Vallarta</button>
-              <button onclick="setActiveBranch('Puebla')">Puebla</button>
+              <button class="branch-tab is-active" onclick="setActiveBranch('Puerto Vallarta')">Puerto Vallarta</button>
+              <button class="branch-tab" onclick="setActiveBranch('Puebla')">Puebla</button>
             </div>
           </div>
           <div class="topbar-actions">
             <div class="auth-box" id="auth-box">
-              <button class="ghost-button" id="login-button">Acceder</button>
+              <div class="auth-info">
+                <span id="auth-user-name">—</span>
+                <small id="auth-user-role" class="muted"></small>
+              </div>
               <button class="ghost-button is-hidden" id="logout-button">Salir</button>
             </div>
             <label class="search-box">
-              <span aria-hidden="true">?</span>
+              <span aria-hidden="true">⌕</span>
               <input id="global-search" type="search" placeholder="Buscar cliente, ticket, producto..." />
             </label>
-            <button class="icon-button" id="export-data" title="Exportar Excel" aria-label="Exportar Excel">XLS</button>
+            <button class="icon-button" id="export-data" title="Exportar Excel">XLS</button>
             <button class="primary-action" id="quick-ticket">+ Ticket</button>
           </div>
         </header>
 
+        <!-- ── Dashboard ─────────────────────────────────────────────────── -->
         <section class="view is-visible" id="dashboard-view" data-title="Home">
           <div class="metric-grid" id="metric-grid"></div>
           <div class="split-layout">
@@ -100,6 +116,7 @@
           </div>
         </section>
 
+        <!-- ── Clientes ──────────────────────────────────────────────────── -->
         <section class="view" id="clients-view" data-title="Clientes">
           <div class="section-heading">
             <h2>Registro de clientes</h2>
@@ -112,11 +129,8 @@
             <table>
               <thead>
                 <tr>
-                  <th>Cliente</th>
-                  <th>Contacto</th>
-                  <th>Equipo</th>
-                  <th>Ultima visita</th>
-                  <th>Estado</th>
+                  <th>Cliente</th><th>Contacto</th><th>Equipo</th>
+                  <th>Ultima visita</th><th>Estado</th><th></th>
                 </tr>
               </thead>
               <tbody id="clients-table"></tbody>
@@ -124,6 +138,7 @@
           </div>
         </section>
 
+        <!-- ── Productos ─────────────────────────────────────────────────── -->
         <section class="view" id="products-view" data-title="Productos">
           <div class="section-heading">
             <h2>Productos y refacciones</h2>
@@ -135,6 +150,7 @@
           <div class="inventory-grid" id="products-grid"></div>
         </section>
 
+        <!-- ── Tickets ───────────────────────────────────────────────────── -->
         <section class="view" id="tickets-view" data-title="Tickets">
           <div class="section-heading">
             <h2>Tickets de servicio</h2>
@@ -146,6 +162,7 @@
           <div class="kanban" id="ticket-board"></div>
         </section>
 
+        <!-- ── Insumos ───────────────────────────────────────────────────── -->
         <section class="view" id="supplies-view" data-title="Insumos">
           <div class="section-heading">
             <h2>Compras de insumos</h2>
@@ -157,19 +174,14 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Proveedor</th>
-                  <th>Insumo</th>
-                  <th>Cantidad</th>
-                  <th>Total</th>
-                </tr>
+                <tr><th>Fecha</th><th>Proveedor</th><th>Insumo</th><th>Cantidad</th><th>Total</th></tr>
               </thead>
               <tbody id="supplies-table"></tbody>
             </table>
           </div>
         </section>
 
+        <!-- ── Finanzas ──────────────────────────────────────────────────── -->
         <section class="view" id="finance-view" data-title="Finanzas">
           <div class="section-heading">
             <h2>Ingresos y egresos</h2>
@@ -182,19 +194,14 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Tipo</th>
-                  <th>Concepto</th>
-                  <th>Categoria</th>
-                  <th>Monto</th>
-                </tr>
+                <tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Categoria</th><th>Monto</th><th></th></tr>
               </thead>
               <tbody id="transactions-table"></tbody>
             </table>
           </div>
         </section>
 
+        <!-- ── Reportes ──────────────────────────────────────────────────── -->
         <section class="view" id="reports-view" data-title="Reportes">
           <div class="section-heading">
             <h2>Records y analitica</h2>
@@ -202,9 +209,78 @@
           </div>
           <div class="report-grid" id="reports-grid"></div>
         </section>
+
+        <!-- ── Usuarios (Admin + IT) ─────────────────────────────────────── -->
+        <section class="view" id="users-view" data-title="Usuarios">
+          <div class="section-heading">
+            <h2>Gestión de usuarios</h2>
+            <button class="primary-action" data-open-form="employee">+ Usuario</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th><th>Email</th><th>Rol</th>
+                  <th>Sucursal</th><th>Estado</th><th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="users-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ── Soporte IT ─────────────────────────────────────────────────── -->
+        <section class="view" id="soporte-view" data-title="Soporte IT">
+          <div class="section-heading">
+            <h2>Kanban de soporte</h2>
+            <button class="primary-action" data-open-form="supportTask">+ Tarea</button>
+          </div>
+          <div class="kanban" id="support-board" style="grid-template-columns:repeat(3,minmax(280px,1fr))"></div>
+        </section>
+
+        <!-- ── Diseño (Marketing) ────────────────────────────────────────── -->
+        <section class="view" id="diseno-view" data-title="Diseño">
+          <div class="section-heading"><h2>Recursos de diseño</h2></div>
+          <div class="marketing-grid">
+            <a class="marketing-card" href="https://canva.com" target="_blank" rel="noopener">
+              <strong>Canva</strong><p>Diseño de materiales y publicaciones</p>
+            </a>
+            <a class="marketing-card" href="https://drive.google.com" target="_blank" rel="noopener">
+              <strong>Google Drive</strong><p>Assets, logos y archivos de marca</p>
+            </a>
+            <a class="marketing-card" href="https://www.figma.com" target="_blank" rel="noopener">
+              <strong>Figma</strong><p>Prototipos y diseño UI</p>
+            </a>
+          </div>
+          <div class="section-heading" style="margin-top:28px"><h2>Brand tokens</h2></div>
+          <div class="brand-tokens-grid">
+            <div class="token-swatch" style="background:#2f6fff"><span>#2F6FFF</span><small>Primary Blue</small></div>
+            <div class="token-swatch" style="background:#4a8dff"><span>#4A8DFF</span><small>Secondary Blue</small></div>
+            <div class="token-swatch" style="background:#1f4fcc"><span>#1F4FCC</span><small>Deep Blue</small></div>
+            <div class="token-swatch" style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.12)"><span>#0A0A0A</span><small>Base Black</small></div>
+          </div>
+        </section>
+
+        <!-- ── Automatización (Marketing) ───────────────────────────────── -->
+        <section class="view" id="automatizacion-view" data-title="Automatización">
+          <div class="section-heading"><h2>Herramientas de automatización</h2></div>
+          <div class="marketing-grid">
+            <a class="marketing-card" href="https://make.com" target="_blank" rel="noopener">
+              <strong>Make (Integromat)</strong><p>Automatizaciones de flujo y notificaciones</p>
+            </a>
+            <a class="marketing-card" href="https://zapier.com" target="_blank" rel="noopener">
+              <strong>Zapier</strong><p>Integraciones entre apps</p>
+            </a>
+            <a class="marketing-card" href="https://wa.me" target="_blank" rel="noopener">
+              <strong>WhatsApp Business</strong><p>Mensajes y seguimiento a clientes</p>
+            </a>
+          </div>
+        </section>
+
       </main>
     </div>
 
+    <!-- ── Modal ────────────────────────────────────────────────────────────── -->
     <dialog class="modal" id="record-modal">
       <form method="dialog" id="record-form">
         <div class="modal-header">
@@ -212,7 +288,7 @@
             <p class="eyebrow">Nuevo registro</p>
             <h2 id="modal-title">Registro</h2>
           </div>
-          <button class="icon-button" type="button" id="close-modal" aria-label="Cerrar">x</button>
+          <button class="icon-button" type="button" id="close-modal" aria-label="Cerrar">✕</button>
         </div>
         <div class="form-grid" id="form-fields"></div>
         <menu class="modal-actions">
@@ -222,6 +298,7 @@
       </form>
     </dialog>
 
+    <!-- ── Print area ───────────────────────────────────────────────────────── -->
     <section class="print-receipt" id="print-receipt" aria-hidden="true"></section>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
