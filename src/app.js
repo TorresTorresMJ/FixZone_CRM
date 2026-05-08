@@ -20,6 +20,7 @@ const PERMISSIONS = {
 
 let activeBranchId = "Puerto Vallarta";
 let activeForm     = null;
+let editingTicketId = null; // id del ticket que se está editando (null = nuevo)
 let dataMode       = "local";
 let supabaseClient = null;
 let currentSession = null;
@@ -602,6 +603,7 @@ function ticketCard(ticket, perms) {
     </div>
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}">Recibo</button>
+      <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
     </div>
   </article>`;
@@ -703,16 +705,38 @@ function supportTaskCard(task) {
 // FORMS
 // ──────────────────────────────────────────────────────────────────────────────
 function openForm(type, prefill = {}) {
-  activeForm = type;
+  activeForm      = type;
+  editingTicketId = null; // nuevo registro
   const schema = formSchemas[type];
   if (!schema) return;
   modalTitle.textContent = schema.title;
+  document.querySelector("#modal-eyebrow").textContent = "Nuevo registro";
   formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide]) => fieldTemplate(name,label,ftype,opts,wide,prefill[name])).join("");
 
   if (type==="ticket"||type==="product") {
     const sel = formFields.querySelector("#branch");
     if (sel) sel.value = activeBranchId;
   }
+  modal.showModal();
+}
+
+function openEditTicket(ticketId) {
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+
+  activeForm      = "ticket";
+  editingTicketId = ticketId;
+
+  const schema = formSchemas["ticket"];
+  modalTitle.textContent = `Editar ${ticket.tracking}`;
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+
+  // Pre-rellenar todos los campos con valores actuales del ticket
+  formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide]) => {
+    const val = ticket[name] ?? "";
+    return fieldTemplate(name, label, ftype, opts, wide, val);
+  }).join("");
+
   modal.showModal();
 }
 
@@ -736,8 +760,33 @@ recordForm.addEventListener("submit", async e => {
   e.preventDefault();
   const schema = formSchemas[activeForm];
   const data   = Object.fromEntries(new FormData(recordForm).entries());
-  data.id      = `${activeForm}-${Date.now()}`;
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
+
+  // ── EDIT TICKET ────────────────────────────────────────────────────────────
+  if (activeForm === "ticket" && editingTicketId) {
+    data.repairAmount = Number(data.repairAmount||0);
+    data.paidAmount   = Number(data.paidAmount||0);
+    if (data.paymentStatus==="Pagado" && data.paidAmount===0) data.paidAmount = data.repairAmount;
+    try {
+      if (dataMode==="remote") {
+        await updateRemoteTicket(editingTicketId, data);
+        state = await loadSupabaseState();
+      } else {
+        const idx = state.tickets.findIndex(t => t.id === editingTicketId);
+        if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], ...data };
+        saveState();
+      }
+      render();
+      modal.close();
+    } catch(err) {
+      console.error(err);
+      alert(`No se pudo guardar: ${err.message}`);
+    }
+    return;
+  }
+
+  // ── CREATE ─────────────────────────────────────────────────────────────────
+  data.id = `${activeForm}-${Date.now()}`;
 
   if (activeForm==="ticket") {
     data.tracking      = nextTracking(nextTicketSequence());
@@ -751,7 +800,7 @@ recordForm.addEventListener("submit", async e => {
       if (activeForm==="employee") {
         await callEdgeFunction("create", {
           full_name:         data.full_name,
-          email:             data.email,
+          username:          data.username,
           role:              data.role,
           branch_id:         lookups.branchesByName.get(data.branch_id)?.id||null,
           default_branch_id: lookups.branchesByName.get(data.branch_id)?.id||null,
@@ -859,13 +908,41 @@ async function createRemoteProduct(r) {
 async function createRemoteTicket(r) {
   const customer  = lookups.customersByName.get(r.client);
   const assignedE = lookups.employeesByName.get(r.assignedTo);
-  const { error } = await supabaseClient.from("service_tickets").insert({ customer_id:customer?.id||null, customer_name:r.client, product_name:r.productName, issue_description:r.issue, stage:r.status, priority:r.priority, repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount, branch_id:branchIdByName(r.branch), assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId() });
+  const { error } = await supabaseClient.from("service_tickets").insert({
+    customer_id:customer?.id||null, customer_name:r.client,
+    product_name:r.productName, issue_description:r.issue,
+    stage:r.status, priority:r.priority,
+    repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
+    branch_id:branchIdByName(r.branch||activeBranchId),
+    assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId()
+  });
+  if (error) throw error;
+}
+
+async function updateRemoteTicket(ticketId, r) {
+  const assignedE = lookups.employeesByName.get(r.assignedTo);
+  const { error } = await supabaseClient.from("service_tickets").update({
+    customer_name:        r.client,
+    product_name:         r.productName,
+    issue_description:    r.issue,
+    stage:                r.status,
+    priority:             r.priority,
+    repair_amount:        Number(r.repairAmount||0),
+    payment_status:       r.paymentStatus,
+    paid_amount:          Number(r.paidAmount||0),
+    branch_id:            branchIdByName(r.branch||activeBranchId),
+    assigned_employee_id: assignedE?.id||null,
+  }).eq("id", ticketId);
   if (error) throw error;
 }
 
 async function createRemoteSupply(r) {
   const suppId = await findOrCreateSupplier(r.supplier);
-  const { data:p, error } = await supabaseClient.from("supply_purchases").insert({ supplier_id:suppId, branch_id:branchIdByName(BRANCHES[0]), purchase_date:r.date, item_name:r.item, quantity:r.quantity, total_amount:r.total, created_by:currentEmployeeId() }).select().single();
+  const { data:p, error } = await supabaseClient.from("supply_purchases").insert({
+    supplier_id:suppId, branch_id:branchIdByName(activeBranchId),
+    purchase_date:r.date, item_name:r.item, quantity:r.quantity,
+    total_amount:r.total, created_by:currentEmployeeId()
+  }).select().single();
   if (error) throw error;
   await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${r.item}`, category:"Insumos", amount:r.total });
 }
@@ -917,6 +994,10 @@ document.querySelectorAll("[data-export-sheet]").forEach(btn => {
 
 // Delegated clicks
 document.addEventListener("click", e => {
+  // Edit ticket
+  const editTicket = e.target.closest("[data-edit-ticket]");
+  if (editTicket) { openEditTicket(editTicket.dataset.editTicket); return; }
+
   // Print ticket
   const printBtn = e.target.closest("[data-print-ticket]");
   if (printBtn) { const t = state.tickets.find(i=>i.id===printBtn.dataset.printTicket); if(t) printTicket(t); return; }
