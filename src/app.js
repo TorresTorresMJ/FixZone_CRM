@@ -20,7 +20,6 @@ const PERMISSIONS = {
 
 let activeBranchId = "Puerto Vallarta";
 let activeForm     = null;
-let editingTicketId = null; // id del ticket que se está editando (null = nuevo)
 let dataMode       = "local";
 let supabaseClient = null;
 let currentSession = null;
@@ -450,7 +449,13 @@ async function loadSupabaseState() {
     })),
     clients: customerRows.map(c => {
       const dev = deviceByCustomer.get(c.id);
-      return { id:c.id, name:c.full_name, phone:c.phone||"", email:c.email||"", device:dev?.product_name||"", lastVisit:(c.updated_at||c.created_at||"").slice(0,10), status:"Activo" };
+      return {
+        id:c.id, name:c.full_name, phone:c.phone||"", email:c.email||"",
+        device:dev?.product_name||"",
+        lastVisit:(c.updated_at||c.created_at||"").slice(0,10),
+        status:"Activo",
+        branch:branchRows.find(b=>b.id===c.branch_id)?.name||"",
+      };
     }),
     products: (pRes.data||[]).map(p => ({
       id:p.id, name:p.name, sku:p.sku||"", category:p.category, stock:Number(p.stock||0),
@@ -468,10 +473,12 @@ async function loadSupabaseState() {
     supplies: (puRes.data||[]).map(p => ({
       id:p.id, date:p.purchase_date, supplier:p.suppliers?.name||"Sin proveedor",
       item:p.item_name, quantity:Number(p.quantity||0), total:Number(p.total_amount||0),
+      branch:branchRows.find(b=>b.id===p.branch_id)?.name||"",
     })),
     transactions: (txRes.data||[]).map(t => ({
       id:t.id, date:t.transaction_date, type:t.type, concept:t.concept,
       category:t.category, amount:Number(t.amount||0),
+      branch:branchRows.find(b=>b.id===t.branch_id)?.name||"",
     })),
     supportTasks: (stRes.data||[]).map(t => ({
       id:t.id, title:t.title, description:t.description||"", priority:t.priority,
@@ -519,18 +526,20 @@ function bySearch(items) {
 
 function branchTickets()       { return state.tickets.filter(t => t.branch === activeBranchId); }
 function branchProducts()      { return state.products.filter(p => p.branch === activeBranchId); }
-function branchTransactions()  { return state.transactions; } // finance is global for now
+function branchClients()       { return state.clients.filter(c => !c.branch || c.branch === activeBranchId); }
+function branchSupplies()      { return state.supplies.filter(s => !s.branch || s.branch === activeBranchId); }
+function branchTransactions()  { return state.transactions.filter(t => !t.branch || t.branch === activeBranchId); }
 function sumByType(list, type) { return list.filter(i=>i.type===type).reduce((s,i)=>s+Number(i.amount||0),0); }
 
 function renderMetrics() {
-  const branchTxs = branchTransactions();
-  const income    = sumByType(branchTxs,"Ingreso");
-  const expenses  = sumByType(branchTxs,"Egreso");
+  const branchTxs   = branchTransactions();
+  const income      = sumByType(branchTxs,"Ingreso");
+  const expenses    = sumByType(branchTxs,"Egreso");
   const openTickets = branchTickets().filter(t=>t.status!=="Entregado").length;
-  const lowStock  = state.products.filter(p=>Number(p.stock)<=Number(p.minStock)).length;
+  const lowStock    = branchProducts().filter(p=>Number(p.stock)<=Number(p.minStock)).length;
 
   document.querySelector("#metric-grid").innerHTML = [
-    ["Clientes",state.clients.length],["Tickets abiertos",openTickets],
+    ["Clientes",branchClients().length],["Tickets abiertos",openTickets],
     ["Balance",money.format(income-expenses)],["Stock bajo",lowStock],
   ].map(([l,v])=>`<article class="metric"><span>${l}</span><strong>${v}</strong></article>`).join("");
 
@@ -548,7 +557,7 @@ function renderMetrics() {
 
 function renderClients() {
   const perms = currentPerms();
-  document.querySelector("#clients-table").innerHTML = bySearch(state.clients).map(c=>`
+  document.querySelector("#clients-table").innerHTML = bySearch(branchClients()).map(c=>`
     <tr>
       <td><strong>${c.name}</strong><br><span class="muted">${c.email}</span></td>
       <td>${c.phone}</td><td>${c.device}</td><td>${c.lastVisit}</td>
@@ -603,14 +612,13 @@ function ticketCard(ticket, perms) {
     </div>
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}">Recibo</button>
-      <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
     </div>
   </article>`;
 }
 
 function renderSupplies() {
-  document.querySelector("#supplies-table").innerHTML = bySearch(state.supplies).map(i=>`
+  document.querySelector("#supplies-table").innerHTML = bySearch(branchSupplies()).map(i=>`
     <tr><td>${i.date}</td><td>${i.supplier}</td><td>${i.item}</td><td>${i.quantity}</td><td><strong>${money.format(i.total)}</strong></td></tr>
   `).join("")||tableEmpty(5);
 }
@@ -639,10 +647,11 @@ function renderFinance() {
 
 function renderReports() {
   const bTickets   = branchTickets();
+  const bSupplies  = branchSupplies();
   const finished   = bTickets.filter(t=>["Listo","Entregado"].includes(t.status)).length;
   const revenue    = bTickets.reduce((s,t)=>s+Number(t.repairAmount??t.total??0),0);
-  const invValue   = state.products.reduce((s,p)=>s+Number(p.price||0)*Number(p.stock||0),0);
-  const lastSupply = state.supplies.slice().sort((a,b)=>b.date.localeCompare(a.date))[0];
+  const invValue   = branchProducts().reduce((s,p)=>s+Number(p.price||0)*Number(p.stock||0),0);
+  const lastSupply = bSupplies.slice().sort((a,b)=>b.date.localeCompare(a.date))[0];
 
   document.querySelector("#reports-grid").innerHTML = [
     ["Servicios cerrados",finished,"Tickets listos o entregados"],
@@ -705,38 +714,16 @@ function supportTaskCard(task) {
 // FORMS
 // ──────────────────────────────────────────────────────────────────────────────
 function openForm(type, prefill = {}) {
-  activeForm      = type;
-  editingTicketId = null; // nuevo registro
+  activeForm = type;
   const schema = formSchemas[type];
   if (!schema) return;
   modalTitle.textContent = schema.title;
-  document.querySelector("#modal-eyebrow").textContent = "Nuevo registro";
   formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide]) => fieldTemplate(name,label,ftype,opts,wide,prefill[name])).join("");
 
   if (type==="ticket"||type==="product") {
     const sel = formFields.querySelector("#branch");
     if (sel) sel.value = activeBranchId;
   }
-  modal.showModal();
-}
-
-function openEditTicket(ticketId) {
-  const ticket = state.tickets.find(t => t.id === ticketId);
-  if (!ticket) return;
-
-  activeForm      = "ticket";
-  editingTicketId = ticketId;
-
-  const schema = formSchemas["ticket"];
-  modalTitle.textContent = `Editar ${ticket.tracking}`;
-  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-
-  // Pre-rellenar todos los campos con valores actuales del ticket
-  formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide]) => {
-    const val = ticket[name] ?? "";
-    return fieldTemplate(name, label, ftype, opts, wide, val);
-  }).join("");
-
   modal.showModal();
 }
 
@@ -760,10 +747,12 @@ recordForm.addEventListener("submit", async e => {
   e.preventDefault();
   const schema = formSchemas[activeForm];
   const data   = Object.fromEntries(new FormData(recordForm).entries());
+  data.id      = `${activeForm}-${Date.now()}`;
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
 
   // ── EDIT TICKET ────────────────────────────────────────────────────────────
-  if (activeForm === "ticket" && editingTicketId) {
+
+if (activeForm === "ticket" && editingTicketId) {
     data.repairAmount = Number(data.repairAmount||0);
     data.paidAmount   = Number(data.paidAmount||0);
     if (data.paymentStatus==="Pagado" && data.paidAmount===0) data.paidAmount = data.repairAmount;
@@ -787,14 +776,14 @@ recordForm.addEventListener("submit", async e => {
 
   // ── CREATE ─────────────────────────────────────────────────────────────────
   data.id = `${activeForm}-${Date.now()}`;
-
+ 
   if (activeForm==="ticket") {
     data.tracking      = nextTracking(nextTicketSequence());
     data.repairAmount  = Number(data.repairAmount||0);
     data.paidAmount    = Number(data.paidAmount||0);
     if (data.paymentStatus==="Pagado"&&data.paidAmount===0) data.paidAmount=data.repairAmount;
   }
-
+ 
   try {
     if (dataMode==="remote") {
       if (activeForm==="employee") {
@@ -895,7 +884,10 @@ async function saveRemoteRecord(type, record) {
 }
 
 async function createRemoteClient(r) {
-  const { data:c, error } = await supabaseClient.from("customers").insert({ full_name:r.name, phone:r.phone, email:r.email, branch_id:branchIdByName(BRANCHES[0]), created_by:currentEmployeeId() }).select().single();
+  const { data:c, error } = await supabaseClient.from("customers").insert({
+    full_name:r.name, phone:r.phone, email:r.email,
+    branch_id:branchIdByName(activeBranchId), created_by:currentEmployeeId()
+  }).select().single();
   if (error) throw error;
   if (r.device) { const { error:de } = await supabaseClient.from("customer_devices").insert({ customer_id:c.id, product_name:r.device }); if(de) throw de; }
 }
@@ -908,41 +900,13 @@ async function createRemoteProduct(r) {
 async function createRemoteTicket(r) {
   const customer  = lookups.customersByName.get(r.client);
   const assignedE = lookups.employeesByName.get(r.assignedTo);
-  const { error } = await supabaseClient.from("service_tickets").insert({
-    customer_id:customer?.id||null, customer_name:r.client,
-    product_name:r.productName, issue_description:r.issue,
-    stage:r.status, priority:r.priority,
-    repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
-    branch_id:branchIdByName(r.branch||activeBranchId),
-    assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId()
-  });
-  if (error) throw error;
-}
-
-async function updateRemoteTicket(ticketId, r) {
-  const assignedE = lookups.employeesByName.get(r.assignedTo);
-  const { error } = await supabaseClient.from("service_tickets").update({
-    customer_name:        r.client,
-    product_name:         r.productName,
-    issue_description:    r.issue,
-    stage:                r.status,
-    priority:             r.priority,
-    repair_amount:        Number(r.repairAmount||0),
-    payment_status:       r.paymentStatus,
-    paid_amount:          Number(r.paidAmount||0),
-    branch_id:            branchIdByName(r.branch||activeBranchId),
-    assigned_employee_id: assignedE?.id||null,
-  }).eq("id", ticketId);
+  const { error } = await supabaseClient.from("service_tickets").insert({ customer_id:customer?.id||null, customer_name:r.client, product_name:r.productName, issue_description:r.issue, stage:r.status, priority:r.priority, repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount, branch_id:branchIdByName(r.branch), assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId() });
   if (error) throw error;
 }
 
 async function createRemoteSupply(r) {
   const suppId = await findOrCreateSupplier(r.supplier);
-  const { data:p, error } = await supabaseClient.from("supply_purchases").insert({
-    supplier_id:suppId, branch_id:branchIdByName(activeBranchId),
-    purchase_date:r.date, item_name:r.item, quantity:r.quantity,
-    total_amount:r.total, created_by:currentEmployeeId()
-  }).select().single();
+  const { data:p, error } = await supabaseClient.from("supply_purchases").insert({ supplier_id:suppId, branch_id:branchIdByName(activeBranchId), purchase_date:r.date, item_name:r.item, quantity:r.quantity, total_amount:r.total, created_by:currentEmployeeId() }).select().single();
   if (error) throw error;
   await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${r.item}`, category:"Insumos", amount:r.total });
 }
@@ -957,8 +921,89 @@ async function findOrCreateSupplier(name) {
 }
 
 async function createRemoteTransaction(r) {
-  const { error } = await supabaseClient.from("transactions").insert({ branch_id:branchIdByName(BRANCHES[0]), transaction_date:r.date, type:r.type, concept:r.concept, category:r.category, amount:r.amount, created_by:currentEmployeeId() });
+  const { error } = await supabaseClient.from("transactions").insert({
+    branch_id:branchIdByName(activeBranchId),
+    transaction_date:r.date, type:r.type, concept:r.concept,
+    category:r.category, amount:r.amount, created_by:currentEmployeeId()
+  });
   if (error) throw error;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// HELP / IT SUPPORT MODAL
+// ──────────────────────────────────────────────────────────────────────────────
+const helpModal   = document.querySelector("#help-modal");
+const helpForm    = document.querySelector("#help-form");
+ 
+document.querySelector("#help-button").addEventListener("click", () => {
+  helpForm.reset();
+  helpModal.showModal();
+});
+ 
+document.querySelector("#close-help-modal").addEventListener("click", () => helpModal.close());
+document.querySelector("#cancel-help").addEventListener("click",       () => helpModal.close());
+ 
+helpForm.addEventListener("submit", async e => {
+  e.preventDefault();
+  const type     = document.querySelector("#help-type").value;
+  const title    = document.querySelector("#help-title").value.trim();
+  const desc     = document.querySelector("#help-desc").value.trim();
+  const priority = document.querySelector("input[name='help-priority']:checked").value;
+  const sender   = currentEmployee?.full_name || "Usuario desconocido";
+  const btn      = document.querySelector("#send-help");
+ 
+  btn.textContent = "Enviando...";
+  btn.disabled    = true;
+ 
+  const fullTitle = `[${type}] ${title}`;
+  const fullDesc  = `De: ${sender}\n\n${desc}`;
+ 
+  try {
+    if (dataMode === "remote") {
+      const { error } = await supabaseClient.from("support_tasks").insert({
+        title:       fullTitle,
+        description: fullDesc,
+        priority:    priority,
+        status:      "Pendiente",
+        created_by:  currentEmployee?.id || null,
+      });
+      if (error) throw error;
+      // Recargar estado para que aparezca en el kanban de IT
+      state = await loadSupabaseState();
+      renderSupport();
+    } else {
+      // Modo local — agregar al estado local
+      state.supportTasks.unshift({
+        id:          `st-${Date.now()}`,
+        title:       fullTitle,
+        description: fullDesc,
+        priority:    priority,
+        status:      "Pendiente",
+        assignedTo:  "IT",
+        createdAt:   dateStamp(),
+      });
+      saveState();
+      renderSupport();
+    }
+ 
+    helpModal.close();
+    showToast(`✓ Solicitud enviada a IT · ${type}`);
+  } catch(err) {
+    alert(`No se pudo enviar: ${err.message}`);
+  } finally {
+    btn.textContent = "Enviar a IT";
+    btn.disabled    = false;
+  }
+});
+ 
+function showToast(message) {
+  const existing = document.querySelector(".help-toast");
+  if (existing) existing.remove();
+  const toast = document.createElement("div");
+  toast.className   = "help-toast";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -994,10 +1039,6 @@ document.querySelectorAll("[data-export-sheet]").forEach(btn => {
 
 // Delegated clicks
 document.addEventListener("click", e => {
-  // Edit ticket
-  const editTicket = e.target.closest("[data-edit-ticket]");
-  if (editTicket) { openEditTicket(editTicket.dataset.editTicket); return; }
-
   // Print ticket
   const printBtn = e.target.closest("[data-print-ticket]");
   if (printBtn) { const t = state.tickets.find(i=>i.id===printBtn.dataset.printTicket); if(t) printTicket(t); return; }
@@ -1136,11 +1177,11 @@ function receiptQrTarget() {
 
 function exportWorkbook(singleSheet) {
   const sheets = {
-    clients:      { title:"Clientes",     headers:["Nombre","Telefono","Email","Equipo","Ultima visita","Estado"],               rows:state.clients.map(i=>[i.name,i.phone,i.email,i.device,i.lastVisit,i.status]) },
-    products:     { title:"Productos",    headers:["Nombre","SKU","Categoria","Stock","Minimo","Precio"],                        rows:state.products.map(i=>[i.name,i.sku,i.category,i.stock,i.minStock,i.price]) },
-    tickets:      { title:"Tickets",      headers:["Folio","Cliente","Producto","Trabajo","Stage","Prioridad","Sucursal","Empleado","Monto","Pago","Pagado","Fecha"], rows:state.tickets.map(i=>[i.tracking,i.client,i.productName,i.issue,i.status,i.priority,i.branch,i.assignedTo,i.repairAmount??i.total,i.paymentStatus,i.paidAmount,i.createdAt]) },
-    supplies:     { title:"Insumos",      headers:["Fecha","Proveedor","Insumo","Cantidad","Total"],                             rows:state.supplies.map(i=>[i.date,i.supplier,i.item,i.quantity,i.total]) },
-    transactions: { title:"Finanzas",     headers:["Fecha","Tipo","Concepto","Categoria","Monto"],                              rows:state.transactions.map(i=>[i.date,i.type,i.concept,i.category,i.amount]) },
+    clients:      { title:"Clientes",     headers:["Nombre","Telefono","Email","Equipo","Ultima visita","Estado"],               rows:branchClients().map(i=>[i.name,i.phone,i.email,i.device,i.lastVisit,i.status]) },
+    products:     { title:"Productos",    headers:["Nombre","SKU","Categoria","Stock","Minimo","Precio"],                        rows:branchProducts().map(i=>[i.name,i.sku,i.category,i.stock,i.minStock,i.price]) },
+    tickets:      { title:"Tickets",      headers:["Folio","Cliente","Producto","Trabajo","Stage","Prioridad","Sucursal","Empleado","Monto","Pago","Pagado","Fecha"], rows:branchTickets().map(i=>[i.tracking,i.client,i.productName,i.issue,i.status,i.priority,i.branch,i.assignedTo,i.repairAmount??i.total,i.paymentStatus,i.paidAmount,i.createdAt]) },
+    supplies:     { title:"Insumos",      headers:["Fecha","Proveedor","Insumo","Cantidad","Total"],                             rows:branchSupplies().map(i=>[i.date,i.supplier,i.item,i.quantity,i.total]) },
+    transactions: { title:"Finanzas",     headers:["Fecha","Tipo","Concepto","Categoria","Monto"],                              rows:branchTransactions().map(i=>[i.date,i.type,i.concept,i.category,i.amount]) },
   };
   const keys = singleSheet ? [singleSheet] : Object.keys(sheets);
   const html = `<html><head><meta charset="utf-8"/><style>table{border-collapse:collapse;margin-bottom:28px}th,td{border:1px solid #999;padding:8px}th{background:#2f6fff;color:#fff}h2{font-family:Arial}</style></head><body>${keys.map(k=>sheetToTable(sheets[k])).join("")}</body></html>`;
