@@ -737,9 +737,9 @@ function openEditTicket(ticketId) {
   editingTicketId = ticketId;
   modalTitle.textContent = `Editar ${ticket.tracking}`;
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide]) => {
-    return fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "");
-  }).join("");
+  formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide]) =>
+    fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "")
+  ).join("");
   modal.showModal();
 }
 
@@ -914,7 +914,31 @@ async function createRemoteProduct(r) {
 async function createRemoteTicket(r) {
   const customer  = lookups.customersByName.get(r.client);
   const assignedE = lookups.employeesByName.get(r.assignedTo);
-  const { error } = await supabaseClient.from("service_tickets").insert({ customer_id:customer?.id||null, customer_name:r.client, product_name:r.productName, issue_description:r.issue, stage:r.status, priority:r.priority, repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount, branch_id:branchIdByName(r.branch), assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId() });
+  const { error } = await supabaseClient.from("service_tickets").insert({
+    customer_id:customer?.id||null, customer_name:r.client,
+    product_name:r.productName, issue_description:r.issue,
+    stage:r.status, priority:r.priority,
+    repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
+    branch_id:branchIdByName(r.branch||activeBranchId),
+    assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId()
+  });
+  if (error) throw error;
+}
+
+async function updateRemoteTicket(ticketId, r) {
+  const assignedE = lookups.employeesByName.get(r.assignedTo);
+  const { error } = await supabaseClient.from("service_tickets").update({
+    customer_name:        r.client,
+    product_name:         r.productName,
+    issue_description:    r.issue,
+    stage:                r.status,
+    priority:             r.priority,
+    repair_amount:        Number(r.repairAmount||0),
+    payment_status:       r.paymentStatus,
+    paid_amount:          Number(r.paidAmount||0),
+    branch_id:            branchIdByName(r.branch||activeBranchId),
+    assigned_employee_id: assignedE?.id||null,
+  }).eq("id", ticketId);
   if (error) throw error;
 }
 
@@ -1053,6 +1077,10 @@ document.querySelectorAll("[data-export-sheet]").forEach(btn => {
 
 // Delegated clicks
 document.addEventListener("click", e => {
+  // Edit ticket
+  const editTicket = e.target.closest("[data-edit-ticket]");
+  if (editTicket) { openEditTicket(editTicket.dataset.editTicket); return; }
+
   // Print ticket
   const printBtn = e.target.closest("[data-print-ticket]");
   if (printBtn) { const t = state.tickets.find(i=>i.id===printBtn.dataset.printTicket); if(t) printTicket(t); return; }
