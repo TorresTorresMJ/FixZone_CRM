@@ -18,9 +18,10 @@ const PERMISSIONS = {
   marketing: { tabs: ["dashboard","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
 };
 
-let activeBranchId = "Puerto Vallarta";
-let activeForm     = null;
-let dataMode       = "local";
+let activeBranchId  = "Puerto Vallarta";
+let activeForm      = null;
+let editingTicketId = null;
+let dataMode        = "local";
 let supabaseClient = null;
 let currentSession = null;
 let currentEmployee = null; // { id, full_name, email, role, default_branch_id, force_password_change }
@@ -612,6 +613,7 @@ function ticketCard(ticket, perms) {
     </div>
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}">Recibo</button>
+      <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
     </div>
   </article>`;
@@ -714,16 +716,30 @@ function supportTaskCard(task) {
 // FORMS
 // ──────────────────────────────────────────────────────────────────────────────
 function openForm(type, prefill = {}) {
-  activeForm = type;
+  activeForm      = type;
+  editingTicketId = null;
   const schema = formSchemas[type];
   if (!schema) return;
   modalTitle.textContent = schema.title;
+  document.querySelector("#modal-eyebrow").textContent = "Nuevo registro";
   formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide]) => fieldTemplate(name,label,ftype,opts,wide,prefill[name])).join("");
-
   if (type==="ticket"||type==="product") {
     const sel = formFields.querySelector("#branch");
     if (sel) sel.value = activeBranchId;
   }
+  modal.showModal();
+}
+
+function openEditTicket(ticketId) {
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+  activeForm      = "ticket";
+  editingTicketId = ticketId;
+  modalTitle.textContent = `Editar ${ticket.tracking}`;
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+  formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide]) => {
+    return fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "");
+  }).join("");
   modal.showModal();
 }
 
@@ -747,12 +763,10 @@ recordForm.addEventListener("submit", async e => {
   e.preventDefault();
   const schema = formSchemas[activeForm];
   const data   = Object.fromEntries(new FormData(recordForm).entries());
-  data.id      = `${activeForm}-${Date.now()}`;
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
 
   // ── EDIT TICKET ────────────────────────────────────────────────────────────
-
-if (activeForm === "ticket" && editingTicketId) {
+  if (activeForm === "ticket" && editingTicketId) {
     data.repairAmount = Number(data.repairAmount||0);
     data.paidAmount   = Number(data.paidAmount||0);
     if (data.paymentStatus==="Pagado" && data.paidAmount===0) data.paidAmount = data.repairAmount;
@@ -776,14 +790,14 @@ if (activeForm === "ticket" && editingTicketId) {
 
   // ── CREATE ─────────────────────────────────────────────────────────────────
   data.id = `${activeForm}-${Date.now()}`;
- 
+
   if (activeForm==="ticket") {
     data.tracking      = nextTracking(nextTicketSequence());
     data.repairAmount  = Number(data.repairAmount||0);
     data.paidAmount    = Number(data.paidAmount||0);
     if (data.paymentStatus==="Pagado"&&data.paidAmount===0) data.paidAmount=data.repairAmount;
   }
- 
+
   try {
     if (dataMode==="remote") {
       if (activeForm==="employee") {
