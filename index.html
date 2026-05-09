@@ -431,12 +431,7 @@
     <!-- ── Print area ───────────────────────────────────────────────────────── -->
     <section class="print-receipt" id="print-receipt" aria-hidden="true"></section>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./src/supabase-config.js"></script>
-    <script src="./src/app.js"></script>
-  </body>
-
-  <!-- ── Help / IT modal ──────────────────────────────────────────────────── -->
+    <!-- ── Help / IT modal ──────────────────────────────────────────────────── -->
     <dialog class="modal help-modal" id="help-modal">
       <form id="help-form">
         <div class="modal-header">
@@ -446,7 +441,7 @@
           </div>
           <button class="icon-button" type="button" id="close-help-modal" aria-label="Cerrar">✕</button>
         </div>
- 
+
         <div class="help-form-body">
           <div class="field">
             <label for="help-type">Tipo de solicitud</label>
@@ -459,20 +454,20 @@
               <option value="Otro">💬 Otro</option>
             </select>
           </div>
- 
+
           <div class="field">
             <label for="help-title">Título breve</label>
             <input id="help-title" name="help-title" type="text"
               placeholder="Ej: No puedo ver los tickets de Puebla" required />
           </div>
- 
+
           <div class="field is-wide">
             <label for="help-desc">Descripción</label>
             <textarea id="help-desc" name="help-desc" rows="4"
               placeholder="Describe el problema o sugerencia con el mayor detalle posible..."
               required style="resize:vertical;min-height:100px"></textarea>
           </div>
- 
+
           <div class="help-priority-row">
             <label>Prioridad</label>
             <div class="priority-options">
@@ -495,14 +490,14 @@
             </div>
           </div>
         </div>
- 
+
         <menu class="modal-actions">
           <button class="ghost-button" type="button" id="cancel-help">Cancelar</button>
           <button class="primary-action" type="submit" id="send-help">Enviar a IT</button>
         </menu>
       </form>
     </dialog>
- 
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./src/supabase-config.js"></script>
     <script src="./src/app.js"></script>
