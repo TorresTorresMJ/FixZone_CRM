@@ -8,6 +8,10 @@ const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entre
 const supportStages = ["Pendiente", "En progreso", "Resuelto"];
 const BRANCHES     = ["Puerto Vallarta", "Puebla"];
 const ROLES        = ["it", "admin", "standard", "marketing"];
+const TX_CATEGORIES_INCOME  = ["Servicio","Venta","Anticipo","Garantia","Otro"];
+const TX_CATEGORIES_EXPENSE = ["Inventario","Insumos","Renta","Nomina","Servicios","Herramientas","Operacion","Otro"];
+const TX_CATEGORIES_ALL     = [...new Set([...TX_CATEGORIES_INCOME, ...TX_CATEGORIES_EXPENSE])];
+const PRODUCT_CATEGORIES    = ["Refaccion","Bateria","Pantalla","Accesorio","Microsoldadura","Cable","Cargador","Otro"];
 const ROLE_LABELS  = { it: "IT", admin: "Admin", standard: "Estándar", marketing: "Marketing" };
 
 // ── Role permission map ───────────────────────────────────────────────────────
@@ -80,15 +84,17 @@ const formSchemas = {
     title: "Cliente", collection: "clients",
     fields: [
       ["name","Nombre","text"],["phone","Telefono","tel"],["email","Email","email"],
-      ["device","Equipo","text"],["lastVisit","Ultima visita","date"],
+      ["device","Equipo","text"],["address","Direccion","text"],
+      ["lastVisit","Ultima visita","date"],
       ["status","Estado","select",["Nuevo","Activo","Garantia","Inactivo"]],
+      ["notes","Notas","text",null,true],
     ],
   },
   product: {
     title: "Producto", collection: "products",
     fields: [
       ["branch","Sucursal","select",BRANCHES],["name","Nombre","text"],["sku","SKU","text"],
-      ["category","Categoria","text"],["stock","Stock","number"],["minStock","Minimo","number"],["price","Precio","number"],
+      ["category","Categoria","select",PRODUCT_CATEGORIES],["stock","Stock","number"],["minStock","Minimo","number"],["price","Precio","number"],
     ],
   },
   ticket: {
@@ -99,6 +105,7 @@ const formSchemas = {
       ["status","Stage","select",ticketStages],["priority","Prioridad","select",["Normal","Media","Alta","Urgente"]],
       ["repairAmount","Monto reparacion","number"],["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
       ["paidAmount","Monto pagado","number"],["createdAt","Fecha","date"],
+      ["notes","Notas internas","text",null,true],
     ],
   },
   supply: {
@@ -112,7 +119,7 @@ const formSchemas = {
     title: "Movimiento", collection: "transactions",
     fields: [
       ["date","Fecha","date"],["type","Tipo","select",["Ingreso","Egreso"]],
-      ["concept","Concepto","text",null,true],["category","Categoria","text"],["amount","Monto","number"],
+      ["concept","Concepto","text",null,true],["category","Categoria","select",TX_CATEGORIES_ALL],["amount","Monto","number"],
     ],
   },
   employee: {
@@ -199,6 +206,19 @@ async function refreshSession() {
   await afterLogin();
 }
 
+async function reloadState() {
+  const remote = await loadSupabaseState();
+  state = {
+    ...remote,
+    clients:      remote.clients.length      ? remote.clients      : structuredClone(seed.clients),
+    products:     remote.products.length     ? remote.products     : structuredClone(seed.products),
+    tickets:      remote.tickets.length      ? remote.tickets      : structuredClone(seed.tickets),
+    supplies:     remote.supplies.length     ? remote.supplies     : structuredClone(seed.supplies),
+    transactions: remote.transactions.length ? remote.transactions : structuredClone(seed.transactions),
+  };
+  return state;
+}
+
 async function afterLogin() {
   try {
     await resolveCurrentEmployee();
@@ -206,7 +226,7 @@ async function afterLogin() {
       showChangePasswordScreen();
       return;
     }
-    state = await loadSupabaseState();
+    await reloadState();
     dataMode = "remote";
     if (currentEmployee?.default_branch_id) {
       const branch = [...lookups.branchesByName.values()]
@@ -344,7 +364,7 @@ async function handleChangePassword(e) {
       .eq("id", currentEmployee.id);
     currentEmployee.force_password_change = false;
     document.querySelector("#change-password-screen").style.display = "none";
-    state = await loadSupabaseState();
+    await reloadState();
     dataMode = "remote";
     showApp();
     render();
@@ -564,7 +584,10 @@ function renderClients() {
       <td>${c.phone}</td><td>${c.device}</td><td>${c.lastVisit}</td>
       <td><span class="status">${c.status}</span></td>
       <td>
-        ${perms.canDeleteClients ? `<button class="mini-button danger-btn" data-delete-client="${c.id}">Eliminar</button>` : ""}
+        <div class="action-row" style="justify-content:flex-end;gap:6px">
+          <button class="mini-button" data-edit-client="${c.id}">Editar</button>
+          ${perms.canDeleteClients ? `<button class="mini-button danger-btn" data-delete-client="${c.id}">Eliminar</button>` : ""}
+        </div>
       </td>
     </tr>`).join("")||tableEmpty(6);
 }
@@ -632,10 +655,13 @@ function renderFinance() {
   const bal     = income-expenses;
   const perms   = currentPerms();
 
+  const canFinance = perms.canManageFinance;
   document.querySelector("#finance-summary").innerHTML = [
-    ["Ingresos",money.format(income)],["Egresos",money.format(expenses)],
-    ["Balance",money.format(bal)],["Margen",income?`${Math.round((bal/income)*100)}%`:"0%"],
-  ].map(([l,v])=>`<article class="metric"><span>${l}</span><strong>${v}</strong></article>`).join("");
+    ["Ingresos",money.format(income), canFinance ? `<button class="mini-button" style="margin-top:10px" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>` : ""],
+    ["Egresos",money.format(expenses), canFinance ? `<button class="mini-button danger-btn" style="margin-top:10px" onclick="openTransactionForm('Egreso')">+ Egreso</button>` : ""],
+    ["Balance",money.format(bal), ""],
+    ["Margen",income?`${Math.round((bal/income)*100)}%`:"0%", ""],
+  ].map(([l,v,btn])=>`<article class="metric"><span>${l}</span><strong>${v}</strong>${btn}</article>`).join("");
 
   document.querySelector("#transactions-table").innerHTML = bySearch(txs).map(i=>`
     <tr>
@@ -643,7 +669,12 @@ function renderFinance() {
       <td><span class="type-pill ${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type}</span></td>
       <td>${i.concept}</td><td>${i.category}</td>
       <td><strong>${money.format(i.amount)}</strong></td>
-      <td>${perms.canManageFinance?`<button class="mini-button danger-btn" data-delete-tx="${i.id}">Eliminar</button>`:""}
+      <td>
+        <div class="action-row" style="justify-content:flex-end;gap:6px">
+          <button class="mini-button" data-edit-tx="${i.id}">Editar</button>
+          ${perms.canManageFinance?`<button class="mini-button danger-btn" data-delete-tx="${i.id}">Eliminar</button>`:""}
+        </div>
+      </td>
     </tr>`).join("")||tableEmpty(6);
 }
 
@@ -712,6 +743,140 @@ function supportTaskCard(task) {
   </article>`;
 }
 
+
+// ── Edit: Client ──────────────────────────────────────────────────────────────
+function openEditClient(clientId) {
+  const client = state.clients.find(c => c.id === clientId);
+  if (!client) return;
+  activeForm      = "client";
+  editingTicketId = clientId;
+  modalTitle.textContent = "Editar cliente";
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+  formFields.innerHTML = formSchemas["client"].fields.map(([name,label,ftype,opts,wide]) =>
+    fieldTemplate(name, label, ftype, opts, wide, client[name] ?? "")
+  ).join("");
+  modal.showModal();
+}
+
+async function updateRemoteClient(clientId, data) {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId);
+  if (!isUUID) {
+    const idx = state.clients.findIndex(c => c.id === clientId);
+    if (idx !== -1) state.clients[idx] = { ...state.clients[idx], ...data };
+    return;
+  }
+  const { error } = await supabaseClient.from("customers").update({
+    full_name: data.name,
+    phone:     data.phone || null,
+    email:     data.email || null,
+    address:   data.address || null,
+    notes:     data.notes || null,
+  }).eq("id", clientId);
+  if (error) throw error;
+  // Update device if provided
+  if (data.device) {
+    const existing = await supabaseClient.from("customer_devices")
+      .select("id").eq("customer_id", clientId).maybeSingle();
+    if (existing.data?.id) {
+      await supabaseClient.from("customer_devices")
+        .update({ product_name: data.device }).eq("id", existing.data.id);
+    }
+  }
+}
+
+// ── Edit: Support Task ────────────────────────────────────────────────────────
+function openEditSupportTask(taskId) {
+  const task = (state.supportTasks||[]).find(t => t.id === taskId);
+  if (!task) return;
+  activeForm      = "supportTask";
+  editingTicketId = taskId;
+  modalTitle.textContent = "Editar tarea";
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+  formFields.innerHTML = formSchemas["supportTask"].fields.map(([name,label,ftype,opts,wide]) =>
+    fieldTemplate(name, label, ftype, opts, wide, task[name] ?? "")
+  ).join("");
+  modal.showModal();
+}
+
+async function updateRemoteSupportTask(taskId, data) {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId);
+  if (!isUUID) {
+    const idx = (state.supportTasks||[]).findIndex(t => t.id === taskId);
+    if (idx !== -1) state.supportTasks[idx] = { ...state.supportTasks[idx], ...data };
+    return;
+  }
+  const { error } = await supabaseClient.from("support_tasks").update({
+    title:       data.title,
+    description: data.description || null,
+    priority:    data.priority,
+    status:      data.status,
+  }).eq("id", taskId);
+  if (error) throw error;
+}
+
+// ── Edit: Supply ──────────────────────────────────────────────────────────────
+function openEditSupply(supplyId) {
+  const supply = branchSupplies().find(s => s.id === supplyId);
+  if (!supply) return;
+  activeForm      = "supply";
+  editingTicketId = supplyId;
+  modalTitle.textContent = "Editar compra";
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+  formFields.innerHTML = formSchemas["supply"].fields.map(([name,label,ftype,opts,wide]) =>
+    fieldTemplate(name, label, ftype, opts, wide, supply[name] ?? "")
+  ).join("");
+  modal.showModal();
+}
+
+async function updateRemoteSupply(supplyId, data) {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(supplyId);
+  if (!isUUID) {
+    const idx = state.supplies.findIndex(s => s.id === supplyId);
+    if (idx !== -1) state.supplies[idx] = { ...state.supplies[idx], ...data };
+    return;
+  }
+  const suppId = await findOrCreateSupplier(data.supplier);
+  const { error } = await supabaseClient.from("supply_purchases").update({
+    purchase_date: data.date,
+    supplier_id:   suppId,
+    item_name:     data.item,
+    quantity:      Number(data.quantity || 0),
+    total_amount:  Number(data.total || 0),
+  }).eq("id", supplyId);
+  if (error) throw error;
+}
+
+// ── Edit: Transaction ─────────────────────────────────────────────────────────
+function openEditTransaction(txId) {
+  const tx = branchTransactions().find(t => t.id === txId);
+  if (!tx) return;
+  activeForm      = "transaction";
+  editingTicketId = txId;
+  modalTitle.textContent = "Editar movimiento";
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+  formFields.innerHTML = formSchemas["transaction"].fields.map(([name,label,ftype,opts,wide]) =>
+    fieldTemplate(name, label, ftype, opts, wide, tx[name] ?? "")
+  ).join("");
+  modal.showModal();
+}
+
+async function updateRemoteTransaction(txId, data) {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(txId);
+  if (!isUUID) {
+    const idx = state.transactions.findIndex(t => t.id === txId);
+    if (idx !== -1) state.transactions[idx] = { ...state.transactions[idx], ...data };
+    return;
+  }
+  const { error } = await supabaseClient.from("transactions").update({
+    transaction_date: data.date,
+    type:             data.type,
+    concept:          data.concept,
+    category:         data.category,
+    amount:           Number(data.amount || 0),
+  }).eq("id", txId);
+  if (error) throw error;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // FORMS
 // ──────────────────────────────────────────────────────────────────────────────
@@ -730,6 +895,15 @@ function openForm(type, prefill = {}) {
   modal.showModal();
 }
 
+function openTransactionForm(type) {
+  openForm("transaction", { type, date: dateStamp() });
+  // After the modal renders, force the type select to the correct value
+  setTimeout(() => {
+    const sel = formFields.querySelector("#type");
+    if (sel) { sel.value = type; sel.dispatchEvent(new Event("change")); }
+  }, 0);
+}
+
 function openEditTicket(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
@@ -739,8 +913,87 @@ function openEditTicket(ticketId) {
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide]) =>
     fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "")
-  ).join("");
+  ).join("") + buildPhotoUploadSection(ticketId);
   modal.showModal();
+  initPhotoUpload(ticketId);
+}
+
+function buildPhotoUploadSection(ticketId) {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
+  if (!isUUID) return `
+    <div class="field is-wide" style="margin-top:8px">
+      <label>Fotos del equipo</label>
+      <p class="muted" style="font-size:12px;margin:4px 0 0">Disponible solo en tickets guardados en Supabase.</p>
+    </div>`;
+  return `
+    <div class="field is-wide photo-upload-section" style="margin-top:8px">
+      <label>Fotos del equipo</label>
+      <div id="photo-preview-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin:10px 0"></div>
+      <label class="ghost-button" style="display:inline-flex;align-items:center;gap:6px;padding:0 14px;min-height:38px;cursor:pointer;font-size:13px">
+        📷 Agregar foto
+        <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none" />
+      </label>
+      <span id="photo-upload-status" class="muted" style="font-size:12px;margin-left:8px"></span>
+    </div>`;
+}
+
+async function initPhotoUpload(ticketId) {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
+  if (!isUUID || !supabaseClient) return;
+
+  // Load existing photos
+  await loadTicketPhotos(ticketId);
+
+  const input = document.querySelector("#photo-file-input");
+  if (!input) return;
+  input.addEventListener("change", async () => {
+    const files = Array.from(input.files);
+    if (!files.length) return;
+    const status = document.querySelector("#photo-upload-status");
+    status.textContent = "Subiendo...";
+    for (const file of files) {
+      try {
+        const ext  = file.name.split(".").pop();
+        const path = `tickets/${ticketId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: upErr } = await supabaseClient.storage
+          .from("ticket-photos").upload(path, file, { upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabaseClient.storage
+          .from("ticket-photos").getPublicUrl(path);
+        await supabaseClient.from("attachments").insert({
+          ticket_id:  ticketId,
+          file_url:   urlData.publicUrl,
+          file_type:  file.type,
+          label:      file.name,
+          created_by: currentEmployeeId(),
+        });
+      } catch(err) {
+        status.textContent = `Error: ${err.message}`;
+        return;
+      }
+    }
+    status.textContent = `✓ ${files.length} foto(s) subida(s)`;
+    input.value = "";
+    await loadTicketPhotos(ticketId);
+  });
+}
+
+async function loadTicketPhotos(ticketId) {
+  const grid = document.querySelector("#photo-preview-grid");
+  if (!grid) return;
+  const { data, error } = await supabaseClient
+    .from("attachments").select("*")
+    .eq("ticket_id", ticketId).order("created_at");
+  if (error || !data?.length) { grid.innerHTML = `<p class="muted" style="font-size:12px">Sin fotos aún.</p>`; return; }
+  grid.innerHTML = data.map(a => `
+    <div style="position:relative">
+      <a href="${escapeHtml(a.file_url)}" target="_blank" rel="noopener">
+        <img src="${escapeHtml(a.file_url)}" alt="${escapeHtml(a.label||"")}"
+          style="width:100%;height:80px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.1)" />
+      </a>
+      <button data-delete-photo="${a.id}" data-photo-url="${escapeHtml(a.file_url)}"
+        style="position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;border:0;background:rgba(255,60,60,0.8);color:#fff;font-size:11px;cursor:pointer;line-height:1">✕</button>
+    </div>`).join("");
 }
 
 function fieldTemplate(name, label, ftype, opts, wide, defaultValue) {
@@ -765,19 +1018,43 @@ recordForm.addEventListener("submit", async e => {
   const data   = Object.fromEntries(new FormData(recordForm).entries());
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
 
+  // ── EDIT: generic (client, supportTask, supply, transaction) ────────────────
+  if (editingTicketId && activeForm !== "ticket") {
+    try {
+      if (activeForm === "client") {
+        await updateRemoteClient(editingTicketId, data);
+      } else if (activeForm === "supportTask") {
+        await updateRemoteSupportTask(editingTicketId, data);
+      } else if (activeForm === "supply") {
+        await updateRemoteSupply(editingTicketId, data);
+      } else if (activeForm === "transaction") {
+        await updateRemoteTransaction(editingTicketId, data);
+      }
+      if (dataMode === "remote") await reloadState();
+      else { /* local: already mutated in update functions */ saveState(); }
+      render();
+      modal.close();
+    } catch(err) {
+      console.error(err);
+      alert(`No se pudo guardar: ${err.message}`);
+    }
+    return;
+  }
+
   // ── EDIT TICKET ────────────────────────────────────────────────────────────
   if (activeForm === "ticket" && editingTicketId) {
     data.repairAmount = Number(data.repairAmount||0);
     data.paidAmount   = Number(data.paidAmount||0);
     if (data.paymentStatus==="Pagado" && data.paidAmount===0) data.paidAmount = data.repairAmount;
     try {
-      if (dataMode==="remote") {
+      const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTicketId);
+      if (dataMode==="remote" && isRealUUID) {
         await updateRemoteTicket(editingTicketId, data);
-        state = await loadSupabaseState();
+        await reloadState();
       } else {
         const idx = state.tickets.findIndex(t => t.id === editingTicketId);
         if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], ...data };
-        saveState();
+        if (dataMode !== "remote") saveState();
       }
       render();
       modal.close();
@@ -814,7 +1091,7 @@ recordForm.addEventListener("submit", async e => {
       } else {
         await saveRemoteRecord(activeForm, data);
       }
-      state = await loadSupabaseState();
+      await reloadState();
     } else {
       state[schema.collection].unshift(data);
       if (activeForm==="supply") {
@@ -852,7 +1129,7 @@ async function deleteEmployee(employeeId) {
   try {
     if (dataMode==="remote") {
       await callEdgeFunction("delete", { employee_id: employeeId });
-      state = await loadSupabaseState();
+      await reloadState();
     } else {
       state.employees = state.employees.filter(e=>e.id!==employeeId);
       saveState();
@@ -886,7 +1163,13 @@ async function saveRemoteSupportTask(data) {
 
 // ── Remote saves ──────────────────────────────────────────────────────────────
 function currentEmployeeId() { return currentEmployee?.id||null; }
-function branchIdByName(name) { return lookups.branchesByName.get(name)?.id||null; }
+async function branchIdByName(name) {
+  if (!name) name = activeBranchId;
+  const fromMap = lookups.branchesByName.get(name)?.id || null;
+  if (fromMap) return fromMap;
+  const { data } = await supabaseClient.from("branches").select("id").eq("name", name).maybeSingle();
+  return data?.id || null;
+}
 
 async function saveRemoteRecord(type, record) {
   if (type==="client")      return createRemoteClient(record);
@@ -900,14 +1183,14 @@ async function saveRemoteRecord(type, record) {
 async function createRemoteClient(r) {
   const { data:c, error } = await supabaseClient.from("customers").insert({
     full_name:r.name, phone:r.phone, email:r.email,
-    branch_id:branchIdByName(activeBranchId), created_by:currentEmployeeId()
+    branch_id:await branchIdByName(activeBranchId), created_by:currentEmployeeId()
   }).select().single();
   if (error) throw error;
   if (r.device) { const { error:de } = await supabaseClient.from("customer_devices").insert({ customer_id:c.id, product_name:r.device }); if(de) throw de; }
 }
 
 async function createRemoteProduct(r) {
-  const { error } = await supabaseClient.from("products").insert({ name:r.name, sku:r.sku, category:r.category, stock:r.stock, min_stock:r.minStock, sale_price:r.price, branch_id:branchIdByName(r.branch) });
+  const { error } = await supabaseClient.from("products").insert({ name:r.name, sku:r.sku, category:r.category, stock:r.stock, min_stock:r.minStock, sale_price:r.price, branch_id:await branchIdByName(r.branch) });
   if (error) throw error;
 }
 
@@ -919,7 +1202,7 @@ async function createRemoteTicket(r) {
     product_name:r.productName, issue_description:r.issue,
     stage:r.status, priority:r.priority,
     repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
-    branch_id:branchIdByName(r.branch||activeBranchId),
+    branch_id:await branchIdByName(r.branch||activeBranchId),
     assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId()
   });
   if (error) throw error;
@@ -936,7 +1219,7 @@ async function updateRemoteTicket(ticketId, r) {
     repair_amount:        Number(r.repairAmount||0),
     payment_status:       r.paymentStatus,
     paid_amount:          Number(r.paidAmount||0),
-    branch_id:            branchIdByName(r.branch||activeBranchId),
+    branch_id:            await branchIdByName(r.branch||activeBranchId),
     assigned_employee_id: assignedE?.id||null,
   }).eq("id", ticketId);
   if (error) throw error;
@@ -944,7 +1227,7 @@ async function updateRemoteTicket(ticketId, r) {
 
 async function createRemoteSupply(r) {
   const suppId = await findOrCreateSupplier(r.supplier);
-  const { data:p, error } = await supabaseClient.from("supply_purchases").insert({ supplier_id:suppId, branch_id:branchIdByName(activeBranchId), purchase_date:r.date, item_name:r.item, quantity:r.quantity, total_amount:r.total, created_by:currentEmployeeId() }).select().single();
+  const { data:p, error } = await supabaseClient.from("supply_purchases").insert({ supplier_id:suppId, branch_id:await branchIdByName(activeBranchId), purchase_date:r.date, item_name:r.item, quantity:r.quantity, total_amount:r.total, created_by:currentEmployeeId() }).select().single();
   if (error) throw error;
   await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${r.item}`, category:"Insumos", amount:r.total });
 }
@@ -960,7 +1243,7 @@ async function findOrCreateSupplier(name) {
 
 async function createRemoteTransaction(r) {
   const { error } = await supabaseClient.from("transactions").insert({
-    branch_id:branchIdByName(activeBranchId),
+    branch_id:await branchIdByName(activeBranchId),
     transaction_date:r.date, type:r.type, concept:r.concept,
     category:r.category, amount:r.amount, created_by:currentEmployeeId()
   });
@@ -1007,7 +1290,7 @@ helpForm.addEventListener("submit", async e => {
       });
       if (error) throw error;
       // Recargar estado para que aparezca en el kanban de IT
-      state = await loadSupabaseState();
+      await reloadState();
       renderSupport();
     } else {
       // Modo local — agregar al estado local
@@ -1076,7 +1359,7 @@ document.querySelectorAll("[data-export-sheet]").forEach(btn => {
 });
 
 // Delegated clicks
-document.addEventListener("click", e => {
+document.addEventListener("click", async e => {
   // Edit ticket
   const editTicket = e.target.closest("[data-edit-ticket]");
   if (editTicket) { openEditTicket(editTicket.dataset.editTicket); return; }
@@ -1103,6 +1386,42 @@ document.addEventListener("click", e => {
   const resetPw = e.target.closest("[data-reset-pw]");
   if (resetPw) { resetEmployeePassword(resetPw.dataset.resetPw); return; }
 
+  // Delete photo
+  const delPhoto = e.target.closest("[data-delete-photo]");
+  if (delPhoto) {
+    if (!confirm("¿Eliminar esta foto?")) return;
+    const attachId = delPhoto.dataset.deletePhoto;
+    const photoUrl = delPhoto.dataset.photoUrl;
+    try {
+      await supabaseClient.from("attachments").delete().eq("id", attachId);
+      // Extract storage path from URL to delete from bucket
+      const urlPath = new URL(photoUrl).pathname;
+      const bucketIdx = urlPath.indexOf("/ticket-photos/");
+      if (bucketIdx !== -1) {
+        const storagePath = urlPath.slice(bucketIdx + "/ticket-photos/".length);
+        await supabaseClient.storage.from("ticket-photos").remove([storagePath]);
+      }
+      delPhoto.closest("div").remove();
+    } catch(err) { alert(`Error al eliminar foto: ${err.message}`); }
+    return;
+  }
+
+  // Edit client
+  const editClient = e.target.closest("[data-edit-client]");
+  if (editClient) { openEditClient(editClient.dataset.editClient); return; }
+
+  // Edit support task
+  const editSupport = e.target.closest("[data-edit-support]");
+  if (editSupport) { openEditSupportTask(editSupport.dataset.editSupport); return; }
+
+  // Edit supply
+  const editSupply = e.target.closest("[data-edit-supply]");
+  if (editSupply) { openEditSupply(editSupply.dataset.editSupply); return; }
+
+  // Edit transaction
+  const editTxBtn = e.target.closest("[data-edit-tx]");
+  if (editTxBtn) { openEditTransaction(editTxBtn.dataset.editTx); return; }
+
   // View navigation from dashboard
   const viewBtn = e.target.closest("[data-view-target]");
   if (viewBtn) { setView(viewBtn.dataset.viewTarget); return; }
@@ -1111,8 +1430,15 @@ document.addEventListener("click", e => {
 async function handleDeleteTicket(id) {
   if (!confirm("¿Eliminar este ticket?")) return;
   try {
-    if (dataMode==="remote") { const {error}=await supabaseClient.from("service_tickets").delete().eq("id",id); if(error)throw error; state=await loadSupabaseState(); }
-    else { state.tickets=state.tickets.filter(t=>t.id!==id); saveState(); }
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (dataMode==="remote" && isUUID) {
+      const {error} = await supabaseClient.from("service_tickets").delete().eq("id", id);
+      if (error) throw error;
+      await reloadState();
+    } else {
+      state.tickets = state.tickets.filter(t => t.id !== id);
+      if (dataMode !== "remote") saveState();
+    }
     render();
   } catch(err) { alert(`Error: ${err.message}`); }
 }
@@ -1120,7 +1446,7 @@ async function handleDeleteTicket(id) {
 async function handleDeleteClient(id) {
   if (!confirm("¿Eliminar este cliente y sus datos?")) return;
   try {
-    if (dataMode==="remote") { const {error}=await supabaseClient.from("customers").delete().eq("id",id); if(error)throw error; state=await loadSupabaseState(); }
+    if (dataMode==="remote") { const {error}=await supabaseClient.from("customers").delete().eq("id",id); if(error)throw error; await reloadState(); }
     else { state.clients=state.clients.filter(c=>c.id!==id); saveState(); }
     render();
   } catch(err) { alert(`Error: ${err.message}`); }
@@ -1129,7 +1455,7 @@ async function handleDeleteClient(id) {
 async function handleDeleteTransaction(id) {
   if (!confirm("¿Eliminar este movimiento financiero? Esta acción no se puede deshacer.")) return;
   try {
-    if (dataMode==="remote") { const {error}=await supabaseClient.from("transactions").delete().eq("id",id); if(error)throw error; state=await loadSupabaseState(); }
+    if (dataMode==="remote") { const {error}=await supabaseClient.from("transactions").delete().eq("id",id); if(error)throw error; await reloadState(); }
     else { state.transactions=state.transactions.filter(t=>t.id!==id); saveState(); }
     render();
   } catch(err) { alert(`Error: ${err.message}`); }
@@ -1153,6 +1479,7 @@ function setActiveBranch(name) {
   render();
 }
 window.setActiveBranch = setActiveBranch;
+window.openTransactionForm = openTransactionForm;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // PRINT / EXPORT
@@ -1168,53 +1495,153 @@ function printTicket(ticket) {
 
   document.querySelector("#print-receipt").innerHTML = `
     <article class="receipt-page">
+    
       <header class="receipt-hero">
-        <div class="receipt-brand-home"><img src="./assets/brand/fixzone-logo.png" alt="FixZone" /></div>
+        <div class="receipt-brand-home">
+          <img
+            src="./assets/brand/fixzone-monocromatico.png"
+            alt="FixZone"
+            class="thermal-logo"
+          />
+        </div>
+        
         <div class="receipt-title">
           <span>RECIBO DE SERVICIO</span>
-          <h1>${escapeHtml(ticket.tracking||ticket.id.toUpperCase())}</h1>
-          <p>${escapeHtml(ticket.createdAt||dateStamp())}</p>
+          <h1>${escapeHtml(ticket.tracking || ticket.id.toUpperCase())}</h1>
+          <p>${
+            escapeHtml(ticket.createdAt || dateStamp())
+          }</p>
         </div>
       </header>
+      
+      <div class="receipt-divider"></div>
+      
       <section class="receipt-strip">
-        <div><span>Sucursal</span><strong>${escapeHtml(ticket.branch||"FixZone")}</strong></div>
-        <div><span>Atendio</span><strong>${escapeHtml(ticket.assignedTo||"Equipo FixZone")}</strong></div>
-        <div><span>Estado</span><strong>${escapeHtml(ticket.status)}</strong></div>
+        <div>
+          <span>Sucursal</span>
+          <strong>${escapeHtml(ticket.branch || "FixZone")}</strong>
+        </div>
+        
+        <div>
+          <span>Estado</span>
+          <strong>${escapeHtml(ticket.status)}</strong>
+        </div>
       </section>
+      
       <div class="receipt-grid">
+        
         <section class="receipt-box">
           <h2>Cliente</h2>
+          
           <strong>${escapeHtml(ticket.client)}</strong>
-          <span>${escapeHtml(client?.phone||"Telefono no registrado")}</span>
-          <span>${escapeHtml(client?.email||"Email no registrado")}</span>
+          
+          <span>${escapeHtml(client?.phone || "Telefono no registrado")}</span>
+          
+          <span>${escapeHtml(client?.email || "Email no registrado")}</span>
         </section>
+        
         <section class="receipt-box">
-          <h2>Producto / equipo</h2>
-          <strong>${escapeHtml(ticket.productName||ticket.device)}</strong>
-          <span>Prioridad: ${escapeHtml(ticket.priority||"Normal")}</span>
-          <span>Pago: ${paidLabel}</span>
+          <h2>Equipo</h2>
+          
+          <strong>${escapeHtml(ticket.productName || ticket.device)}</strong>
+          
+          <span>Prioridad: ${escapeHtml(ticket.priority || "Normal")}</span>
         </section>
+        
+        <section class="receipt-box">
+          <h2>Falla reportada</h2>
+          
+          <span>${escapeHtml(ticket.issue || "Sin especificar")}</span>
+        </section>
+        
       </div>
+      
       <table class="receipt-table">
-        <thead><tr><th>Descripcion del servicio</th><th>Importe</th></tr></thead>
-        <tbody><tr><td>${escapeHtml(ticket.issue)}</td><td>${money.format(repairAmt)}</td></tr></tbody>
+        <thead>
+          <tr>
+            <th>Descripción</th>
+            <th>Importe</th>
+          </tr>
+        </thead>
+        
+        <tbody>
+          <tr>
+            <td>${escapeHtml(ticket.issue)}</td>
+            <td>${money.format(repairAmt)}</td>
+          </tr>
+        </tbody>
       </table>
+      
       <section class="receipt-summary">
-        <div><span>Total</span><strong>${money.format(repairAmt)}</strong></div>
-        <div><span>Pagado</span><strong>${paidLabel}</strong></div>
+        
+        <div>
+          <span>Total</span>
+          <strong>${money.format(repairAmt)}</strong>
+        </div>
+        
+        <div>
+          <span>Método de pago</span>
+          <strong>${escapeHtml(ticket.paymentMethod || "Efectivo")}</strong>
+        </div>
+        
+        <div>
+          <span>Pago recibido</span>
+          <strong>${money.format(Number(ticket.amountReceived || 0))}</strong>
+        </div>
+        
+        <div>
+          <span>Cambio</span>
+          <strong>${money.format(Number(ticket.changeAmount || 0))}</strong>
+        </div>
+      
       </section>
+      
       <section class="receipt-footer-grid">
-        <p class="receipt-note">Gracias por confiar en FixZone. Conserve este recibo para seguimiento, garantia o aclaraciones.</p>
-        <div class="receipt-qr"><img src="${qrImage}" alt="QR" /><strong>Escanea aqui</strong><span>${escapeHtml(qrTarget)}</span></div>
-        <div class="receipt-signature"><span></span><strong>Firma de recibido</strong></div>
+        <div class="receipt-qr">
+          <img src="${qrImage}" alt="QR" />
+          <strong>Escanea para seguimiento</strong>
+        </div>
+        
+        <p class="receipt-note">
+          <strong>POLÍTICAS DE GARANTÍA</strong>
+          <br><br>
+
+          • 30 días de garantía en mano de obra.
+          <br>
+
+          • La garantía no aplica por golpes,
+          humedad, mal uso o intervención de terceros.
+          <br>
+
+          • Conserve este recibo para cualquier aclaración.
+          </p>
+        
       </section>
-    </article>`;
+      
+      <p class="receipt-thanks">
+        ★ Gracias por confiar en FixZone ★
+      </p>
+      
+      <div class="receipt-sign-area">
+        <div class="receipt-sign-line"></div>
+        <strong>FIRMA DE RECIBIDO</strong>
+      </div>
+    
+  </article>`;
   window.print();
 }
 
 function receiptQrTarget() {
-  const base = location.protocol==="file:" ? "https://fixzone-crm.pages.dev" : location.origin;
-  return `${base}/detente-jochis.html`;
+  try {
+    const base =
+      location.protocol === "file:"
+        ? "https://fixzone-crm.pages.dev"
+        : window.location.origin;
+
+    return `${base}/detente-jochis.html`;
+  } catch (err) {
+    return "https://fixzone-crm.pages.dev/detente-jochis.html";
+  }
 }
 
 function exportWorkbook(singleSheet) {

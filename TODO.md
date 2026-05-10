@@ -85,6 +85,10 @@
 - [ ] Agregar firma de cliente.
 - [ ] Agregar lector de codigos QR para tickets.
 - [ ] Agregar busqueda avanzada por telefono, IMEI, folio o cliente.
-- [ ] Agregar dashboard por sucursal FixZone: Puerto Vallarta | Puebla.
+- [ ] Filtrar dashboard por sucursal FixZone: Puerto Vallarta | Puebla. Faltan: insumos, clientes, finanzas, resportes.
 - [ ] Agregar integracion contable si se requiere facturacion formal.
 - [ ] Agregar función para añadir imagenes a los tickets, para registrar como viene el dispositivo antes y después. 
+- [ ] Poder Editar los campos de datos de los clientes,
+- [ ] Agregar boton para añadir ingresos y egresos en Finanzas
+- [ ] Agregar boton para editar ingresos y egresos en Finanzas
+- [ ] Mostrar las categorias en selects
