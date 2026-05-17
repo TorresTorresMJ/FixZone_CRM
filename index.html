@@ -240,58 +240,27 @@
           <div class="kanban" id="support-board" style="grid-template-columns:repeat(3,minmax(280px,1fr))"></div>
         </section>
 
-        <!-- ── Diseño (Marketing) ────────────────────────────────────────── -->
+        <!-- ── Diseño (Marketing / IT) — contenido dinámico por sucursal ──── -->
         <section class="view" id="diseno-view" data-title="Diseño">
           <div class="section-heading">
             <h2>Recursos de diseño</h2>
-            <span class="role-badge role-marketing">Marketing</span>
+            <span id="diseno-brand-badge"></span>
           </div>
 
-          <!-- Herramientas -->
-          <div class="marketing-grid" style="margin-bottom:28px">
-            <a class="marketing-card" href="https://canva.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">🎨</div>
-              <strong>Canva</strong>
-              <p>Diseño de materiales, publicaciones y plantillas de marca</p>
-            </a>
-            <a class="marketing-card" href="https://drive.google.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">📁</div>
-              <strong>Google Drive</strong>
-              <p>Assets, logos, imágenes de productos y archivos de marca</p>
-            </a>
-            <a class="marketing-card" href="https://www.figma.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">✏️</div>
-              <strong>Figma</strong>
-              <p>Prototipos, diseño UI y mockups de campañas</p>
-            </a>
-            <a class="marketing-card" href="https://www.instagram.com/fixzonemx" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">📸</div>
-              <strong>Instagram</strong>
-              <p>Publicaciones, stories y reels de FixZone</p>
-            </a>
-            <a class="marketing-card" href="https://business.facebook.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">📘</div>
-              <strong>Meta Business</strong>
-              <p>Gestión de anuncios y páginas de Facebook e Instagram</p>
-            </a>
-            <a class="marketing-card" href="https://analytics.google.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">📊</div>
-              <strong>Google Analytics</strong>
-              <p>Tráfico web y métricas de conversión</p>
-            </a>
-          </div>
+          <!-- Herramientas — se rellena dinámicamente por renderDiseno() -->
+          <div class="marketing-grid" id="marketing-links-grid" style="margin-bottom:28px"></div>
 
           <!-- Brand tokens -->
           <div class="section-heading"><h2>Paleta de marca</h2></div>
-          <div class="brand-tokens-grid" style="margin-bottom:28px">
-            <div class="token-swatch" style="background:#2f6fff">
-              <span>#2F6FFF</span><small>Primary Blue · Botones, CTAs</small>
+          <div class="brand-tokens-grid" id="brand-tokens-grid" style="margin-bottom:28px">
+            <div class="token-swatch" style="background:var(--fz-primary)">
+              <span id="token-primary-hex">#2F6FFF</span><small>Primary · Botones, CTAs</small>
             </div>
-            <div class="token-swatch" style="background:#4a8dff">
-              <span>#4A8DFF</span><small>Secondary Blue · Gradientes</small>
+            <div class="token-swatch" style="background:var(--fz-secondary)">
+              <span id="token-secondary-hex">#4A8DFF</span><small>Secondary · Gradientes</small>
             </div>
-            <div class="token-swatch" style="background:#1f4fcc">
-              <span>#1F4FCC</span><small>Deep Blue · Sombras, fondo</small>
+            <div class="token-swatch" style="background:var(--fz-deep)">
+              <span id="token-deep-hex">#1F4FCC</span><small>Deep · Sombras, fondo</small>
             </div>
             <div class="token-swatch" style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.12)">
               <span>#0A0A0A</span><small>Base Black · Fondo premium</small>
@@ -307,13 +276,13 @@
             </div>
           </div>
 
-          <!-- Tipografía -->
+          <!-- Tipografía (estática, aplica a ambas marcas) -->
           <div class="section-heading"><h2>Tipografía</h2></div>
           <div class="marketing-grid">
             <div class="marketing-card" style="cursor:default">
               <strong style="font-size:28px;font-family:'Montserrat',sans-serif;font-weight:800;letter-spacing:2px">MONTSERRAT</strong>
               <p>Headings · Bold 700/800 · Mayúsculas</p>
-              <p style="margin-top:8px;font-size:11px;opacity:0.5">WE FIX FAST. YOU RELAX.</p>
+              <p style="margin-top:8px;font-size:11px;opacity:0.5" id="diseno-tagline-sample">WE FIX FAST. YOU RELAX.</p>
             </div>
             <div class="marketing-card" style="cursor:default">
               <strong style="font-size:22px;font-family:'Montserrat',sans-serif;font-weight:400">Montserrat Regular</strong>
@@ -322,7 +291,7 @@
             </div>
             <div class="marketing-card" style="cursor:default">
               <strong style="font-size:18px">Copys clave</strong>
-              <p style="margin-top:8px;line-height:1.8">
+              <p style="margin-top:8px;line-height:1.8" id="diseno-copys">
                 "WE FIX FAST. YOU RELAX."<br>
                 "REPARACIÓN PROFESIONAL"<br>
                 "MICROSOLDADURA EXPERTA"<br>
@@ -332,13 +301,14 @@
           </div>
         </section>
 
-        <!-- ── Automatización (Marketing) ───────────────────────────────── -->
+        <!-- ── Automatización (Marketing / IT) — flujos por sucursal ─────── -->
         <section class="view" id="automatizacion-view" data-title="Automatización">
           <div class="section-heading">
             <h2>Herramientas de automatización</h2>
             <span class="role-badge role-marketing">Marketing</span>
           </div>
 
+          <!-- Herramientas estáticas (aplican a ambas sucursales) -->
           <div class="marketing-grid" style="margin-bottom:28px">
             <a class="marketing-card" href="https://make.com" target="_blank" rel="noopener">
               <div class="marketing-card-icon">⚡</div>
@@ -372,40 +342,9 @@
             </a>
           </div>
 
-          <!-- Flujos sugeridos -->
+          <!-- Flujos sugeridos — se renderizan dinámicamente por sucursal desde renderDiseno() -->
           <div class="section-heading"><h2>Flujos sugeridos</h2></div>
-          <div class="auto-flows-grid">
-            <div class="auto-flow-card">
-              <div class="auto-flow-steps">
-                <span class="auto-step">Ticket → Listo</span>
-                <span class="auto-arrow">→</span>
-                <span class="auto-step">Make / Zapier</span>
-                <span class="auto-arrow">→</span>
-                <span class="auto-step">WhatsApp al cliente</span>
-              </div>
-              <p>Notifica automáticamente cuando el equipo está listo para recoger</p>
-            </div>
-            <div class="auto-flow-card">
-              <div class="auto-flow-steps">
-                <span class="auto-step">Nuevo cliente</span>
-                <span class="auto-arrow">→</span>
-                <span class="auto-step">Mailchimp</span>
-                <span class="auto-arrow">→</span>
-                <span class="auto-step">Email bienvenida</span>
-              </div>
-              <p>Correo automático de bienvenida con promoción para primera visita</p>
-            </div>
-            <div class="auto-flow-card">
-              <div class="auto-flow-steps">
-                <span class="auto-step">Reseña Google</span>
-                <span class="auto-arrow">→</span>
-                <span class="auto-step">Make</span>
-                <span class="auto-arrow">→</span>
-                <span class="auto-step">Slack / WhatsApp</span>
-              </div>
-              <p>Alerta interna cuando hay una nueva reseña en Google Business</p>
-            </div>
-          </div>
+          <div class="auto-flows-grid" id="auto-flows-grid"></div>
         </section>
 
       </main>

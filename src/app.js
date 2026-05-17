@@ -16,7 +16,7 @@ const ROLE_LABELS  = { it: "IT", admin: "Admin", standard: "Estándar", marketin
 
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
-  it:        { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte"], canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  it:        { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   admin:     { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users"],           canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   standard:  { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   marketing: { tabs: ["dashboard","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
@@ -541,6 +541,7 @@ function render() {
   renderReports();
   renderUsers();
   renderSupport();
+  renderDiseno();
   document.querySelector("#record-count").textContent = `${totalRecords()} registros`;
 }
 
@@ -556,8 +557,9 @@ function bySearch(items) {
 function branchTickets()       { return state.tickets.filter(t => t.branch === activeBranchId); }
 function branchProducts()      { return state.products.filter(p => p.branch === activeBranchId); }
 function branchClients()       { return state.clients.filter(c => !c.branch || c.branch === activeBranchId); }
-function branchSupplies()      { return state.supplies.filter(s => !s.branch || s.branch === activeBranchId); }
-function branchTransactions()  { return state.transactions.filter(t => !t.branch || t.branch === activeBranchId); }
+// En modo remoto siempre hay branch asignado; el fallback !s.branch solo aplica en datos locales de demo
+function branchSupplies()      { return state.supplies.filter(s => dataMode === "remote" ? s.branch === activeBranchId : (!s.branch || s.branch === activeBranchId)); }
+function branchTransactions()  { return state.transactions.filter(t => dataMode === "remote" ? t.branch === activeBranchId : (!t.branch || t.branch === activeBranchId)); }
 function sumByType(list, type) { return list.filter(i=>i.type===type).reduce((s,i)=>s+Number(i.amount||0),0); }
 
 function renderMetrics() {
@@ -751,6 +753,72 @@ function supportTaskCard(task) {
   </article>`;
 }
 
+
+
+
+// ── Diseño — contenido dinámico por sucursal ──────────────────────────────────
+function renderDiseno() {
+  const brand = window.getBranchBrand(activeBranchId);
+  const links = brand.marketingLinks || [];
+  const flows = brand.autoFlows || [];
+
+  // Badge de sucursal activa
+  const badge = document.querySelector("#diseno-brand-badge");
+  if (badge) {
+    badge.textContent = `${brand.displayName} · ${brand.locationLabel}`;
+    badge.style.cssText = `background:rgba(var(--fz-primary-rgb),0.18);color:var(--fz-secondary);border:1px solid rgba(var(--fz-primary-rgb),0.3);display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:800`;
+  }
+
+  // Grid de herramientas por sucursal
+  const grid = document.querySelector("#marketing-links-grid");
+  if (grid && links.length) {
+    grid.innerHTML = links.map(l => `
+      <a class="marketing-card" href="${escapeHtml(l.url)}" target="_blank" rel="noopener">
+        <div class="marketing-card-icon">${l.icon}</div>
+        <strong>${escapeHtml(l.name)}</strong>
+        <p>${escapeHtml(l.desc)}</p>
+      </a>`).join("");
+  }
+
+  // Flujos sugeridos por sucursal
+  const flowGrid = document.querySelector("#auto-flows-grid");
+  if (flowGrid && flows.length) {
+    flowGrid.innerHTML = flows.map(f => `
+      <div class="auto-flow-card">
+        <div class="auto-flow-steps">
+          ${f.steps.map((s, i) => i < f.steps.length - 1
+            ? `<span class="auto-step">${escapeHtml(s)}</span><span class="auto-arrow">→</span>`
+            : `<span class="auto-step">${escapeHtml(s)}</span>`
+          ).join("")}
+        </div>
+        <p>${escapeHtml(f.desc)}</p>
+      </div>`).join("");
+  }
+
+  // Actualizar swatches de color con valores de la sucursal activa
+  const primaryHex = brand.colors["--fz-primary"];
+  const secondaryHex = brand.colors["--fz-secondary"];
+  const deepHex = brand.colors["--fz-deep"];
+  const tokenPrimary = document.querySelector("#token-primary-hex");
+  const tokenSecondary = document.querySelector("#token-secondary-hex");
+  const tokenDeep = document.querySelector("#token-deep-hex");
+  if (tokenPrimary) { tokenPrimary.textContent = primaryHex?.toUpperCase(); tokenPrimary.closest(".token-swatch").style.background = primaryHex; }
+  if (tokenSecondary) { tokenSecondary.textContent = secondaryHex?.toUpperCase(); tokenSecondary.closest(".token-swatch").style.background = secondaryHex; }
+  if (tokenDeep) { tokenDeep.textContent = deepHex?.toUpperCase(); tokenDeep.closest(".token-swatch").style.background = deepHex; }
+
+  // Actualizar tagline de muestra tipográfica
+  const taglineSample = document.querySelector("#diseno-tagline-sample");
+  if (taglineSample) taglineSample.textContent = brand.tagline;
+
+  // Actualizar copys clave por sucursal
+  const copysEl = document.querySelector("#diseno-copys");
+  if (copysEl) {
+    const copys = brand.displayName === "REFAXZONE"
+      ? ['"REFACCIONES AL INSTANTE."', '"REPARACIÓN PROFESIONAL"', '"MICROSOLDADURA EXPERTA"', '"TU EQUIPO EN BUENAS MANOS"']
+      : ['"WE FIX FAST. YOU RELAX."', '"REPARACIÓN PROFESIONAL"', '"MICROSOLDADURA EXPERTA"', '"TU EQUIPO EN BUENAS MANOS"'];
+    copysEl.innerHTML = copys.join("<br>");
+  }
+}
 
 // ── Edit: Client ──────────────────────────────────────────────────────────────
 function openEditClient(clientId) {
