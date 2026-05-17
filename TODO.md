@@ -10,6 +10,7 @@
 - [x] Definir flujo real de reparacion: Cotizacion, Recibido, En reparacion, Listo, Entregado, Garantia.
 - [ ] Definir datos obligatorios de cliente: nombre, telefono, email, direccion, notas.
 - [ ] Definir datos obligatorios de equipo: marca, modelo, IMEI/serie, color, accesorios recibidos, estado fisico y foto de estado en que ingresa y egresa. 
+- [ ] Cambiar a RefacZone los nombres de FixZone cuando la sucursal sea puebla
 
 ## Fase 2: Base de datos y seguridad
 

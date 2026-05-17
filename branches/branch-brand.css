@@ -1,0 +1,195 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   FixZone / RefaxZone — branch-brand.css
+   Sistema de variables dinámicas por sucursal.
+   Agrega este archivo en index.html DESPUÉS de app.css.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ── Variables base (Puerto Vallarta · azul) ─────────────────────────────── */
+:root {
+  --fz-primary:          #2f6fff;
+  --fz-primary-rgb:      47, 111, 255;
+  --fz-secondary:        #4a8dff;
+  --fz-deep:             #1f4fcc;
+  --fz-accent:           #2f6fff;
+  --fz-glow:             0 0 32px rgba(47, 111, 255, 0.42);
+  --fz-shadow:           0 18px 48px rgba(31, 79, 204, 0.28);
+  --fz-nav-hover-bg:     rgba(47, 111, 255, 0.16);
+  --fz-nav-icon-color:   #4a8dff;
+  --fz-nav-icon-border:  rgba(74, 141, 255, 0.28);
+  --fz-btn-gradient:     linear-gradient(135deg, #2f6fff, #4a8dff);
+  --fz-tab-active-bg:    linear-gradient(135deg, #2f6fff, #4a8dff);
+  --fz-metric-accent:    #4a8dff;
+  --fz-topbar-glow:      rgba(47, 111, 255, 0.18);
+
+  /* Transición global para cambios de tema */
+  --fz-brand-transition: 0.35s ease;
+}
+
+/* ── Transiciones suaves al cambiar marca ────────────────────────────────── */
+.sidebar,
+.workspace,
+.primary-action,
+.branch-tab.is-active,
+.nav-item.is-active,
+.nav-item:hover,
+.nav-item span,
+.brand img,
+.topbar .eyebrow,
+.brand strong {
+  transition:
+    background var(--fz-brand-transition),
+    color var(--fz-brand-transition),
+    border-color var(--fz-brand-transition),
+    box-shadow var(--fz-brand-transition),
+    filter var(--fz-brand-transition);
+}
+
+/* ── Elementos que usan --fz-primary ─────────────────────────────────────── */
+.primary-action {
+  background: var(--fz-btn-gradient) !important;
+  box-shadow: var(--fz-shadow) !important;
+}
+
+.branch-tab.is-active {
+  background: var(--fz-tab-active-bg) !important;
+  box-shadow: var(--fz-shadow) !important;
+}
+
+.nav-item:hover,
+.nav-item.is-active {
+  background: var(--fz-nav-hover-bg) !important;
+}
+
+.nav-item span {
+  border-color: var(--fz-nav-icon-border) !important;
+  color: var(--fz-nav-icon-color) !important;
+}
+
+.brand img {
+  box-shadow: var(--fz-glow) !important;
+}
+
+.login-brand img {
+  box-shadow: var(--fz-glow) !important;
+}
+
+.tracking-code {
+  color: var(--fz-secondary) !important;
+}
+
+.status {
+  background: rgba(var(--fz-primary-rgb), 0.15) !important;
+  color: color-mix(in srgb, var(--fz-secondary) 60%, #fff) !important;
+}
+
+.kanban-column h3 span {
+  background: rgba(var(--fz-primary-rgb), 0.15) !important;
+  color: var(--fz-secondary) !important;
+}
+
+.help-button {
+  background: rgba(var(--fz-primary-rgb), 0.2) !important;
+  color: var(--fz-secondary) !important;
+}
+.help-button:hover {
+  background: rgba(var(--fz-primary-rgb), 0.4) !important;
+}
+
+.auto-step {
+  background: rgba(var(--fz-primary-rgb), 0.15) !important;
+  color: color-mix(in srgb, var(--fz-secondary) 70%, #fff) !important;
+}
+
+.marketing-card:hover {
+  background: rgba(var(--fz-primary-rgb), 0.1) !important;
+  border-color: rgba(var(--fz-primary-rgb), 0.4) !important;
+}
+
+.priority-chip input:checked + span {
+  background: rgba(var(--fz-primary-rgb), 0.2) !important;
+  border-color: var(--fz-primary) !important;
+}
+
+/* ── Badge de ubicación en el topbar ─────────────────────────────────────── */
+.branch-location-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  border: 1px solid rgba(var(--fz-primary-rgb), 0.4);
+  background: rgba(var(--fz-primary-rgb), 0.12);
+  color: var(--fz-secondary);
+  transition: background var(--fz-brand-transition), border-color var(--fz-brand-transition), color var(--fz-brand-transition);
+}
+
+/* ── Indicador de sucursal activa en sidebar footer ─────────────────────── */
+.sidebar-footer .branch-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fz-secondary);
+}
+
+.sidebar-footer .branch-indicator::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fz-secondary);
+  box-shadow: 0 0 8px var(--fz-primary);
+  flex-shrink: 0;
+}
+
+/* ── Animación de entrada al cambiar de sucursal ─────────────────────────── */
+@keyframes brand-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.brand strong,
+.brand span,
+.topbar .eyebrow {
+  animation: brand-fade-in 0.3s ease both;
+}
+
+/* ── RefaxZone: estilos específicos de la clase de marca ─────────────────── */
+
+/* El sidebar footer muestra la sucursal activa */
+body.brand-refaxzone .sidebar-footer {
+  border-color: rgba(232, 93, 4, 0.18);
+}
+
+body.brand-refaxzone .stock-bar span {
+  background: linear-gradient(90deg, #e85d04, #f48c06) !important;
+}
+
+body.brand-refaxzone .type-income {
+  background: rgba(44, 185, 120, 0.16);
+  color: #7af0b1;
+}
+
+/* ── Login screen usa el fondo de la marca ───────────────────────────────── */
+#login-screen {
+  transition: background var(--fz-brand-transition);
+}
+
+/* ── Scroll suave en la barra de sucursales ──────────────────────────────── */
+.branch-tabs {
+  scroll-behavior: smooth;
+}
+
+/* ── Workspace: animación suave al cambiar sucursal ─────────────────────── */
+.workspace {
+  transition: background 0.4s ease;
+}
+.sidebar {
+  transition: background 0.4s ease;
+}

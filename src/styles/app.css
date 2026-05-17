@@ -5,7 +5,7 @@
 * { box-sizing: border-box; }
 
 body {
-  margin: 0;
+  margin: 12px;
   min-height: 100vh;
   background: var(--fz-black-base);
   color: var(--fz-white);
@@ -690,334 +690,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   .brand-tokens-grid { grid-template-columns: 1fr 1fr; }
 }
 
-/* ─────────────────────────────────────────────────────────
-   THERMAL RECEIPT — FIXZONE
-───────────────────────────────────────────────────────── */
-@media print {
-
-  @page {
-    size: 80mm auto;
-    margin: 0;
-  }
-
-  html,
-  body {
-    width: 80mm;
-    margin: 0;
-    padding: 0;
-    background: #fff !important;
-    color: #000 !important;
-    font-family: "Arial", sans-serif;
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
-  }
-
-  body * {
-    visibility: hidden;
-  }
-
-  .print-receipt,
-  .print-receipt * {
-    visibility: visible;
-  }
-
-  .print-receipt {
-    display: flex !important;
-    justify-content: center;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    color: #000;
-    font-size: 11px;
-    line-height: 1.35;
-  }
-
-  .receipt-page {
-    width: 76mm;
-    margin: 0 auto;
-    border: 0;
-    border-radius: 0;
-    background: #fff;
-    box-shadow: none;
-  }
-
-  /* HEADER */
-  .receipt-hero{
-    padding:0 0 1.5mm 0 !important;
-    margin:0;
-  }
-
-  .receipt-brand-home{
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    margin:0;
-    padding:0;
-  }
-  
-  .thermal-logo{
-    width:54mm;
-    max-width:100%;
-    display:block;
-    object-fit:contain;
-    
-    image-rendering:crisp-edges;
-    image-rendering:-webkit-optimize-contrast;
-  }
-
-  .receipt-title {
-    margin-top: 1mm;
-  }
-
-  .receipt-title span {
-    margin:0;
-    padding:0;
-    line-height: 1.1;
-  }
-
-  .receipt-title h1 {
-    margin: 1mm 0 0 0;
-    line-height:1;
-  }
-
-  .receipt-title p {
-    margin: 1mm;
-    line-height:1;
-  }
-
-  /* DIVIDER */
-  .receipt-divider {
-    margin: 3mm 0;
-    border-top: 1px dashed #000;
-  }
-
-  /* INFO STRIP */
-  .receipt-strip {
-    display: block;
-    border: 0;
-    background: transparent;
-  }
-
-  .receipt-strip div {
-    padding: 1mm 0;
-    border: 0;
-  }
-
-  .receipt-strip span {
-    display: inline-block;
-    width: 24mm;
-    font-size: 9px;
-    font-weight: 700;
-    color: #000;
-    text-transform: uppercase;
-  }
-
-  .receipt-strip strong {
-    font-size: 10px;
-    font-weight: 700;
-    color: #000;
-  }
-
-  /* BOXES */
-  .receipt-grid {
-    display: block;
-    padding: 0;
-    margin-top: 3mm;
-  }
-
-  .receipt-box {
-    min-height: auto;
-    border: 0;
-    padding: 0;
-    margin-bottom: 3mm;
-    background: transparent;
-  }
-
-  .receipt-box h2 {
-    margin: 0 0 1mm;
-    font-size: 10px;
-    color: #000;
-    font-weight: 800;
-  }
-
-  .receipt-box strong {
-    font-size: 11px;
-    margin-bottom: 1mm;
-    color: #000;
-  }
-
-  .receipt-box span {
-    font-size: 10px;
-    color: #000;
-    margin-top: 1mm;
-  }
-
-  /* TABLE */
-  .receipt-table {
-    width: 100%;
-    margin: 3mm 0;
-    border-collapse: collapse;
-    border: 0;
-  }
-
-  .receipt-table thead {
-    border-top: 1px dashed #000;
-    border-bottom: 1px dashed #000;
-  }
-
-  .receipt-table th {
-    padding: 2mm 0;
-    background: transparent;
-    color: #000;
-    font-size: 9px;
-    font-weight: 800;
-  }
-
-  .receipt-table td {
-    padding: 2mm 0;
-    border-bottom: 1px dotted #aaa;
-    color: #000;
-    font-size: 10px;
-    vertical-align: top;
-  }
-
-  .receipt-table th:last-child,
-  .receipt-table td:last-child {
-    text-align: right;
-    width: 20mm;
-  }
-
-  /* TOTALS */
-  .receipt-summary {
-    display: block;
-    padding: 0;
-    margin-top: 3mm;
-  }
-
-  .receipt-summary div {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5mm 0;
-    background: transparent;
-    border-radius: 0;
-  }
-
-  .receipt-summary span {
-    font-size: 10px;
-    font-weight: 700;
-    color: #000;
-  }
-
-  .receipt-summary strong {
-    font-size: 14px;
-    color: #000;
-  }
-
-  /* FOOTER */
-  .receipt-footer-grid {
-    display: block;
-    margin: 4mm 0 0;
-    padding-top: 3mm;
-    border-top: 1px dashed #000;
-  }
-
-  .receipt-note {
-    margin: 0 0 4mm;
-    text-align: center;
-    font-size: 9px;
-    color: #000;
-    line-height: 1.4;
-  }
-
-  /* QR */
-  .receipt-qr {
-    display: block;
-    border: 0;
-    background: transparent;
-    text-align: center;
-    padding: 0;
-    margin-bottom: 5mm;
-  }
-
-  .receipt-qr img {
-    width: 24mm;
-    height: 24mm;
-    margin-bottom: 1mm;
-  }
-
-  .receipt-qr strong {
-    display: block;
-    font-size: 9px;
-    margin-bottom: 1mm;
-    color: #000;
-  }
-
-  .receipt-qr span {
-    display: block;
-    font-size: 7px;
-    line-height: 1.2;
-    word-break: break-word;
-    color: #000;
-  }
-
-  /* SIGN */
-  .receipt-signature {
-    margin-top: 6mm;
-    text-align: center;
-  }
-
-  .receipt-signature span {
-    display: block;
-    height: 10mm;
-    border-bottom: 1px solid #000;
-    margin-bottom: 1mm;
-  }
-
-  .receipt-signature strong {
-    font-size: 9px;
-    color: #000;
-    text-transform: uppercase;
-  }
-
-  .receipt-thanks{
-  margin-top:4mm;
-  text-align:center;
-  font-size:10px;
-  font-weight:700;
-}
-
-.receipt-sign-area{
-  margin-top:8mm;
-  text-align:center;
-  page-break-inside:avoid;
-  break-inside:avoid;
-}
-
-.receipt-sign-line{
-  width:100%;
-  height:14mm;
-  border-bottom:1px solid #000;
-  margin-bottom:2mm;
-}
-
-.receipt-sign-area strong{
-  font-size:10px;
-  font-weight:700;
-}
-
-  /* HIDE APP */
-  .app-shell,
-  .modal,
-  .topbar,
-  .sidebar,
-  .workspace,
-  #login-screen,
-  #change-password-screen {
-    display: none !important;
-  }
-
-  /* ── Help button ─────────────────────────────────────────────────────────── */
+/* ── Help button ─────────────────────────────────────────────────────────── */
 .help-button {
   display: grid;
   place-items: center;
@@ -1034,7 +707,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   flex-shrink: 0;
 }
 .help-button:hover { background: rgba(47,111,255,0.4); transform: scale(1.1); }
- 
+
 /* ── Help modal ──────────────────────────────────────────────────────────── */
 .help-modal {
   width: min(520px, calc(100vw - 28px));
@@ -1045,9 +718,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   padding: 28px;
 }
 .help-modal::backdrop { background: rgba(0,0,0,0.72); }
- 
+
 .help-form-body { display: grid; gap: 16px; margin: 22px 0; }
- 
 .help-form-body .field textarea {
   width: 100%;
   min-height: 100px;
@@ -1061,15 +733,15 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   resize: vertical;
 }
 .help-form-body .field textarea::placeholder { color: var(--fz-gray-light); }
- 
+
 .help-priority-row { display: grid; gap: 10px; }
 .help-priority-row > label { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
- 
+
 .priority-options { display: flex; gap: 8px; flex-wrap: wrap; }
- 
+
 .priority-chip { display: flex; align-items: center; cursor: pointer; }
 .priority-chip input[type="radio"] { display: none; }
- 
+
 .priority-chip span {
   display: inline-flex;
   align-items: center;
@@ -1093,7 +765,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   background: rgba(255,83,83,0.18);
   border-color: rgba(255,83,83,0.6);
 }
- 
+
 /* ── Toast notification ──────────────────────────────────────────────────── */
 .help-toast {
   position: fixed;
@@ -1115,4 +787,389 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   from { opacity:0; transform:translateY(12px); }
   to   { opacity:1; transform:translateY(0); }
 }
+
+/* ─────────────────────────────────────────────────────────
+   THERMAL RECEIPT — FIXZONE
+   80mm roll · Monochrome · Thermal printer optimized
+───────────────────────────────────────────────────────── */
+
+/* Hide receipt in screen */
+.print-receipt { display: none; }
+
+@media print {
+
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  /* ── Hide everything, show only the receipt ───────────── */
+  body > *        { display: none !important; }
+  body > #print-receipt { display: block !important; }
+
+  html, body {
+    width: 80mm;
+    margin: 0;
+    padding: 0;
+    background: #fff !important;
+    color: #000 !important;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 8.5pt;
+    line-height: 1.5;              /* FIX 3: was 1.4 — more breathing room */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    -moz-print-color-adjust: exact;
+  }
+
+  /* FIX 1: position:static so the page height = content height, no blank tail */
+  #print-receipt {
+    display: block !important;
+    position: static !important;
+    width: 80mm;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #000;
+    overflow: hidden;
+  }
+
+  /* ── Receipt wrapper ──────────────────────────────────── */
+  .rct {
+    width: 80mm;
+    margin: 0;
+    padding: 0 3mm 2mm;            /* sides 3mm · bottom 2mm only */
+    font-family: "Courier New", Courier, monospace;
+    font-size: 8pt;
+    color: #000;
+    line-height: 1.5;              /* FIX 3: increased line spacing */
+    box-sizing: border-box;
+  }
+
+  /* ── Logo — FIX 2: top padding before logo ────────────── */
+  .rct-logo {
+    text-align: center;
+    padding: 0;
+    margin: 3mm 0 2mm;             /* 3mm top breathing room before logo */
+  }
+
+  .rct-logo img {
+    width: 52mm;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    filter: none;
+  }
+
+  /* ── Dash divider — guaranteed full-width CSS border ─────
+   * Replaces the old repeated-character approach which was
+   * unreliable across font sizes and print drivers.
+   * The <p class="rct-dash"> elements still exist in the HTML
+   * but their text is hidden; only the border-top renders.
+   */
+  .rct-dash {
+    display: block;
+    width: 100%;
+    height: 0;
+    border: none;
+    border-top: 1px dashed #000;
+    margin: 1.5mm 0;               /* FIX 3: was 0.3mm — more space around dividers */
+    padding: 0;
+    font-size: 0;
+    line-height: 0;
+    overflow: hidden;
+    color: transparent;
+  }
+
+  /* ── Title ────────────────────────────────────────────── */
+  .rct-title {
+    font-size: 9pt;
+    font-weight: 700;
+    text-align: center;
+    margin: 1mm 0;                 /* FIX 3: was 0.3mm */
+    letter-spacing: 1.5px;
+  }
+
+  /* ── Labels & values — FIX 3: more spacing ───────────── */
+  .rct-label {
+    font-weight: 700;
+    font-size: 8pt;
+    margin: 2mm 0 0.5mm;          /* was: 0.8mm 0 0 */
+    padding: 0;
+  }
+
+  .rct-value {
+    font-size: 8pt;
+    margin: 0 0 0.8mm;            /* was: 0 0 0.3mm */
+    padding: 0;
+  }
+
+  .rct-row {
+    font-size: 8pt;
+    margin: 0.8mm 0;              /* was: 0.3mm */
+    padding: 0;
+  }
+
+  .rct-center {
+    text-align: center;
+  }
+
+  /* ── Service table ────────────────────────────────────── */
+  .rct-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5mm 0;              /* was: 1mm */
+  }
+
+  .rct-table thead tr {
+    background: #000;
+    color: #fff;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .rct-table th {
+    padding: 1.5mm 2mm;           /* was: 1mm 2mm */
+    font-size: 7.5pt;
+    font-weight: 800;
+    text-align: left;
+    color: #fff;
+    background: #000;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .rct-table th:last-child,
+  .rct-table td:last-child {
+    text-align: right;
+    width: 20mm;
+  }
+
+  .rct-table td {
+    padding: 1.5mm 2mm;           /* was: 1mm 2mm */
+    font-size: 8pt;
+    color: #000;
+    vertical-align: top;
+    border-bottom: 1px dotted #666;
+  }
+
+  /* ── Totals block ─────────────────────────────────────── */
+  .rct-totals {
+    margin: 1mm 0;                /* was: 0.5mm */
+  }
+
+  .rct-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.8mm 0;             /* was: 0.5mm */
+    font-size: 8pt;
+  }
+
+  .rct-total-main {
+    font-size: 10pt;
+    font-weight: 800;
+    padding: 1mm 0;               /* was: 0.8mm */
+  }
+
+  .rct-total-main span,
+  .rct-total-main strong {
+    font-size: 10pt;
+    font-weight: 800;
+  }
+
+  /* ── QR ───────────────────────────────────────────────── */
+  .rct-qr {
+    text-align: center;
+    margin: 2mm 0;
+  }
+
+  .rct-qr p {
+    font-size: 8pt;
+    font-weight: 700;
+    margin: 0 0 1.5mm;
+    letter-spacing: 1px;
+  }
+
+  .rct-qr img {
+    width: 28mm;
+    height: 28mm;
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ── Policies ─────────────────────────────────────────── */
+  .rct-policy {
+    font-size: 7pt;
+    margin: 0.8mm 0;              /* was: 0.3mm — more space between policy lines */
+    padding: 0;
+    line-height: 1.5;             /* was: 1.35 */
+  }
+
+  /* ── Thanks ───────────────────────────────────────────── */
+  .rct-thanks {
+    text-align: center;
+    font-weight: 700;
+    font-size: 8pt;
+    margin: 1.5mm 0;              /* was: 1mm */
+    letter-spacing: 1px;
+  }
+
+  /* ── Signature — FIX 1: tight bottom, no trailing space ── */
+  .rct-sign {
+    text-align: center;
+    margin: 2mm 0 0;              /* was: 2mm 0 3mm — bottom set to 0 */
+    page-break-inside: avoid;
+    page-break-after: avoid;
+  }
+
+  .rct-sign-line {
+    width: 100%;
+    height: 10mm;                 /* was: 12mm */
+    border-bottom: 1px solid #000;
+    margin-bottom: 1mm;
+    display: block;
+  }
+
+  .rct-sign p {
+    font-size: 8pt;
+    font-weight: 700;
+    margin: 0;
+    padding-bottom: 1mm;          /* tiny clearance at very end of roll */
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* Suppress stray margins inside receipt */
+  .rct p { margin: 0; }
 }
+/* ══════════════════════════════════════════════════════════════════════════════
+   SISTEMA DE BRANDING POR SUCURSAL
+   Variables dinámicas inyectadas por applyBranchBrand() en app.js.
+   Puerto Vallarta → azul #2F6FFF · Puebla (RefaxZone) → naranja #E85D04
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Variables base (se sobreescriben por JS al cambiar sucursal) ─────────── */
+:root {
+  --fz-primary:         #2f6fff;
+  --fz-primary-rgb:     47, 111, 255;
+  --fz-secondary:       #4a8dff;
+  --fz-deep:            #1f4fcc;
+  --fz-glow:            0 0 32px rgba(47,111,255,0.42);
+  --fz-shadow:          0 18px 48px rgba(31,79,204,0.28);
+  --fz-nav-hover-bg:    rgba(47,111,255,0.16);
+  --fz-nav-icon-color:  #4a8dff;
+  --fz-nav-icon-border: rgba(74,141,255,0.28);
+  --fz-btn-gradient:    linear-gradient(135deg,#2f6fff,#4a8dff);
+  --fz-tab-active-bg:   linear-gradient(135deg,#2f6fff,#4a8dff);
+  --fz-topbar-glow:     rgba(47,111,255,0.18);
+}
+
+/* ── Transiciones suaves al cambiar de sucursal ──────────────────────────── */
+.sidebar,
+.workspace {
+  transition: background 0.4s ease;
+}
+
+.primary-action,
+.branch-tab.is-active,
+.nav-item span,
+.brand img,
+.login-brand img {
+  transition:
+    background 0.35s ease,
+    box-shadow 0.35s ease,
+    border-color 0.35s ease;
+}
+
+.topbar .eyebrow,
+.brand strong {
+  transition: color 0.25s ease;
+}
+
+/* ── Elementos que consumen las variables de color ───────────────────────── */
+.primary-action {
+  background: var(--fz-btn-gradient) !important;
+  box-shadow: var(--fz-shadow) !important;
+}
+
+.branch-tab.is-active {
+  background: var(--fz-tab-active-bg) !important;
+  box-shadow: var(--fz-shadow) !important;
+}
+
+.nav-item:hover,
+.nav-item.is-active {
+  background: var(--fz-nav-hover-bg) !important;
+}
+
+.nav-item span {
+  border-color: var(--fz-nav-icon-border) !important;
+  color: var(--fz-nav-icon-color) !important;
+}
+
+.brand img,
+.login-brand img {
+  box-shadow: var(--fz-glow) !important;
+}
+
+.tracking-code {
+  color: var(--fz-secondary) !important;
+}
+
+.kanban-column h3 span {
+  background: rgba(var(--fz-primary-rgb),0.15) !important;
+  color: var(--fz-secondary) !important;
+}
+
+.help-button {
+  background: rgba(var(--fz-primary-rgb),0.2) !important;
+  color: var(--fz-secondary) !important;
+}
+.help-button:hover {
+  background: rgba(var(--fz-primary-rgb),0.4) !important;
+}
+
+.auto-step {
+  background: rgba(var(--fz-primary-rgb),0.15) !important;
+  color: var(--fz-secondary) !important;
+}
+
+.marketing-card:hover {
+  background: rgba(var(--fz-primary-rgb),0.1) !important;
+  border-color: rgba(var(--fz-primary-rgb),0.4) !important;
+}
+
+.priority-chip input:checked + span {
+  background: rgba(var(--fz-primary-rgb),0.2) !important;
+  border-color: var(--fz-primary) !important;
+}
+
+/* ── Indicador de sucursal activa en sidebar footer ─────────────────────── */
+.branch-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fz-secondary);
+  transition: color 0.35s ease;
+}
+.branch-indicator::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fz-secondary);
+  box-shadow: 0 0 8px var(--fz-primary);
+  flex-shrink: 0;
+  transition: background 0.35s ease, box-shadow 0.35s ease;
+}
+
+/* ── Animación de entrada del nombre de marca ────────────────────────────── */
+@keyframes brand-swap {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.brand strong { animation: brand-swap 0.3s ease both; }
+.topbar .eyebrow { animation: brand-swap 0.3s ease 0.05s both; }

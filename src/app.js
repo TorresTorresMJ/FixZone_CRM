@@ -258,6 +258,8 @@ async function resolveCurrentEmployee() {
 // ── Login screen ──────────────────────────────────────────────────────────────
 function showLoginScreen(errorMsg = "") {
   document.querySelector(".app-shell").style.display = "none";
+  const brand = window.getBranchBrand(activeBranchId);
+  applyBranchBrand(activeBranchId);
   let loginEl = document.querySelector("#login-screen");
   if (!loginEl) {
     loginEl = document.createElement("div");
@@ -265,12 +267,14 @@ function showLoginScreen(errorMsg = "") {
     document.body.appendChild(loginEl);
   }
   loginEl.style.display = "flex";
+  loginEl.style.background = brand.loginBg;
   loginEl.innerHTML = `
     <div class="login-card">
       <div class="login-brand">
-        <img src="./assets/brand/fixzone-logo.png" alt="FixZone" onerror="this.style.display='none'" />
-        <h1>FIXZONE</h1>
-        <p>CRM OPERATIVO</p>
+        <img src="${brand.logoSrc}" alt="${brand.displayName}"
+          onerror="this.src='${brand.logoFallback || brand.logoSrc}';this.onerror=null" />
+        <h1>${brand.displayName}</h1>
+        <p>${brand.crmLabel}</p>
       </div>
       <form id="login-form" class="login-form">
         <div class="field">
@@ -284,7 +288,7 @@ function showLoginScreen(errorMsg = "") {
         ${errorMsg ? `<p class="login-error">${escapeHtml(errorMsg)}</p>` : ""}
         <button class="primary-action login-btn" type="submit">Iniciar sesión</button>
       </form>
-      <p class="login-footer">Acceso restringido · Solo empleados FixZone</p>
+      <p class="login-footer">${brand.tagline} · Solo empleados</p>
     </div>
   `;
   document.querySelector("#login-form").addEventListener("submit", handleLogin);
@@ -320,11 +324,14 @@ function showChangePasswordScreen() {
     el.id = "change-password-screen";
     document.body.appendChild(el);
   }
+  const brand = window.getBranchBrand(activeBranchId);
   el.style.display = "flex";
+  el.style.background = brand.loginBg;
   el.innerHTML = `
     <div class="login-card">
       <div class="login-brand">
-        <img src="./assets/brand/fixzone-logo.png" alt="FixZone" onerror="this.style.display='none'" />
+        <img src="${brand.logoSrc}" alt="${brand.displayName}"
+          onerror="this.src='${brand.logoFallback || brand.logoSrc}';this.onerror=null" />
         <h1>CAMBIO DE CONTRASEÑA</h1>
         <p>Debes establecer una contraseña nueva antes de continuar.</p>
       </div>
@@ -381,6 +388,7 @@ function showApp() {
   if (changePwEl) changePwEl.style.display = "none";
   const shell = document.querySelector(".app-shell");
   shell.style.display = "grid";
+  applyBranchBrand(activeBranchId);
   applyRolePermissions();
   updateAuthBar();
 }
@@ -1476,6 +1484,7 @@ function setActiveBranch(name) {
   document.querySelectorAll(".branch-tab").forEach(btn => {
     btn.classList.toggle("is-active", btn.textContent.trim()===name);
   });
+  applyBranchBrand(name);
   render();
 }
 window.setActiveBranch = setActiveBranch;
@@ -1485,149 +1494,107 @@ window.openTransactionForm = openTransactionForm;
 // PRINT / EXPORT
 // ──────────────────────────────────────────────────────────────────────────────
 function printTicket(ticket) {
-  const client      = state.clients.find(c=>c.name.toLowerCase()===ticket.client.toLowerCase());
-  const repairAmt   = Number(ticket.repairAmount??ticket.total??0);
-  const paidAmt     = Number(ticket.paidAmount??0);
-  const paid        = ticket.paymentStatus==="Pagado";
-  const paidLabel   = paid ? money.format(paidAmt||repairAmt) : escapeHtml(ticket.paymentStatus);
-  const qrTarget    = receiptQrTarget();
-  const qrImage     = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=12&data=${encodeURIComponent(qrTarget)}`;
+  const client    = state.clients.find(c => c.name.toLowerCase() === ticket.client.toLowerCase());
+  const repairAmt = Number(ticket.repairAmount ?? ticket.total ?? 0);
+  const paidAmt   = Number(ticket.paidAmount ?? 0);
+  const received  = Number(ticket.amountReceived ?? paidAmt ?? 0);
+  const change    = Number(ticket.changeAmount ?? 0);
+  const now       = new Date();
+  const timeStr   = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+  const qrTarget  = receiptQrTarget();
+  const qrImage   = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(qrTarget)}`;
+  const D         = "----------------------------------------";
+
+  // Leer marca desde la sucursal del ticket (no necesariamente la activa en UI)
+  const ticketBranch     = ticket.branch || activeBranchId;
+  const brand            = window.getBranchBrand(ticketBranch);
+  const logoMonoSrc      = brand.logoMonoSrc || brand.logoSrc;
+  const logoMonoFallback = brand.logoMonoFallback || brand.logoFallback || brand.logoSrc;
+  const receiptHeader    = brand.receiptHeader || brand.displayName;
 
   document.querySelector("#print-receipt").innerHTML = `
-    <article class="receipt-page">
-    
-      <header class="receipt-hero">
-        <div class="receipt-brand-home">
-          <img
-            src="./assets/brand/fixzone-monocromatico.png"
-            alt="FixZone"
-            class="thermal-logo"
-          />
-        </div>
-        
-        <div class="receipt-title">
-          <span>RECIBO DE SERVICIO</span>
-          <h1>${escapeHtml(ticket.tracking || ticket.id.toUpperCase())}</h1>
-          <p>${
-            escapeHtml(ticket.createdAt || dateStamp())
-          }</p>
-        </div>
-      </header>
-      
-      <div class="receipt-divider"></div>
-      
-      <section class="receipt-strip">
-        <div>
-          <span>Sucursal</span>
-          <strong>${escapeHtml(ticket.branch || "FixZone")}</strong>
-        </div>
-        
-        <div>
-          <span>Estado</span>
-          <strong>${escapeHtml(ticket.status)}</strong>
-        </div>
-      </section>
-      
-      <div class="receipt-grid">
-        
-        <section class="receipt-box">
-          <h2>Cliente</h2>
-          
-          <strong>${escapeHtml(ticket.client)}</strong>
-          
-          <span>${escapeHtml(client?.phone || "Telefono no registrado")}</span>
-          
-          <span>${escapeHtml(client?.email || "Email no registrado")}</span>
-        </section>
-        
-        <section class="receipt-box">
-          <h2>Equipo</h2>
-          
-          <strong>${escapeHtml(ticket.productName || ticket.device)}</strong>
-          
-          <span>Prioridad: ${escapeHtml(ticket.priority || "Normal")}</span>
-        </section>
-        
-        <section class="receipt-box">
-          <h2>Falla reportada</h2>
-          
-          <span>${escapeHtml(ticket.issue || "Sin especificar")}</span>
-        </section>
-        
-      </div>
-      
-      <table class="receipt-table">
-        <thead>
-          <tr>
-            <th>Descripción</th>
-            <th>Importe</th>
-          </tr>
-        </thead>
-        
-        <tbody>
-          <tr>
-            <td>${escapeHtml(ticket.issue)}</td>
-            <td>${money.format(repairAmt)}</td>
-          </tr>
-        </tbody>
-      </table>
-      
-      <section class="receipt-summary">
-        
-        <div>
-          <span>Total</span>
-          <strong>${money.format(repairAmt)}</strong>
-        </div>
-        
-        <div>
-          <span>Método de pago</span>
-          <strong>${escapeHtml(ticket.paymentMethod || "Efectivo")}</strong>
-        </div>
-        
-        <div>
-          <span>Pago recibido</span>
-          <strong>${money.format(Number(ticket.amountReceived || 0))}</strong>
-        </div>
-        
-        <div>
-          <span>Cambio</span>
-          <strong>${money.format(Number(ticket.changeAmount || 0))}</strong>
-        </div>
-      
-      </section>
-      
-      <section class="receipt-footer-grid">
-        <div class="receipt-qr">
-          <img src="${qrImage}" alt="QR" />
-          <strong>Escanea para seguimiento</strong>
-        </div>
-        
-        <p class="receipt-note">
-          <strong>POLÍTICAS DE GARANTÍA</strong>
-          <br><br>
+<div class="rct">
 
-          • 30 días de garantía en mano de obra.
-          <br>
+  <div class="rct-logo">
+    <img src="${logoMonoSrc}" alt="${brand.displayName}"
+      onerror="this.src='${logoMonoFallback}';this.onerror=null" />
+  </div>
 
-          • La garantía no aplica por golpes,
-          humedad, mal uso o intervención de terceros.
-          <br>
+  <p class="rct-dash">${D}</p>
+  <p class="rct-center rct-title">RECIBO DE SERVICIO</p>
+  <p class="rct-dash">${D}</p>
 
-          • Conserve este recibo para cualquier aclaración.
-          </p>
-        
-      </section>
-      
-      <p class="receipt-thanks">
-        ★ Gracias por confiar en FixZone ★
-      </p>
-      
-      <div class="receipt-sign-area">
-        <div class="receipt-sign-line"></div>
-        <strong>FIRMA DE RECIBIDO</strong>
-      </div>
-    
-  </article>`;
+  <p class="rct-row"><strong>FOLIO:</strong> <span>${escapeHtml(ticket.tracking || ticket.id.toUpperCase())}</span> &nbsp;&nbsp; <strong>FECHA:</strong> <span>${escapeHtml(ticket.createdAt || dateStamp())}</span></p>
+  <p class="rct-row"><strong>HORA:</strong> <span>${timeStr}</span></p>
+
+  <p class="rct-dash">${D}</p>
+
+  <p class="rct-row"><strong>SUCURSAL:</strong> <span>${escapeHtml(receiptHeader)}</span></p>
+
+  <p class="rct-dash">${D}</p>
+
+  <p class="rct-label">CLIENTE:</p>
+  <p class="rct-value">${escapeHtml(ticket.client)}</p>
+  <p class="rct-value">Tel: ${escapeHtml(client?.phone || "No registrado")}</p>
+  <p class="rct-value">Email: ${escapeHtml(client?.email || "No registrado")}</p>
+
+  <p class="rct-dash">${D}</p>
+
+  <p class="rct-label">EQUIPO:</p>
+  <p class="rct-value">${escapeHtml(ticket.productName || ticket.device || "Sin especificar")}</p>
+  <p class="rct-value"><strong>PRIORIDAD:</strong> ${escapeHtml(ticket.priority || "Normal")} &nbsp;|&nbsp; <strong>ESTADO:</strong> ${escapeHtml(ticket.status)}</p>
+
+  <p class="rct-dash">${D}</p>
+
+  <p class="rct-label">FALLA REPORTADA:</p>
+  <p class="rct-value">${escapeHtml(ticket.issue || "Sin especificar")}</p>
+
+  <p class="rct-dash">${D}</p>
+
+  <table class="rct-table">
+    <thead>
+      <tr><th>DESCRIPCIÓN DEL SERVICIO</th><th>IMPORTE</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>${escapeHtml(ticket.issue || "Servicio de reparación")}</td><td>${money.format(repairAmt)}</td></tr>
+    </tbody>
+  </table>
+
+  <p class="rct-dash">${D}</p>
+
+  <div class="rct-totals">
+    <div class="rct-total-row rct-total-main"><span>TOTAL</span><strong>${money.format(repairAmt)}</strong></div>
+    <div class="rct-total-row"><span>MÉTODO DE PAGO</span><span>${escapeHtml(ticket.paymentMethod || "Efectivo")}</span></div>
+    <div class="rct-total-row"><span>PAGO RECIBIDO</span><span>${money.format(received)}</span></div>
+    <div class="rct-total-row"><span>CAMBIO</span><span>${money.format(change)}</span></div>
+  </div>
+
+  <p class="rct-dash">${D}</p>
+
+  <div class="rct-qr">
+    <p class="rct-center">ESCANEA PARA SEGUIMIENTO</p>
+    <img src="${qrImage}" alt="QR" />
+  </div>
+
+  <p class="rct-dash">${D}</p>
+
+  <p class="rct-center"><strong>POLÍTICAS DE GARANTÍA</strong></p>
+  <p class="rct-policy">• 30 días de garantía en mano de obra.</p>
+  <p class="rct-policy">• La garantía no aplica por golpes, humedad, mal uso o intervención de terceros.</p>
+  <p class="rct-policy">• Conserve este recibo para cualquier aclaración.</p>
+
+  <p class="rct-dash">${D}</p>
+
+  <p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p>
+
+  <p class="rct-dash">${D}</p>
+
+  <div class="rct-sign">
+    <div class="rct-sign-line"></div>
+    <p>FIRMA DE RECIBIDO</p>
+  </div>
+
+</div>`;
   window.print();
 }
 
@@ -1678,7 +1645,65 @@ function escapeHtml(v)      { return String(v??"").replaceAll("&","&amp;").repla
 // ──────────────────────────────────────────────────────────────────────────────
 // INIT
 // ──────────────────────────────────────────────────────────────────────────────
+
+// ── applyBranchBrand — aplica colores, logo, nombre y fondos al DOM ──────────
+function applyBranchBrand(branchName) {
+  const brand = window.getBranchBrand(branchName);
+  if (!brand) return;
+
+  // Variables CSS en :root
+  const root = document.documentElement;
+  for (const [key, val] of Object.entries(brand.colors)) {
+    root.style.setProperty(key, val);
+  }
+
+  // Clase de marca en <body>
+  document.body.classList.remove("brand-fixzone", "brand-refaxzone");
+  document.body.classList.add(brand.brandClass);
+
+  // Título de pestaña
+  document.title = brand.pageTitle;
+
+  // Sidebar: logo, nombre, label
+  const brandLogoImg = document.querySelector(".brand img");
+  const brandNameEl  = document.querySelector(".brand strong");
+  const brandLabelEl = document.querySelector(".brand span");
+  if (brandLogoImg) {
+    brandLogoImg.src = brand.logoSrc;
+    brandLogoImg.alt = brand.displayName;
+    if (brand.logoFallback) {
+      brandLogoImg.onerror = function() { this.src = brand.logoFallback; this.onerror = null; };
+    }
+  }
+  if (brandNameEl)  brandNameEl.textContent  = brand.displayName;
+  if (brandLabelEl) brandLabelEl.textContent = brand.crmLabel;
+
+  // Topbar: eyebrow / tagline
+  const eyebrowEl = document.querySelector(".topbar .eyebrow");
+  if (eyebrowEl) eyebrowEl.textContent = brand.tagline;
+
+  // Fondos de sidebar y workspace
+  const sidebar   = document.querySelector(".sidebar");
+  const workspace = document.querySelector(".workspace");
+  if (sidebar)   sidebar.style.background   = brand.sidebarBg;
+  if (workspace) workspace.style.background = brand.workspaceBg;
+
+  // Indicador en sidebar footer
+  const branchLabel = document.querySelector("#active-branch-label");
+  if (branchLabel) branchLabel.textContent = brand.locationLabel;
+
+  // Favicon dinámico
+  let favicon = document.querySelector("link[rel='icon']");
+  if (!favicon) {
+    favicon = document.createElement("link");
+    favicon.rel = "icon";
+    document.head.appendChild(favicon);
+  }
+  favicon.href = brand.logoSrc;
+}
+
 async function initializeApp() {
+  applyBranchBrand(activeBranchId);
   setupSupabase();
   await refreshSession();
 }
