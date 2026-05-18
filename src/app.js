@@ -509,12 +509,12 @@ async function loadSupabaseState() {
     supplies: (puRes.data||[]).map(p => ({
       id:p.id, date:p.purchase_date, supplier:p.suppliers?.name||"Sin proveedor",
       item:p.item_name, quantity:Number(p.quantity||0), total:Number(p.total_amount||0),
-      branch:branchRows.find(b=>b.id===p.branch_id)?.name||"",
+      branch:branchRows.find(b=>b.id===p.branch_id)?.name||BRANCHES[0],
     })),
     transactions: (txRes.data||[]).map(t => ({
       id:t.id, date:t.transaction_date, type:t.type, concept:t.concept,
       category:t.category, amount:Number(t.amount||0),
-      branch:branchRows.find(b=>b.id===t.branch_id)?.name||"",
+      branch:branchRows.find(b=>b.id===t.branch_id)?.name||BRANCHES[0],
     })),
     supportTasks: (stRes.data||[]).map(t => ({
       id:t.id, title:t.title, description:t.description||"", priority:t.priority,
@@ -564,9 +564,8 @@ function bySearch(items) {
 function branchTickets()       { return state.tickets.filter(t => !t.branch || t.branch === activeBranchId); }
 function branchProducts()      { return state.products.filter(p => p.branch === activeBranchId); }
 function branchClients()       { return state.clients.filter(c => !c.branch || c.branch === activeBranchId); }
-// En modo remoto siempre hay branch asignado; el fallback !s.branch solo aplica en datos locales de demo
-function branchSupplies()      { return state.supplies.filter(s => dataMode === "remote" ? s.branch === activeBranchId : (!s.branch || s.branch === activeBranchId)); }
-function branchTransactions()  { return state.transactions.filter(t => dataMode === "remote" ? t.branch === activeBranchId : (!t.branch || t.branch === activeBranchId)); }
+function branchSupplies()      { return state.supplies.filter(s => !s.branch || s.branch === activeBranchId); }
+function branchTransactions()  { return state.transactions.filter(t => !t.branch || t.branch === activeBranchId); }
 function sumByType(list, type) { return list.filter(i=>i.type===type).reduce((s,i)=>s+Number(i.amount||0),0); }
 
 function renderMetrics() {

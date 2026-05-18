@@ -22,7 +22,7 @@
 - [x] Activar Row Level Security en todas las tablas.
 - [x] Crear politicas RLS para permitir acceso solo a empleados activos.
 - [x] Crear permisos por rol.
-- [ ] Crear tabla `audit_log` para registrar acciones importantes.
+- [x] Crear tabla `audit_log` para registrar acciones importantes.
 
 ## Fase 3: Migrar app actual a Supabase
 
@@ -107,7 +107,7 @@
 
 ## Fase 10: Fixes
 - [ ] Arreglar error de Finanzas : No se pudo guardar: new row violates row-level security policy for table "transactions"
-- [x] Editar Tasks (IT)
+- [ ] Editar Tasks (IT) no permite la edicion
 - [x] Eliminar boton  "restaurar demo"
 - [ ]! Tickets - Se guarda pero no aparece en el KANBAN
 - [ ] Tickets - Funcion para cargar imagenes en el ticket existe ene l codigo pero no aparece en el form de la pagina al crearlo, solo al editar. 
