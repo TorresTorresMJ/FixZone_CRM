@@ -12,7 +12,7 @@ const TX_CATEGORIES_INCOME  = ["Servicio","Venta","Anticipo","Garantia","Otro"];
 const TX_CATEGORIES_EXPENSE = ["Inventario","Insumos","Renta","Nomina","Servicios","Herramientas","Operacion","Otro"];
 const TX_CATEGORIES_ALL     = [...new Set([...TX_CATEGORIES_INCOME, ...TX_CATEGORIES_EXPENSE])];
 const PRODUCT_CATEGORIES    = ["Refaccion","Bateria","Pantalla","Accesorio","Microsoldadura","Cable","Cargador","Otro"];
-const ROLE_LABELS  = { it: "IT", admin: "Admin", standard: "Estándar", marketing: "Marketing" };
+const ROLE_LABELS  = { it: "Admin", owner: "Admin", admin: "Admin", standard: "Estándar", technician: "Estándar", marketing: "Marketing", viewer: "Solo lectura", sales: "Ventas" };
 
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
@@ -707,6 +707,149 @@ function renderUsers() {
         </div>
       </td>
     </tr>`).join("")||tableEmpty(6);
+  renderPermissionsEditor();
+}
+
+// ── Permissions editor ────────────────────────────────────────────────────────
+const PERM_STORAGE_KEY = "fixzone-role-permissions-v1";
+
+const PERM_SECTIONS = [
+  { key:"dashboard",      label:"Home / Dashboard" },
+  { key:"clients",        label:"Clientes" },
+  { key:"products",       label:"Productos" },
+  { key:"tickets",        label:"Tickets" },
+  { key:"supplies",       label:"Insumos" },
+  { key:"finance",        label:"Finanzas" },
+  { key:"reports",        label:"Reportes" },
+  { key:"users",          label:"Usuarios" },
+  { key:"soporte",        label:"Soporte IT" },
+  { key:"diseno",         label:"Diseño" },
+  { key:"automatizacion", label:"Automatización" },
+];
+
+const PERM_FLAGS = [
+  { key:"canManageFinance", label:"Agregar / editar movimientos" },
+  { key:"canDeleteClients", label:"Eliminar clientes" },
+  { key:"canDeleteTickets", label:"Eliminar tickets" },
+  { key:"canManageUsers",   label:"Gestionar usuarios" },
+  { key:"canExportXLS",     label:"Exportar Excel" },
+];
+
+// Editable role groups: each entry maps UI label → PERMISSIONS keys to update
+const PERM_ROLES = [
+  { label:"Admin",     keys:["admin","owner","it"],        locked:true  },
+  { label:"Estándar",  keys:["technician","standard"],     locked:false },
+  { label:"Marketing", keys:["marketing"],                 locked:false },
+];
+
+function loadSavedPermissions() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PERM_STORAGE_KEY)||"{}");
+    for (const [roleKey, cfg] of Object.entries(saved)) {
+      if (!PERMISSIONS[roleKey]) continue;
+      if (Array.isArray(cfg.tabs)) PERMISSIONS[roleKey].tabs = cfg.tabs;
+      for (const f of PERM_FLAGS) {
+        if (f.key in cfg) PERMISSIONS[roleKey][f.key] = cfg[f.key];
+      }
+    }
+  } catch(e) {}
+}
+
+function savePermissionsToStorage() {
+  const out = {};
+  for (const role of PERM_ROLES) {
+    for (const key of role.keys) {
+      if (!PERMISSIONS[key]) continue;
+      out[key] = { tabs: [...PERMISSIONS[key].tabs] };
+      for (const f of PERM_FLAGS) out[key][f.key] = PERMISSIONS[key][f.key];
+    }
+  }
+  localStorage.setItem(PERM_STORAGE_KEY, JSON.stringify(out));
+}
+
+function applyPermissionsFromEditor() {
+  const el = document.querySelector("#permissions-editor");
+  if (!el) return;
+  for (const role of PERM_ROLES) {
+    if (role.locked) continue;
+    for (const key of role.keys) {
+      if (!PERMISSIONS[key]) continue;
+      // Sections (tabs)
+      PERMISSIONS[key].tabs = PERM_SECTIONS
+        .filter(s => el.querySelector(`input[data-role="${key}"][data-section="${s.key}"]`)?.checked)
+        .map(s => s.key);
+      // Flags
+      for (const f of PERM_FLAGS) {
+        const cb = el.querySelector(`input[data-role="${key}"][data-flag="${f.key}"]`);
+        if (cb) PERMISSIONS[key][f.key] = cb.checked;
+      }
+    }
+  }
+  savePermissionsToStorage();
+  applyRolePermissions();
+}
+
+function renderPermissionsEditor() {
+  const el = document.querySelector("#permissions-editor");
+  if (!el) return;
+
+  // Use first key of each role group as source of truth for display
+  const colPerms = PERM_ROLES.map(r => PERMISSIONS[r.keys[0]] || PERMISSIONS.standard);
+
+  const headerCols = PERM_ROLES.map(r =>
+    `<th style="text-align:center;padding:8px 16px;font-size:13px">${r.label}${r.locked?` <span class="muted" style="font-size:10px;font-weight:400">(fijo)</span>`:""}</th>`
+  ).join("");
+
+  const sectionRows = PERM_SECTIONS.map(s => {
+    const cells = PERM_ROLES.map((r, i) => {
+      const checked = colPerms[i].tabs.includes(s.key);
+      if (r.locked) return `<td style="text-align:center"><input type="checkbox" disabled ${checked?"checked":""}></td>`;
+      // All keys in the group share the same checkbox (first key drives it)
+      const attrs = r.keys.map(k => `data-role="${k}"`).join(" ") + ` data-section="${s.key}"`;
+      return `<td style="text-align:center"><input type="checkbox" ${attrs} ${checked?"checked":""}></td>`;
+    }).join("");
+    return `<tr><td style="padding:6px 12px;font-size:13px">${s.label}</td>${cells}</tr>`;
+  }).join("");
+
+  const flagRows = PERM_FLAGS.map(f => {
+    const cells = PERM_ROLES.map((r, i) => {
+      const checked = !!colPerms[i][f.key];
+      if (r.locked) return `<td style="text-align:center"><input type="checkbox" disabled ${checked?"checked":""}></td>`;
+      const attrs = r.keys.map(k => `data-role="${k}"`).join(" ") + ` data-flag="${f.key}"`;
+      return `<td style="text-align:center"><input type="checkbox" ${attrs} ${checked?"checked":""}></td>`;
+    }).join("");
+    return `<tr style="background:rgba(255,255,255,0.03)"><td style="padding:6px 12px;font-size:13px;font-style:italic;color:var(--fz-muted,#888)">${f.label}</td>${cells}</tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="card" style="margin-top:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:15px">Permisos por Rol</h3>
+        <button class="primary-action" id="save-permissions-btn" style="font-size:13px;padding:6px 16px">Guardar cambios</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.1)">
+              <th style="text-align:left;padding:8px 12px;font-size:12px;color:var(--fz-muted,#888)">Sección / Permiso</th>
+              ${headerCols}
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="4" style="padding:8px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--fz-muted,#888)">Secciones visibles</td></tr>
+            ${sectionRows}
+            <tr><td colspan="4" style="padding:8px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--fz-muted,#888)">Acciones</td></tr>
+            ${flagRows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.querySelector("#save-permissions-btn")?.addEventListener("click", () => {
+    applyPermissionsFromEditor();
+    const btn = document.querySelector("#save-permissions-btn");
+    if (btn) { btn.textContent = "✓ Guardado"; setTimeout(()=>{ btn.textContent="Guardar cambios"; },2000); }
+  });
 }
 
 // ── Support Kanban ────────────────────────────────────────────────────────────
@@ -1868,6 +2011,7 @@ function applyBranchBrand(branchName) {
 }
 
 async function initializeApp() {
+  loadSavedPermissions();
   applyBranchBrand(activeBranchId);
   setupSupabase();
   await refreshSession();

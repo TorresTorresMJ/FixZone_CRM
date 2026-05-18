@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
           full_name,
           email:                authEmail,
           username:             username.toLowerCase(),
-          role:                 role || "standard",
+          role:                 ({ it: "owner", standard: "technician", marketing: "technician" }[role] || role || "technician"),
           status:               "active",
           branch_id:            branch_id || null,
           default_branch_id:    default_branch_id || branch_id || null,
@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
         updates.username = username.toLowerCase();
         updates.email    = toAuthEmail(username);
       }
-      if (role       !== undefined) updates.role       = role;
+      if (role       !== undefined) updates.role = ({ it: "owner", standard: "technician", marketing: "technician" }[role] || role);
       if (status     !== undefined) updates.status     = status;
       if (branch_id  !== undefined) updates.branch_id  = branch_id;
       if (default_branch_id !== undefined) updates.default_branch_id = default_branch_id;
