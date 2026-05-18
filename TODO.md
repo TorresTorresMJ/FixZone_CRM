@@ -10,7 +10,7 @@
 - [x] Definir flujo real de reparacion: Cotizacion, Recibido, En reparacion, Listo, Entregado, Garantia.
 - [ ] Definir datos obligatorios de cliente: nombre, telefono, email, direccion, notas.
 - [ ] Definir datos obligatorios de equipo: marca, modelo, IMEI/serie, color, accesorios recibidos, estado fisico y foto de estado en que ingresa y egresa. 
-- [ ] Cambiar a RefacZone los nombres de FixZone cuando la sucursal sea puebla
+- [x] Cambiar a RefaxZone los nombres de FixZone cuando la sucursal sea puebla
 
 ## Fase 2: Base de datos y seguridad
 
@@ -18,7 +18,7 @@
 - [x] Registrar proyecto Supabase FixZone: `zwmffnrkrrowmchluyyy`.
 - [x] Configurar Google OAuth en Supabase Auth.
 - [x] Crear tabla `employees` con correo, rol y estado.
-- [ ] Crear schema SQL inicial para clientes, equipos, tickets, productos, inventario, compras, finanzas y adjuntos.
+- [x] Crear schema SQL inicial para clientes, equipos, tickets, productos, inventario, compras, finanzas y adjuntos.
 - [ ] Activar Row Level Security en todas las tablas.
 - [x] Crear politicas RLS para permitir acceso solo a empleados activos.
 - [x] Crear permisos por rol.
@@ -28,7 +28,7 @@
 
 - [ ] Reemplazar `localStorage` por Supabase.
 - [x] $Agregar pantalla de login con Google.$ Log in será con creación de usuarios y contraseña.  Usuarios internos de base de datos. 
-- [ ] Bloquear la app si el correo no existe en `employees`.
+- [x] Bloquear la app si el correo no existe en `employees`.
 - [ ] Conectar clientes a la base de datos.
 - [ ] Conectar productos e inventario a la base de datos.
 - [ ] Conectar tickets a la base de datos.
@@ -70,26 +70,44 @@
 - [ ] Crear reporte de empleados y productividad.
 - [ ] Exportar reportes a Excel.
 
-## Fase 7: Deploy interno
+## Fase 7: Marketing
+- [ ] Permitir crear folder y añadir imagenes, documentos, pdf, gifs
+- [ ] Crear plantilla de email para clientes.
+- [ ] Crear plantilla de mensaje para WhatsApp.
+- [ ] Agregar función para enviar promociones por email o WhatsApp a clientes.
+- [ ] Agregar función para enviar recordatorios de garantia por email o WhatsApp a clientes
+
+
+## Fase 8: Deploy interno
 
 - [x] Elegir hosting inicial para la app.
 - [ ] Configurar variables de entorno.
 - [ ] Configurar respaldos de Supabase.
-- [ ] Probar acceso desde celulares y computadoras del equipo.
+- [x] Probar acceso desde celulares y computadoras del equipo.
 - [ ] Definir proceso para dar de alta y baja empleados.
 - [x] Preparar version privada para produccion.
 
-## Fase 8: Mejoras futuras
+## Fase 9: Mejoras futuras
 
 - [ ] Agregar notificaciones por WhatsApp o email.
 - [ ] Agregar cotizaciones antes de autorizar reparaciones.
-- [ ] Agregar firma de cliente.
+- [x] Agregar firma de cliente.
 - [ ] Agregar lector de codigos QR para tickets.
 - [ ] Agregar busqueda avanzada por telefono, IMEI, folio o cliente.
-- [ ] Filtrar dashboard por sucursal FixZone: Puerto Vallarta | Puebla. Faltan: insumos, clientes, finanzas, resportes.
+- [x] Filtrar dashboard por sucursal FixZone: Puerto Vallarta | Puebla. Faltan: insumos, clientes, finanzas, resportes.
 - [ ] Agregar integracion contable si se requiere facturacion formal.
 - [ ] Agregar función para añadir imagenes a los tickets, para registrar como viene el dispositivo antes y después. 
-- [ ] Poder Editar los campos de datos de los clientes,
-- [ ] Agregar boton para añadir ingresos y egresos en Finanzas
+- [x] Poder Editar los campos de datos de los clientes,
+- [x] Agregar boton para añadir ingresos y egresos en Finanzas
 - [ ] Agregar boton para editar ingresos y egresos en Finanzas
 - [ ] Mostrar las categorias en selects
+- [ ] Boton de usuario, par configuraciones basicas, como renovar contraseña 
+
+## Fase 10: Fixes
+- [ ] Arreglar error de Finanzas : No se pudo guardar: new row violates row-level security policy for table "transactions"
+- [ ] Editar Tasks (IT)
+- [ ] Eliminar boton  "restaurar demo"
+- [ ] Tickets - Se guarda pero no aparece en el KANBAN
+- [ ] Tickets - Funcion para cargar imagenes en el ticket existe ene l codigo pero no aparece en el form de la pagina al crearlo, solo al editar. 
+
+

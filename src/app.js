@@ -17,7 +17,7 @@ const ROLE_LABELS  = { it: "IT", admin: "Admin", standard: "Estándar", marketin
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
   it:        { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  admin:     { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users"],           canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  admin:     { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   standard:  { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   marketing: { tabs: ["dashboard","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
 };
@@ -25,6 +25,7 @@ const PERMISSIONS = {
 let activeBranchId  = "Puerto Vallarta";
 let activeForm      = null;
 let editingTicketId = null;
+let editingTaskId   = null;
 let dataMode        = "local";
 let supabaseClient = null;
 let currentSession = null;
@@ -131,7 +132,7 @@ const formSchemas = {
       ["phone","Telefono","tel"],
     ],
   },
-  supportTask: {
+  supportTasks: {
     title: "Tarea de soporte", collection: "supportTasks",
     fields: [
       ["title","Titulo","text",null,true],["description","Descripcion","text",null,true],
@@ -554,7 +555,7 @@ function bySearch(items) {
   return term ? items.filter(i => Object.values(i).join(" ").toLowerCase().includes(term)) : items;
 }
 
-function branchTickets()       { return state.tickets.filter(t => t.branch === activeBranchId); }
+function branchTickets()       { return state.tickets.filter(t => !t.branch || t.branch === activeBranchId); }
 function branchProducts()      { return state.products.filter(p => p.branch === activeBranchId); }
 function branchClients()       { return state.clients.filter(c => !c.branch || c.branch === activeBranchId); }
 // En modo remoto siempre hay branch asignado; el fallback !s.branch solo aplica en datos locales de demo
@@ -727,28 +728,34 @@ function renderUsers() {
 
 // ── Support Kanban ────────────────────────────────────────────────────────────
 function renderSupport() {
+  const perms = currentPerms();
   const board = document.querySelector("#support-board");
   if (!board) return;
   board.innerHTML = supportStages.map(status=>{
     const tasks = bySearch(state.supportTasks||[]).filter(t=>t.status===status);
     return `<section class="kanban-column">
       <h3>${status} <span>${tasks.length}</span></h3>
-      <div class="ticket-stack">${tasks.map(supportTaskCard).join("")||emptyMessage("Sin tareas.")}</div>
+      <div class="ticket-stack">${tasks.map(task=>supportTaskCard(task, perms)).join("")||emptyMessage("Sin tareas.")}</div>
     </section>`;
   }).join("");
 }
 
-function supportTaskCard(task) {
+function supportTaskCard(task, perms) {
+  perms = perms || currentPerms();
   return `<article class="ticket-card">
-    <div class="ticket-topline">
+    <div class="task-topline">
       <span class="status ${task.priority==="Urgente"||task.priority==="Alta"?"urgent":task.status==="Resuelto"?"ready":""}">${task.priority}</span>
       <small class="muted">${escapeHtml(task.createdAt||"")}</small>
     </div>
     <strong>${escapeHtml(task.title)}</strong>
     <p class="muted">${escapeHtml(task.description||"")}</p>
-    <div class="ticket-topline">
+    <div class="task-topline">
       <span class="status ${task.status==="Resuelto"?"ready":task.status==="En progreso"?"":""}">${task.status}</span>
       <small class="muted">${escapeHtml(task.assignedTo||"")}</small>
+    </div>
+    <div class="support-actions">
+      <button class="mini-button" data-edit-task="${task.id}">Editar</button>
+      ${perms.canDeleteTask?`<button class="mini-button danger-btn" data-delete-task="${task.id}">Eliminar</button>`:""}
     </div>
   </article>`;
 }
@@ -865,7 +872,7 @@ function openEditSupportTask(taskId) {
   const task = (state.supportTasks||[]).find(t => t.id === taskId);
   if (!task) return;
   activeForm      = "supportTask";
-  editingTicketId = taskId;
+  editingTaskId = taskId;
   modalTitle.textContent = "Editar tarea";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["supportTask"].fields.map(([name,label,ftype,opts,wide]) =>
@@ -896,7 +903,7 @@ function openEditSupply(supplyId) {
   if (!supply) return;
   activeForm      = "supply";
   editingTicketId = supplyId;
-  modalTitle.textContent = "Editar compra";
+  modalTitle.textContent = "ar compra";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["supply"].fields.map(([name,label,ftype,opts,wide]) =>
     fieldTemplate(name, label, ftype, opts, wide, supply[name] ?? "")
@@ -959,6 +966,7 @@ async function updateRemoteTransaction(txId, data) {
 function openForm(type, prefill = {}) {
   activeForm      = type;
   editingTicketId = null;
+  editingTaskId   = null;
   const schema = formSchemas[type];
   if (!schema) return;
   modalTitle.textContent = schema.title;
@@ -967,6 +975,16 @@ function openForm(type, prefill = {}) {
   if (type==="ticket"||type==="product") {
     const sel = formFields.querySelector("#branch");
     if (sel) sel.value = activeBranchId;
+  }
+  // FIX: show photo info note when creating a ticket (photos available after first save)
+  if (type === "ticket") {
+    formFields.innerHTML += `
+      <div class="field is-wide" style="margin-top:8px">
+        <label>Fotos del equipo</label>
+        <p class="muted" style="font-size:12px;margin:4px 0 0">
+          💡 Guarda el ticket primero y luego edítalo para agregar fotos del equipo.
+        </p>
+      </div>`;
   }
   modal.showModal();
 }
@@ -992,6 +1010,15 @@ function openEditTicket(ticketId) {
   ).join("") + buildPhotoUploadSection(ticketId);
   modal.showModal();
   initPhotoUpload(ticketId);
+}
+
+function openEditSupportTask(taskId) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  activeForm      = "task";
+  editingTaskId = taskId;
+  modalTitle.textContent = `Editar ${task.tracking}`;
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
 }
 
 function buildPhotoUploadSection(ticketId) {
@@ -1094,13 +1121,11 @@ recordForm.addEventListener("submit", async e => {
   const data   = Object.fromEntries(new FormData(recordForm).entries());
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
 
-  // ── EDIT: generic (client, supportTask, supply, transaction) ────────────────
+  // ── EDIT: generic (client, supply, transaction) ────────────────
   if (editingTicketId && activeForm !== "ticket") {
     try {
       if (activeForm === "client") {
         await updateRemoteClient(editingTicketId, data);
-      } else if (activeForm === "supportTask") {
-        await updateRemoteSupportTask(editingTicketId, data);
       } else if (activeForm === "supply") {
         await updateRemoteSupply(editingTicketId, data);
       } else if (activeForm === "transaction") {
@@ -1110,6 +1135,29 @@ recordForm.addEventListener("submit", async e => {
       else { /* local: already mutated in update functions */ saveState(); }
       render();
       modal.close();
+    } catch(err) {
+      console.error(err);
+      alert(`No se pudo guardar: ${err.message}`);
+    }
+    return;
+  }
+
+  // --- Edit TASK ------------------------------------------------------------
+  if (activeForm === "task" && editingTaskId) {
+    data.estimatedTime = Number(data.estimatedTime||0);
+    data.priority     = data.priority||"";
+          render();
+      modal.close();
+    try {
+      const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTaskId);
+      if (dataMode==="remote" && isRealUUID) {
+        await updateRemoteTask(editingTaskId, data);
+        await reloadState();
+      } else {
+        const idx = state.tasks.findIndex(t => t.id === editingTaskId);
+        if (idx !== -1) state.tasks[idx] = { ...state.tasks[idx], ...data };
+        if (dataMode !== "remote") saveState();
+      }
     } catch(err) {
       console.error(err);
       alert(`No se pudo guardar: ${err.message}`);
@@ -1241,10 +1289,19 @@ async function saveRemoteSupportTask(data) {
 function currentEmployeeId() { return currentEmployee?.id||null; }
 async function branchIdByName(name) {
   if (!name) name = activeBranchId;
+  // Try in-memory lookup first (populated after reloadState)
   const fromMap = lookups.branchesByName.get(name)?.id || null;
   if (fromMap) return fromMap;
+  // Fallback: hit the DB directly (covers first-save before lookups are warm)
   const { data } = await supabaseClient.from("branches").select("id").eq("name", name).maybeSingle();
-  return data?.id || null;
+  if (data?.id) {
+    // Warm the cache so subsequent calls in the same session don't hit the DB again
+    lookups.branchesByName.set(name, { id: data.id, name });
+    return data.id;
+  }
+  // Last resort: return the first branch we can find
+  const { data: first } = await supabaseClient.from("branches").select("id").limit(1).maybeSingle();
+  return first?.id || null;
 }
 
 async function saveRemoteRecord(type, record) {
@@ -1298,6 +1355,16 @@ async function updateRemoteTicket(ticketId, r) {
     branch_id:            await branchIdByName(r.branch||activeBranchId),
     assigned_employee_id: assignedE?.id||null,
   }).eq("id", ticketId);
+  if (error) throw error;
+}
+
+async function updateRemoteTask(taskId, r) {
+  const assignedE = lookups.employeesByName.get(r.assignedTo);
+  const { error } = await supabaseClient.from("service_tasks").update({
+    issue_description:    r.issue,
+    stage:                r.status,
+    priority:             r.priority,
+  }).eq("id", taskId);
   if (error) throw error;
 }
 
@@ -1384,9 +1451,9 @@ helpForm.addEventListener("submit", async e => {
     }
  
     helpModal.close();
-    showToast(`✓ Solicitud enviada a IT · ${type}`);
+    showToast(`✓ Solicitud enviada a IT, 5 peso y le agilizamos su proceso · ${type}`);
   } catch(err) {
-    alert(`No se pudo enviar: ${err.message}`);
+    alert(`No se pudo enviar, ni modillo: ${err.message}`);
   } finally {
     btn.textContent = "Enviar a IT";
     btn.disabled    = false;
@@ -1440,6 +1507,10 @@ document.addEventListener("click", async e => {
   const editTicket = e.target.closest("[data-edit-ticket]");
   if (editTicket) { openEditTicket(editTicket.dataset.editTicket); return; }
 
+  // Edit task
+  const editTask = e.target.closest("[data-edit-task]");
+  if (editTask) { openEditTask(editTask.dataset.editTask); return; }
+
   // Print ticket
   const printBtn = e.target.closest("[data-print-ticket]");
   if (printBtn) { const t = state.tickets.find(i=>i.id===printBtn.dataset.printTicket); if(t) printTicket(t); return; }
@@ -1447,6 +1518,10 @@ document.addEventListener("click", async e => {
   // Delete ticket
   const delTicket = e.target.closest("[data-delete-ticket]");
   if (delTicket) { handleDeleteTicket(delTicket.dataset.deleteTicket); return; }
+
+  // Delete task
+  const delTask = e.target.closest("[data-delete-task]");
+  if (delTask) { handleDeleteTask(delTask.dataset.deleteTask); return; }
 
   // Delete client
   const delClient = e.target.closest("[data-delete-client]");
@@ -1533,6 +1608,15 @@ async function handleDeleteTransaction(id) {
   try {
     if (dataMode==="remote") { const {error}=await supabaseClient.from("transactions").delete().eq("id",id); if(error)throw error; await reloadState(); }
     else { state.transactions=state.transactions.filter(t=>t.id!==id); saveState(); }
+    render();
+  } catch(err) { alert(`Error: ${err.message}`); }
+}
+
+async function handleDeleteTask(id) {
+  if (!confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer.")) return;
+  try {
+    if (dataMode==="remote") { const {error}=await supabaseClient.from("tasks").delete().eq("id",id); if(error)throw error; await reloadState(); }
+    else { state.tasks=state.tasks.filter(t=>t.id!==id); saveState(); }
     render();
   } catch(err) { alert(`Error: ${err.message}`); }
 }
