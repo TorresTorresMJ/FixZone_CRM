@@ -17,15 +17,15 @@ const ROLE_LABELS  = { it: "IT", admin: "Admin", standard: "Estándar", marketin
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
   // Frontend roles
-  it:        { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  admin:     { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  standard:  { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canManageUsers: false, canManageFinance: false, canExportXLS: true },
-  marketing: { tabs: ["dashboard","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
+  it:        { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  admin:     { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  standard:  { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  marketing: { tabs: ["dashboard","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
   // DB roles (map to equivalent frontend permission sets)
-  owner:      { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  sales:      { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canManageUsers: false, canManageFinance: true, canExportXLS: true },
-  technician: { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canManageUsers: false, canManageFinance: false, canExportXLS: true },
-  viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
+  owner:      { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  sales:      { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
+  technician: { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
 };
 
 let activeBranchId  = "Puerto Vallarta";
@@ -42,35 +42,13 @@ let lookups        = { branchesByName: new Map(), employeesByName: new Map(), em
 const employees = ["Kevin Mijangos","Carlos Mijangos","Gigi Vargas","Monica Torres","Diego Mijangos","Daniel Mijangos"];
 
 const seed = {
-  clients: [
-    { id:"c-1", name:"Monica Torres",  phone:"55 4180 2291", email:"monica@email.com",  device:"iPhone 14 Pro",    lastVisit:"2026-05-01", status:"Activo"   },
-    { id:"c-2", name:"Carlos Medina",  phone:"55 8102 4488", email:"carlos@email.com",  device:"Samsung S23",      lastVisit:"2026-04-29", status:"Garantia" },
-    { id:"c-3", name:"Ana Ruiz",       phone:"55 7201 8890", email:"ana@email.com",     device:"MacBook Air M2",   lastVisit:"2026-04-27", status:"Nuevo"    },
-  ],
+  clients: [],
   branches:  BRANCHES.map((name, i) => ({ id:`b-${i+1}`, name })),
   employees: employees.map((name, i) => ({ id:`e-${i+1}`, name, role: i===3?"it":"admin", status:"active" })),
-  products: [
-    { id:"p-1", name:"Pantalla iPhone 13",  sku:"P-IPH13-OLED", category:"Refaccion",     stock:8,  minStock:4,  price:1850, branch:"Puerto Vallarta" },
-    { id:"p-2", name:"Bateria Samsung A54", sku:"B-SAMA54",      category:"Bateria",       stock:3,  minStock:5,  price:620,  branch:"Puerto Vallarta" },
-    { id:"p-3", name:"Mica premium",        sku:"ACC-MICA-01",   category:"Accesorio",     stock:42, minStock:15, price:180,  branch:"Puebla"          },
-    { id:"p-4", name:"Conector USB-C",      sku:"R-USBC-10",     category:"Microsoldadura",stock:11, minStock:8,  price:95,   branch:"Puebla"          },
-  ],
-  tickets: [
-    { id:"t-1", tracking:"[FZ] 0001", client:"Monica Torres", productName:"iPhone 14 Pro",    issue:"Cambio de pantalla y prueba Face ID",       status:"En reparacion", priority:"Alta",   repairAmount:3200, paymentStatus:"Abonado",  paidAmount:1500, branch:"Puerto Vallarta", assignedTo:"Kevin Mijangos",   createdAt:"2026-05-04" },
-    { id:"t-2", tracking:"[FZ] 0002", client:"Carlos Medina", productName:"Samsung S23",      issue:"Revision por garantia de bateria",           status:"Garantia",      priority:"Media",  repairAmount:0,    paymentStatus:"Pagado",   paidAmount:0,    branch:"Puebla",          assignedTo:"Carlos Mijangos",  createdAt:"2026-05-03" },
-    { id:"t-3", tracking:"[FZ] 0003", client:"Ana Ruiz",      productName:"MacBook Air M2",   issue:"Limpieza interna y diagnostico de carga",   status:"Listo",         priority:"Normal", repairAmount:850,  paymentStatus:"Pagado",   paidAmount:850,  branch:"Puerto Vallarta", assignedTo:"Gigi Vargas",      createdAt:"2026-05-02" },
-    { id:"t-4", tracking:"[FZ] 0004", client:"Luis Ortega",   productName:"iPad 9",           issue:"Cristal roto",                              status:"Recibido",      priority:"Normal", repairAmount:1600, paymentStatus:"Pendiente", paidAmount:0,    branch:"Puebla",          assignedTo:"Daniel Mijangos",  createdAt:"2026-05-01" },
-  ],
-  supplies: [
-    { id:"s-1", date:"2026-05-01", supplier:"TecnoPartes MX", item:"Pantallas OLED",  quantity:5,  total:7200 },
-    { id:"s-2", date:"2026-04-28", supplier:"MicroTools",     item:"Puntas cautin",   quantity:12, total:980  },
-  ],
-  transactions: [
-    { id:"m-1", date:"2026-05-04", type:"Ingreso", concept:"Anticipo ticket t-1",   category:"Servicio",   amount:1500 },
-    { id:"m-2", date:"2026-05-03", type:"Egreso",  concept:"Compra de insumos",      category:"Inventario", amount:7200 },
-    { id:"m-3", date:"2026-05-02", type:"Ingreso", concept:"Limpieza MacBook",       category:"Servicio",   amount:850  },
-    { id:"m-4", date:"2026-05-01", type:"Egreso",  concept:"Renta local",            category:"Operacion",  amount:4800 },
-  ],
+  products: [],
+  tickets: [],
+  supplies: [],
+  transactions: [],
   supportTasks: [],
 };
 
@@ -876,11 +854,11 @@ async function updateRemoteClient(clientId, data) {
 function openEditSupportTask(taskId) {
   const task = (state.supportTasks||[]).find(t => t.id === taskId);
   if (!task) return;
-  activeForm      = "supportTask";
+  activeForm      = "supportTasks";
   editingTaskId = taskId;
   modalTitle.textContent = "Editar tarea";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["supportTask"].fields.map(([name,label,ftype,opts,wide]) =>
+  formFields.innerHTML = formSchemas["supportTasks"].fields.map(([name,label,ftype,opts,wide]) =>
     fieldTemplate(name, label, ftype, opts, wide, task[name] ?? "")
   ).join("");
   modal.showModal();
@@ -1017,15 +995,6 @@ function openEditTicket(ticketId) {
   initPhotoUpload(ticketId);
 }
 
-function openEditSupportTask(taskId) {
-  const task = state.tasks.find(t => t.id === taskId);
-  if (!task) return;
-  activeForm      = "task";
-  editingTaskId = taskId;
-  modalTitle.textContent = `Editar ${task.tracking}`;
-  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-}
-
 function buildPhotoUploadSection(ticketId) {
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
   if (!isUUID) return `
@@ -1147,6 +1116,20 @@ recordForm.addEventListener("submit", async e => {
     return;
   }
 
+  // --- Edit SUPPORT TASK -------------------------------------------------------
+  if (activeForm === "supportTasks" && editingTaskId) {
+    try {
+      await updateRemoteSupportTask(editingTaskId, data);
+      if (dataMode === "remote") await reloadState();
+      render();
+      modal.close();
+    } catch(err) {
+      console.error(err);
+      alert(`No se pudo guardar: ${err.message}`);
+    }
+    return;
+  }
+
   // --- Edit TASK ------------------------------------------------------------
   if (activeForm === "task" && editingTaskId) {
     data.estimatedTime = Number(data.estimatedTime||0);
@@ -1215,12 +1198,15 @@ recordForm.addEventListener("submit", async e => {
           default_branch_id: lookups.branchesByName.get(data.branch_id)?.id||null,
           phone:             data.phone||null,
         });
-      } else if (activeForm==="supportTask") {
+      } else if (activeForm==="supportTasks") {
         await saveRemoteSupportTask(data);
       } else {
         await saveRemoteRecord(activeForm, data);
       }
-      await reloadState();
+      // Reload state after save; if reload fails, the save itself succeeded so
+      // don't surface the reload error — local state was already updated by the
+      // save function (e.g. createRemoteTicket adds the ticket immediately).
+      try { await reloadState(); } catch(reloadErr) { console.warn("reloadState error:", reloadErr); }
     } else {
       state[schema.collection].unshift(data);
       if (activeForm==="supply") {
@@ -1335,15 +1321,29 @@ async function createRemoteProduct(r) {
 async function createRemoteTicket(r) {
   const customer  = lookups.customersByName.get(r.client);
   const assignedE = lookups.employeesByName.get(r.assignedTo);
-  const { error } = await supabaseClient.from("service_tickets").insert({
+  const branchId  = await branchIdByName(r.branch||activeBranchId);
+  const { data, error } = await supabaseClient.from("service_tickets").insert({
     customer_id:customer?.id||null, customer_name:r.client,
     product_name:r.productName, issue_description:r.issue,
     stage:r.status, priority:r.priority,
     repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
-    branch_id:await branchIdByName(r.branch||activeBranchId),
+    branch_id:branchId,
     assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId()
-  });
+  }).select().single();
   if (error) throw error;
+  // Add the DB-created ticket to state immediately so it appears in the kanban
+  // without needing to wait for reloadState() to succeed.
+  const branchName = [...lookups.branchesByName.values()].find(b=>b.id===branchId)?.name || BRANCHES[0];
+  const mapped = {
+    id:data.id, tracking:data.tracking_number, client:data.customer_name,
+    productName:data.product_name, issue:data.issue_description,
+    status:data.stage, priority:data.priority,
+    repairAmount:Number(data.repair_amount||0), paymentStatus:data.payment_status,
+    paidAmount:Number(data.paid_amount||0), branch:branchName,
+    assignedTo:assignedE?.full_name||r.assignedTo||"",
+    createdAt:(data.created_at||"").slice(0,10),
+  };
+  state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
 }
 
 async function updateRemoteTicket(ticketId, r) {
@@ -1390,12 +1390,20 @@ async function findOrCreateSupplier(name) {
 }
 
 async function createRemoteTransaction(r) {
-  const { error } = await supabaseClient.from("transactions").insert({
-    branch_id:await branchIdByName(activeBranchId),
+  const branchId = await branchIdByName(activeBranchId);
+  const { data, error } = await supabaseClient.from("transactions").insert({
+    branch_id:branchId,
     transaction_date:r.date, type:r.type, concept:r.concept,
     category:r.category, amount:r.amount, created_by:currentEmployeeId()
-  });
+  }).select().single();
   if (error) throw error;
+  // Add the DB-created transaction to state immediately so it appears in the dashboard.
+  const branchName = [...lookups.branchesByName.values()].find(b=>b.id===branchId)?.name || BRANCHES[0];
+  const mapped = {
+    id:data.id, date:data.transaction_date, type:data.type, concept:data.concept,
+    category:data.category, amount:Number(data.amount||0), branch:branchName,
+  };
+  state.transactions = [mapped, ...state.transactions.filter(t=>t.id!==data.id)];
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1514,7 +1522,7 @@ document.addEventListener("click", async e => {
 
   // Edit task
   const editTask = e.target.closest("[data-edit-task]");
-  if (editTask) { openEditTask(editTask.dataset.editTask); return; }
+  if (editTask) { openEditSupportTask(editTask.dataset.editTask); return; }
 
   // Print ticket
   const printBtn = e.target.closest("[data-print-ticket]");

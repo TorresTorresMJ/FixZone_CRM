@@ -71,11 +71,10 @@
 - [ ] Exportar reportes a Excel.
 
 ## Fase 7: Marketing
-- [ ] Permitir crear folder y añadir imagenes, documentos, pdf, gifs
-- [ ] Crear plantilla de email para clientes.
-- [ ] Crear plantilla de mensaje para WhatsApp.
-- [ ] Agregar función para enviar promociones por email o WhatsApp a clientes.
-- [ ] Agregar función para enviar recordatorios de garantia por email o WhatsApp a clientes
+- [ ] Permitir crear folder y añadir imagenes, documentos, pdf, gifs. Dar estructura limpia y de facil accesibilidad. 
+- [ ] Crear seccion de plantillas: de email para clientes, editable.
+- [ ] Agregar en la seccion de plantillas: de mensaje para WhatsApp, editable.
+- [ ] Agregar función para añadir funciones como :  para enviar recordatorios de garantia por email o WhatsApp a clientes y para enviar promociones por email o WhatsApp a clientes.
 
 
 ## Fase 8: Deploy interno
@@ -106,12 +105,13 @@
 - [ ] Mini explicacion de que hace cada seccion o para que es, con un pequeño boton de ayuda donde al pasarle el cursor se despliegue el texto explicativo 
 
 ## Fase 10: Fixes
-- [ ] Arreglar error de Finanzas : No se pudo guardar: new row violates row-level security policy for table "transactions"
+- [x] Arreglar error de Finanzas : No se pudo guardar: new row violates row-level security policy for table "transactions"
 - [ ] Editar Tasks (IT) no permite la edicion
 - [x] Eliminar boton  "restaurar demo"
 - [ ]! Tickets - Se guarda pero no aparece en el KANBAN
 - [ ] Tickets - Funcion para cargar imagenes en el ticket existe ene l codigo pero no aparece en el form de la pagina al crearlo, solo al editar. 
 - [ ] Brand de RefacZone es igual en tipografia y paleta de colores a Fixzone. Solo son diferentes areas pero es la misma compañia practicamente. En documentacion, sin embargo en Dashboard, que la visualizacion de colores sea diferente para poder distinguir visualmente cuando se esta en una locacion y otra. 
+- [ ] Insumos y productos deben ser editables. 
 
 ## Fase 11 Cotizaciones: 
 - [ ] Nueva sección: Cotizaciones. En base a agregar productos + hora trabajo o añadir listado de costo de trabajo. 
