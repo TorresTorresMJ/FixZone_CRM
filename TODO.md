@@ -19,7 +19,7 @@
 - [x] Configurar Google OAuth en Supabase Auth.
 - [x] Crear tabla `employees` con correo, rol y estado.
 - [x] Crear schema SQL inicial para clientes, equipos, tickets, productos, inventario, compras, finanzas y adjuntos.
-- [ ] Activar Row Level Security en todas las tablas.
+- [x] Activar Row Level Security en todas las tablas.
 - [x] Crear politicas RLS para permitir acceso solo a empleados activos.
 - [x] Crear permisos por rol.
 - [ ] Crear tabla `audit_log` para registrar acciones importantes.
@@ -102,12 +102,18 @@
 - [ ] Agregar boton para editar ingresos y egresos en Finanzas
 - [ ] Mostrar las categorias en selects
 - [ ] Boton de usuario, par configuraciones basicas, como renovar contraseña 
+- [ ] Cards en los KANBAN se puedanmover arrastrandolas entre columnas
+- [ ] Mini explicacion de que hace cada seccion o para que es, con un pequeño boton de ayuda donde al pasarle el cursor se despliegue el texto explicativo 
 
 ## Fase 10: Fixes
 - [ ] Arreglar error de Finanzas : No se pudo guardar: new row violates row-level security policy for table "transactions"
-- [ ] Editar Tasks (IT)
-- [ ] Eliminar boton  "restaurar demo"
-- [ ] Tickets - Se guarda pero no aparece en el KANBAN
+- [x] Editar Tasks (IT)
+- [x] Eliminar boton  "restaurar demo"
+- [ ]! Tickets - Se guarda pero no aparece en el KANBAN
 - [ ] Tickets - Funcion para cargar imagenes en el ticket existe ene l codigo pero no aparece en el form de la pagina al crearlo, solo al editar. 
+- [ ] Brand de RefacZone es igual en tipografia y paleta de colores a Fixzone. Solo son diferentes areas pero es la misma compañia practicamente. En documentacion, sin embargo en Dashboard, que la visualizacion de colores sea diferente para poder distinguir visualmente cuando se esta en una locacion y otra. 
+
+## Fase 11 Cotizaciones: 
+- [ ] Nueva sección: Cotizaciones. En base a agregar productos + hora trabajo o añadir listado de costo de trabajo. 
 
 

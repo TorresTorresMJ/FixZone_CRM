@@ -66,6 +66,7 @@ Deno.serve(async (req) => {
         .insert({
           auth_user_id:         authData.user.id,
           full_name,
+          email:                authEmail,
           username:             username.toLowerCase(),
           role:                 role || "standard",
           status:               "active",
@@ -99,7 +100,10 @@ Deno.serve(async (req) => {
 
       const updates: Record<string, unknown> = {};
       if (full_name  !== undefined) updates.full_name  = full_name;
-      if (username   !== undefined) updates.username   = username.toLowerCase();
+      if (username   !== undefined) {
+        updates.username = username.toLowerCase();
+        updates.email    = toAuthEmail(username);
+      }
       if (role       !== undefined) updates.role       = role;
       if (status     !== undefined) updates.status     = status;
       if (branch_id  !== undefined) updates.branch_id  = branch_id;

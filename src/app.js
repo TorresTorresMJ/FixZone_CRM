@@ -16,10 +16,16 @@ const ROLE_LABELS  = { it: "IT", admin: "Admin", standard: "Estándar", marketin
 
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
+  // Frontend roles
   it:        { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   admin:     { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   standard:  { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   marketing: { tabs: ["dashboard","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
+  // DB roles (map to equivalent frontend permission sets)
+  owner:      { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  sales:      { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canManageUsers: false, canManageFinance: true, canExportXLS: true },
+  technician: { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
 };
 
 let activeBranchId  = "Puerto Vallarta";
