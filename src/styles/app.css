@@ -503,13 +503,20 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
 /* ── Kanban ──────────────────────────────────────────────────────────────── */
 .kanban {
-  display: grid;
-  grid-template-columns: repeat(6,minmax(240px,1fr));
+  display: flex;
   gap: 14px;
   overflow-x: auto;
+  padding-bottom: 12px;
+  /* always-visible scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.2) transparent;
 }
+.kanban::-webkit-scrollbar { height: 6px; }
+.kanban::-webkit-scrollbar-track { background: transparent; }
+.kanban::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 3px; }
+.kanban::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.35); }
 
-.kanban-column { min-height: 420px; padding: 14px; }
+.kanban-column { min-height: 420px; padding: 14px; min-width: 280px; width: 280px; flex-shrink: 0; }
 
 .kanban-column h3 {
   display: flex;

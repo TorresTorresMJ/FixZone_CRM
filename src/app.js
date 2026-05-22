@@ -94,7 +94,10 @@ const formSchemas = {
       ["issue","Falla / trabajo","text",null,true],
       ["branch","Sucursal","select",BRANCHES],["assignedTo","Empleado","select",employees],
       ["status","Stage","select",ticketStages],["priority","Prioridad","select",["Normal","Media","Alta","Urgente"]],
-      ["repairAmount","Monto reparacion","number"],["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
+      ["repairAmount","Monto reparacion","number"],
+      ["discountCode","Código de descuento","text"],
+      ["discountAmount","Descuento ($)","number"],
+      ["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
       ["paidAmount","Monto pagado","number"],["createdAt","Fecha","date"],
       ["notes","Notas internas","text",null,true],
     ],
@@ -178,7 +181,7 @@ function setupSupabase() {
   const cfg = window.FIXZONE_SUPABASE;
   if (!window.supabase || !cfg?.url || !cfg?.anonKey) return;
   supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey);
-  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+  supabaseClient.auth.onAuthStateChange(async (event, _session) => {
     if (event === "SIGNED_OUT") {
       currentEmployee = null;
       currentSession  = null;
@@ -498,6 +501,9 @@ async function loadSupabaseState() {
         assignedTo:employeeRows.find(e=>e.id===t.assigned_employee_id)?.full_name||"",
         createdAt:(t.created_at||t.received_at||"").slice(0,10),
         notes:t.notes||"",
+        discountCode:t.discount_code||"",
+        discountAmount:Number(t.discount_amount||0),
+        discountPct:Number(t.discount_pct||0),
         deviceId:t.device_id||null,
         // Device fields — enable search by IMEI/serial and pre-populate edit form
         imei:dev?.imei||"",
@@ -749,6 +755,8 @@ function ticketCard(ticket, perms) {
     <p>${escapeHtml(ticket.issue)}</p>
     <div class="ticket-detail-grid">
       <span>Reparacion</span><strong>${money.format(repair)}</strong>
+      ${ticket.discountAmount>0?`<span style="color:#ff9f43">Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</span><strong style="color:#ff9f43">-${money.format(ticket.discountAmount)}</strong>`:""}
+      <span>Total</span><strong>${money.format(Math.max(0,repair-(ticket.discountAmount||0)))}</strong>
       <span>Pago</span><strong class="${paid?"paid-amount":""}">${paid?money.format(paidAmt):escapeHtml(ticket.paymentStatus)}</strong>
     </div>
     <div class="ticket-topline">
@@ -786,34 +794,53 @@ function financeFilteredTxs() {
 }
 
 function renderFinance() {
-  const txs     = financeFilteredTxs();
-  const income  = sumByType(txs,"Ingreso");
-  const expenses= sumByType(txs,"Egreso");
-  const bal     = income-expenses;
-  const perms   = currentPerms();
-  const periodLabel = {today:"Hoy",week:"7 días",month:"Este mes",all:"Total"}[financePeriod];
-  const canFinance = perms.canManageFinance;
+  const txs        = financeFilteredTxs();
+  const income     = sumByType(txs,"Ingreso");
+  const expenses   = sumByType(txs,"Egreso");
+  const bal        = income - expenses;
+  const margin     = income ? Math.round((bal/income)*100) : 0;
+  const perms      = currentPerms();
 
-  document.querySelector("#finance-summary").innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      ${["today","week","month","all"].map(p=>`<button class="mini-button fin-filter${financePeriod===p?" is-active":""}" data-fin="${p}">${{today:"Hoy",week:"7 días",month:"Este mes",all:"Todo"}[p]}</button>`).join("")}
-    </div>
-    <div class="metric-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
-      ${[
-        [`Ingresos (${periodLabel})`,money.format(income),"type-income", canFinance?`<button class="mini-button" style="margin-top:8px" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>`:""],
-        [`Egresos (${periodLabel})`,money.format(expenses),"type-expense", canFinance?`<button class="mini-button danger-btn" style="margin-top:8px" onclick="openTransactionForm('Egreso')">+ Egreso</button>`:""],
-        ["Balance",money.format(bal),bal>=0?"type-income":"type-expense",""],
-        ["Margen",income?`${Math.round((bal/income)*100)}%`:"0%","",""],
-      ].map(([l,v,cls,btn])=>`<article class="metric"><span>${l}</span><strong class="${cls}">${v}</strong>${btn}</article>`).join("")}
+  // Update active filter button in the static HTML bar
+  document.querySelectorAll(".fin-filter").forEach(b =>
+    b.classList.toggle("is-active", b.dataset.fin === financePeriod));
+
+  // Show/hide action buttons based on permission
+  const bi = document.querySelector("#btn-new-ingreso");
+  const be = document.querySelector("#btn-new-egreso");
+  if (bi) bi.style.display = perms.canManageFinance ? "" : "none";
+  if (be) be.style.display = perms.canManageFinance ? "" : "none";
+
+  // Metrics row
+  document.querySelector("#finance-metrics").innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
+      <article class="metric">
+        <span>Ingresos</span>
+        <strong class="type-income" style="font-size:22px">${money.format(income)}</strong>
+      </article>
+      <article class="metric">
+        <span>Egresos</span>
+        <strong class="type-expense" style="font-size:22px">${money.format(expenses)}</strong>
+      </article>
+      <article class="metric">
+        <span>Balance</span>
+        <strong class="${bal>=0?"type-income":"type-expense"}" style="font-size:22px">${money.format(bal)}</strong>
+      </article>
+      <article class="metric">
+        <span>Margen</span>
+        <strong class="${margin>=0?"type-income":"type-expense"}" style="font-size:22px">${margin}%</strong>
+        <small class="muted" style="font-size:11px;margin-top:4px;display:block">${txs.length} movimientos</small>
+      </article>
     </div>`;
 
+  // Table
   document.querySelector("#transactions-table").innerHTML = bySearch(txs).map(i=>`
     <tr>
-      <td>${i.date}</td>
+      <td style="white-space:nowrap">${i.date}</td>
       <td><span class="type-pill ${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type}</span></td>
       <td>${escapeHtml(i.concept)}</td>
       <td><span class="muted">${escapeHtml(i.category)}</span></td>
-      <td><strong class="${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type==="Ingreso"?"+":"-"}${money.format(i.amount)}</strong></td>
+      <td style="text-align:right"><strong class="${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type==="Ingreso"?"+":"-"}${money.format(i.amount)}</strong></td>
       <td>
         <div class="action-row" style="justify-content:flex-end;gap:6px">
           <button class="mini-button" data-edit-tx="${i.id}">Editar</button>
@@ -1221,6 +1248,101 @@ function renderDiseno() {
       : ['"WE FIX FAST. YOU RELAX."', '"REPARACIÓN PROFESIONAL"', '"MICROSOLDADURA EXPERTA"', '"TU EQUIPO EN BUENAS MANOS"'];
     copysEl.innerHTML = copys.join("<br>");
   }
+
+  renderDiscountManager();
+}
+
+// ── Discount codes (managed by Marketing, stored in localStorage) ─────────────
+const DISCOUNTS_KEY = "fixzone-discounts-v1";
+
+function getDiscounts() {
+  try { return JSON.parse(localStorage.getItem(DISCOUNTS_KEY) || "[]"); } catch { return []; }
+}
+function saveDiscounts(list) { localStorage.setItem(DISCOUNTS_KEY, JSON.stringify(list)); }
+
+function applyDiscount(repairAmount, code) {
+  const d = getDiscounts().find(x => x.code.toLowerCase() === (code||"").toLowerCase() && x.active);
+  if (!d) return { amount: 0, pct: 0, label: "" };
+  const pct = d.type === "pct" ? Number(d.value) : 0;
+  const fixed = d.type === "fixed" ? Number(d.value) : 0;
+  const amount = fixed + (repairAmount * pct / 100);
+  return { amount: Math.min(amount, repairAmount), pct, label: d.description || d.code };
+}
+
+function renderDiscountManager() {
+  const el = document.querySelector("#discount-manager");
+  if (!el) return;
+  const discounts = getDiscounts();
+  el.innerHTML = `
+    <div class="card" style="margin-top:24px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="margin:0;font-size:14px">Códigos de descuento</h3>
+        <button class="primary-action" style="font-size:12px;padding:6px 14px" id="add-discount-btn">+ Nuevo código</button>
+      </div>
+      <div id="discounts-list">
+        ${discounts.length ? discounts.map((d,i)=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13px">
+            <span style="font-family:monospace;background:rgba(255,255,255,.08);padding:2px 8px;border-radius:4px;font-weight:700">${escapeHtml(d.code)}</span>
+            <span style="flex:1">${escapeHtml(d.description||"")}</span>
+            <span class="${d.type==="pct"?"type-income":"type-expense"}">${d.type==="pct"?d.value+"%":"$"+d.value}</span>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px">
+              <input type="checkbox" ${d.active?"checked":""} data-toggle-discount="${i}"> Activo
+            </label>
+            <button class="mini-button danger-btn" style="padding:2px 8px" data-delete-discount="${i}">✕</button>
+          </div>`).join("") : `<p class="muted" style="font-size:13px">No hay códigos creados.</p>`}
+      </div>
+      <div id="new-discount-form" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div class="field" style="margin:0;flex:1;min-width:120px"><label style="font-size:11px">Código</label>
+            <input id="dc-code" type="text" placeholder="PROMO10" style="text-transform:uppercase;font-family:monospace" /></div>
+          <div class="field" style="margin:0;width:110px"><label style="font-size:11px">Tipo</label>
+            <select id="dc-type"><option value="pct">Porcentaje (%)</option><option value="fixed">Fijo ($)</option></select></div>
+          <div class="field" style="margin:0;width:90px"><label style="font-size:11px">Valor</label>
+            <input id="dc-value" type="number" min="1" placeholder="10" /></div>
+          <div class="field" style="margin:0;flex:2;min-width:140px"><label style="font-size:11px">Descripción</label>
+            <input id="dc-desc" type="text" placeholder="Descuento de temporada" /></div>
+          <button class="primary-action" id="save-discount-btn" style="font-size:12px;padding:6px 14px">Guardar</button>
+          <button class="ghost-button" id="cancel-discount-btn" style="font-size:12px;padding:6px 14px">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+
+  el.querySelector("#add-discount-btn")?.addEventListener("click", () => {
+    el.querySelector("#new-discount-form").style.display = "block";
+    el.querySelector("#add-discount-btn").style.display = "none";
+  });
+  el.querySelector("#cancel-discount-btn")?.addEventListener("click", () => {
+    el.querySelector("#new-discount-form").style.display = "none";
+    el.querySelector("#add-discount-btn").style.display = "";
+  });
+  el.querySelector("#save-discount-btn")?.addEventListener("click", () => {
+    const code  = (el.querySelector("#dc-code").value||"").trim().toUpperCase();
+    const type  = el.querySelector("#dc-type").value;
+    const value = Number(el.querySelector("#dc-value").value||0);
+    const desc  = el.querySelector("#dc-desc").value.trim();
+    if (!code || value <= 0) { alert("Código y valor son requeridos."); return; }
+    const list = getDiscounts();
+    if (list.find(d=>d.code===code)) { alert("Ese código ya existe."); return; }
+    list.push({ code, type, value, description: desc, active: true });
+    saveDiscounts(list);
+    renderDiscountManager();
+  });
+  el.querySelector("#discounts-list")?.addEventListener("change", e => {
+    const idx = e.target.dataset.toggleDiscount;
+    if (idx === undefined) return;
+    const list = getDiscounts();
+    list[idx].active = e.target.checked;
+    saveDiscounts(list);
+  });
+  el.querySelector("#discounts-list")?.addEventListener("click", e => {
+    const idx = e.target.dataset.deleteDiscount;
+    if (idx === undefined) return;
+    if (!confirm("¿Eliminar este código?")) return;
+    const list = getDiscounts();
+    list.splice(Number(idx), 1);
+    saveDiscounts(list);
+    renderDiscountManager();
+  });
 }
 
 // ── Edit: Client ──────────────────────────────────────────────────────────────
@@ -1881,11 +2003,14 @@ async function createRemoteTicket(r) {
   const customer  = lookups.customersByName.get(r.client);
   const assignedE = lookups.employeesByName.get(r.assignedTo);
   const branchId  = await branchIdByName(r.branch||activeBranchId);
+  // Auto-apply discount code if provided
+  const disc = r.discountCode ? applyDiscount(Number(r.repairAmount||0), r.discountCode) : { amount: Number(r.discountAmount||0), pct: 0 };
   const { data, error } = await supabaseClient.from("service_tickets").insert({
     customer_id:customer?.id||null, customer_name:r.client,
     product_name:r.productName, issue_description:r.issue,
     stage:r.status, priority:r.priority,
     repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
+    discount_code:r.discountCode||null, discount_amount:disc.amount, discount_pct:disc.pct,
     branch_id:branchId, notes:r.notes||null,
     assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId()
   }).select().single();
@@ -1918,6 +2043,7 @@ async function createRemoteTicket(r) {
     assignedTo:assignedE?.full_name||r.assignedTo||"",
     createdAt:(data.created_at||"").slice(0,10),
     notes:r.notes||"", deviceId,
+    discountCode:r.discountCode||"", discountAmount:disc.amount, discountPct:disc.pct,
     imei:r.imei||"", color:r.color||"",
     accessories:r.accessories||"", physicalCondition:r.physicalCondition||"",
   };
@@ -1939,6 +2065,9 @@ async function updateRemoteTicket(ticketId, r) {
     branch_id:            await branchIdByName(r.branch||activeBranchId),
     assigned_employee_id: assignedE?.id||null,
     notes:                r.notes||null,
+    discount_code:        r.discountCode||null,
+    discount_amount:      Number(r.discountAmount||0),
+    discount_pct:         Number(r.discountPct||0),
   }).eq("id", ticketId);
   if (error) throw error;
 
@@ -1980,7 +2109,6 @@ async function updateRemoteTicket(ticketId, r) {
 }
 
 async function updateRemoteTask(taskId, r) {
-  const assignedE = lookups.employeesByName.get(r.assignedTo);
   const { error } = await supabaseClient.from("service_tasks").update({
     issue_description:    r.issue,
     stage:                r.status,
@@ -1991,7 +2119,7 @@ async function updateRemoteTask(taskId, r) {
 
 async function createRemoteSupply(r) {
   const suppId = await findOrCreateSupplier(r.supplier);
-  const { data:p, error } = await supabaseClient.from("supply_purchases").insert({ supplier_id:suppId, branch_id:await branchIdByName(activeBranchId), purchase_date:r.date, item_name:r.item, quantity:r.quantity, total_amount:r.total, created_by:currentEmployeeId() }).select().single();
+  const { error } = await supabaseClient.from("supply_purchases").insert({ supplier_id:suppId, branch_id:await branchIdByName(activeBranchId), purchase_date:r.date, item_name:r.item, quantity:r.quantity, total_amount:r.total, created_by:currentEmployeeId() });
   if (error) throw error;
   await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${r.item}`, category:"Insumos", amount:r.total });
 }
@@ -2467,13 +2595,14 @@ function printTicket(ticket) {
     </thead>
     <tbody>
       <tr><td>${escapeHtml(ticket.issue || "Servicio de reparación")}</td><td>${money.format(repairAmt)}</td></tr>
+      ${ticket.discountAmount>0?`<tr><td>Descuento${ticket.discountCode?" — "+escapeHtml(ticket.discountCode):""}</td><td>-${money.format(ticket.discountAmount)}</td></tr>`:""}
     </tbody>
   </table>
 
   <p class="rct-dash">${D}</p>
 
   <div class="rct-totals">
-    <div class="rct-total-row rct-total-main"><span>TOTAL</span><strong>${money.format(repairAmt)}</strong></div>
+    <div class="rct-total-row rct-total-main"><span>TOTAL</span><strong>${money.format(Math.max(0,repairAmt-(ticket.discountAmount||0)))}</strong></div>
     <div class="rct-total-row"><span>MÉTODO DE PAGO</span><span>${escapeHtml(ticket.paymentMethod || "Efectivo")}</span></div>
     <div class="rct-total-row"><span>PAGO RECIBIDO</span><span>${money.format(received)}</span></div>
     <div class="rct-total-row"><span>CAMBIO</span><span>${money.format(change)}</span></div>

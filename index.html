@@ -204,18 +204,28 @@
 
         <!-- ── Finanzas ──────────────────────────────────────────────────── -->
         <section class="view" id="finance-view" data-title="Finanzas">
-          <div class="section-heading">
+          <!-- top bar: title + period filters + action buttons -->
+          <div class="section-heading" style="flex-wrap:wrap;gap:10px">
             <h2>Ingresos y egresos</h2>
-            <div class="action-row">
-              <button class="ghost-button" data-export-sheet="transactions">Excel</button>
-              <button class="primary-action" data-open-form="transaction">+ Movimiento</button>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto">
+              <div id="finance-period-bar" style="display:flex;gap:6px">
+                <button class="mini-button fin-filter is-active" data-fin="month">Este mes</button>
+                <button class="mini-button fin-filter" data-fin="today">Hoy</button>
+                <button class="mini-button fin-filter" data-fin="week">7 días</button>
+                <button class="mini-button fin-filter" data-fin="all">Todo</button>
+              </div>
+              <button class="ghost-button" data-export-sheet="transactions">XLS</button>
+              <button class="mini-button" id="btn-new-ingreso" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>
+              <button class="mini-button danger-btn" id="btn-new-egreso" onclick="openTransactionForm('Egreso')">+ Egreso</button>
             </div>
           </div>
-          <div class="finance-summary" id="finance-summary"></div>
+          <!-- metrics row -->
+          <div id="finance-metrics" style="margin-bottom:20px"></div>
+          <!-- transaction table -->
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Categoria</th><th>Monto</th><th></th></tr>
+                <tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Categoría</th><th style="text-align:right">Monto</th><th></th></tr>
               </thead>
               <tbody id="transactions-table"></tbody>
             </table>
@@ -266,7 +276,7 @@
             <h2>Kanban de soporte</h2>
             <button class="primary-action" data-open-form="supportTasks">+ Tarea</button>
           </div>
-          <div class="kanban" id="support-board" style="grid-template-columns:repeat(3,minmax(280px,1fr))"></div>
+          <div class="kanban" id="support-board"></div>
         </section>
 
         <!-- ── Diseño (Marketing / IT) — contenido dinámico por sucursal ──── -->
@@ -374,6 +384,9 @@
           <!-- Flujos sugeridos — se renderizan dinámicamente por sucursal desde renderDiseno() -->
           <div class="section-heading"><h2>Flujos sugeridos</h2></div>
           <div class="auto-flows-grid" id="auto-flows-grid"></div>
+
+          <!-- Códigos de descuento — gestionados por Marketing -->
+          <div id="discount-manager"></div>
         </section>
 
       </main>
