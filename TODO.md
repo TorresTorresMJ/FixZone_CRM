@@ -54,7 +54,7 @@
 - [ ] Separar productos vendibles, refacciones e insumos internos.
 - [ ] Registrar entradas, salidas, ajustes y mermas.
 - [ ] Descontar refacciones automaticamente cuando se usan en un ticket.
-- [ ] Alertar stock bajo.
+- [x] Alertar stock bajo (banner en dashboard + tabla en reportes con cantidad faltante).
 - [ ] Registrar proveedores.
 - [ ] Asociar compras de insumos con proveedor y comprobante [Permitir adjuntar foto de comprobante].
 - [ ] Exportar inventario a Excel.
@@ -63,10 +63,10 @@
 
 - [ ] Separar ingresos por servicios, ventas y anticipos.
 - [ ] Separar egresos por inventario, renta, servicio de luz, nomina, herramientas y operacion.
-- [ ] Crear reporte diario de caja.
-- [ ] Crear reporte mensual de ingresos y egresos.
+- [x] Crear reporte de caja (hoy / 7 días / mes / todo con filtro de período).
+- [x] Crear reporte mensual de ingresos y egresos (con desglose por categoría).
 - [ ] Crear reporte de utilidad estimada.
-- [ ] Crear reporte de tickets por estado.
+- [x] Crear reporte de tickets por estado (distribución con barra visual).
 - [ ] Crear reporte de empleados y productividad.
 - [ ] Exportar reportes a Excel.
 
