@@ -1156,16 +1156,48 @@ function renderSupport() {
   if (!board) return;
   board.innerHTML = supportStages.map(status=>{
     const tasks = bySearch(state.supportTasks||[]).filter(t=>t.status===status);
-    return `<section class="kanban-column">
+    return `<section class="kanban-column"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="handleSupportDrop(event,'${status}');this.classList.remove('drag-over')"
+      data-stage="${status}">
       <h3>${status} <span>${tasks.length}</span></h3>
       <div class="ticket-stack">${tasks.map(task=>supportTaskCard(task, perms)).join("")||emptyMessage("Sin tareas.")}</div>
     </section>`;
   }).join("");
 }
 
+async function handleSupportDrop(event, newStatus) {
+  event.preventDefault();
+  const taskId = event.dataTransfer.getData("taskId");
+  if (!taskId) return;
+  const tasks = state.supportTasks || [];
+  const task  = tasks.find(t => t.id === taskId);
+  if (!task || task.status === newStatus) return;
+  const idx = tasks.findIndex(t => t.id === taskId);
+  const oldStatus = task.status;
+  if (idx !== -1) state.supportTasks[idx] = { ...task, status: newStatus };
+  render();
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId);
+  if (dataMode === "remote" && isUUID) {
+    try {
+      await updateRemoteSupportTask(taskId, { ...task, status: newStatus });
+      try { await reloadState(); } catch(e) { console.warn(e); }
+      render();
+    } catch(err) {
+      if (idx !== -1) state.supportTasks[idx] = { ...task, status: oldStatus };
+      render();
+      alert(`Error al mover tarea: ${err.message}`);
+    }
+  }
+}
+window.handleSupportDrop = handleSupportDrop;
+
 function supportTaskCard(task, perms) {
   perms = perms || currentPerms();
-  return `<article class="ticket-card">
+  return `<article class="ticket-card" draggable="true"
+    ondragstart="event.dataTransfer.setData('taskId','${task.id}');this.style.opacity='.5'"
+    ondragend="this.style.opacity=''">
     <div class="task-topline">
       <span class="status ${task.priority==="Urgente"||task.priority==="Alta"?"urgent":task.status==="Resuelto"?"ready":""}">${task.priority}</span>
       <small class="muted">${escapeHtml(task.createdAt||"")}</small>
