@@ -17,14 +17,14 @@ const ROLE_LABELS  = { it: "Admin", owner: "Admin", admin: "Admin", standard: "E
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
   // Frontend roles
-  it:        { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  admin:     { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  standard:  { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
-  marketing: { tabs: ["dashboard","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
+  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  standard:  { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  marketing: { tabs: ["dashboard","cotizaciones","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
   // DB roles (map to equivalent frontend permission sets)
-  owner:      { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  sales:      { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
-  technician: { tabs: ["dashboard","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  sales:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
+  technician: { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
 };
 
@@ -546,6 +546,7 @@ function render() {
   renderClients();
   renderProducts();
   renderTickets();
+  renderCotizaciones();
   renderSupplies();
   renderFinance();
   renderReports();
@@ -648,11 +649,90 @@ function renderTickets() {
   const perms = currentPerms();
   document.querySelector("#ticket-board").innerHTML = ticketStages.map(status=>{
     const tickets = bySearch(branchTickets()).filter(t=>t.status===status);
-    return `<section class="kanban-column">
+    return `<section class="kanban-column"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="handleKanbanDrop(event,'${status}');this.classList.remove('drag-over')"
+      data-stage="${status}">
       <h3>${status} <span>${tickets.length}</span></h3>
       <div class="ticket-stack">${tickets.map(t=>ticketCard(t,perms)).join("")||emptyMessage("Sin tickets.")}</div>
     </section>`;
   }).join("");
+}
+
+async function handleKanbanDrop(event, newStage) {
+  event.preventDefault();
+  const ticketId = event.dataTransfer.getData("ticketId");
+  if (!ticketId) return;
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket || ticket.status === newStage) return;
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
+  const idx = state.tickets.findIndex(t => t.id === ticketId);
+  const oldStatus = ticket.status;
+  // Optimistic update
+  if (idx !== -1) state.tickets[idx] = { ...ticket, status: newStage };
+  render();
+  if (dataMode === "remote" && isUUID) {
+    try {
+      await updateRemoteTicket(ticketId, { ...ticket, status: newStage });
+      try { await reloadState(); } catch(e) { console.warn(e); }
+      render();
+    } catch(err) {
+      if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], status: oldStatus };
+      render();
+      alert(`Error al mover ticket: ${err.message}`);
+    }
+  }
+}
+window.handleKanbanDrop = handleKanbanDrop;
+
+// ── Cotizaciones ──────────────────────────────────────────────────────────────
+function renderCotizaciones() {
+  const perms  = currentPerms();
+  const quotes = bySearch(branchTickets().filter(t => t.status === "Cotizacion"));
+  const el     = document.querySelector("#cotizaciones-board");
+  if (!el) return;
+  el.innerHTML = quotes.length
+    ? quotes.map(t => quoteCard(t, perms)).join("")
+    : emptyMessage("No hay cotizaciones pendientes. Crea una con el botón + Cotización.");
+}
+
+function quoteCard(ticket, perms) {
+  perms = perms || currentPerms();
+  const repair = Number(ticket.repairAmount || 0);
+  return `<article class="ticket-card">
+    <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span></div>
+    <div class="ticket-topline"><strong>${escapeHtml(ticket.client)}</strong><span class="muted">${escapeHtml(ticket.createdAt)}</span></div>
+    <span class="muted">${escapeHtml(ticket.productName)}</span>
+    <p>${escapeHtml(ticket.issue)}</p>
+    ${repair > 0 ? `<div class="ticket-detail-grid"><span>Costo estimado</span><strong>${money.format(repair)}</strong></div>` : ""}
+    <div class="ticket-actions">
+      <button class="mini-button" data-print-ticket="${ticket.id}">Recibo</button>
+      <button class="primary-action" style="font-size:12px;padding:5px 12px;min-height:0" data-approve-quote="${ticket.id}">✓ Aprobar</button>
+      <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
+      ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
+    </div>
+  </article>`;
+}
+
+async function approveQuoteToTicket(ticketId) {
+  if (!confirm("¿Convertir esta cotización a ticket activo (Recibido)?")) return;
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
+  const idx = state.tickets.findIndex(t => t.id === ticketId);
+  if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Recibido" };
+  if (dataMode === "remote" && isUUID) {
+    try {
+      await updateRemoteTicket(ticketId, { ...ticket, status: "Recibido" });
+      try { await reloadState(); } catch(e) { console.warn(e); }
+    } catch(err) {
+      if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Cotizacion" };
+      alert(`Error: ${err.message}`); return;
+    }
+  }
+  render();
+  showToast("✓ Cotización aprobada — ticket movido a Recibido");
 }
 
 function ticketCard(ticket, perms) {
@@ -660,7 +740,9 @@ function ticketCard(ticket, perms) {
   const paid   = ticket.paymentStatus==="Pagado";
   const repair = Number(ticket.repairAmount??ticket.total??0);
   const paidAmt= Number(ticket.paidAmount??(paid?repair:0));
-  return `<article class="ticket-card">
+  return `<article class="ticket-card" draggable="true"
+    ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
+    ondragend="this.style.opacity=''">
     <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span></div>
     <div class="ticket-topline"><strong>${escapeHtml(ticket.client)}</strong><span class="status ${ticket.priority==="Urgente"||ticket.priority==="Alta"?"urgent":""}">${ticket.priority}</span></div>
     <span class="muted">${escapeHtml(ticket.productName||ticket.device)}</span>
@@ -835,6 +917,43 @@ function renderReports() {
             <td style="text-align:center;padding:6px 8px">${p.minStock}</td>
             <td style="text-align:center;padding:6px 8px;color:#ff9f43">+${falta}</td></tr>`;
         }).join("")}</tbody>
+      </table>
+    </div>` : "";
+
+  // Productivity by employee
+  const byEmp = {};
+  for (const t of bTickets) {
+    const emp = t.assignedTo || "Sin asignar";
+    if (!byEmp[emp]) byEmp[emp] = { tickets:0, completed:0, revenue:0 };
+    byEmp[emp].tickets++;
+    byEmp[emp].revenue += Number(t.repairAmount || 0);
+    if (["Listo","Entregado"].includes(t.status)) byEmp[emp].completed++;
+  }
+  const empRows = Object.entries(byEmp)
+    .sort((a,b) => b[1].completed - a[1].completed)
+    .map(([name, s]) => {
+      const pct = s.tickets ? Math.round((s.completed/s.tickets)*100) : 0;
+      return `<tr>
+        <td style="padding:6px 8px">${escapeHtml(name)}</td>
+        <td style="text-align:center;padding:6px 8px">${s.tickets}</td>
+        <td style="text-align:center;padding:6px 8px">${s.completed}</td>
+        <td style="text-align:center;padding:6px 8px">${pct}%</td>
+        <td style="text-align:right;padding:6px 8px" class="type-income">${money.format(s.revenue)}</td>
+      </tr>`;
+    }).join("");
+
+  document.querySelector("#reports-productivity").innerHTML = empRows ? `
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin:0 0 16px;font-size:14px">Productividad por empleado</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+          <th style="text-align:left;padding:6px 8px">Empleado</th>
+          <th style="text-align:center;padding:6px 8px">Tickets</th>
+          <th style="text-align:center;padding:6px 8px">Cerrados</th>
+          <th style="text-align:center;padding:6px 8px">Efectividad</th>
+          <th style="text-align:right;padding:6px 8px">Valor generado</th>
+        </tr></thead>
+        <tbody>${empRows}</tbody>
       </table>
     </div>` : "";
 }
@@ -1330,10 +1449,71 @@ function openEditTicket(ticketId) {
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide]) =>
     fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "")
-  ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-events-section"></div>`;
+  ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
   modal.showModal();
   initPhotoUpload(ticketId);
+  loadTicketParts(ticketId);
   loadTicketEvents(ticketId);
+}
+
+async function loadTicketParts(ticketId) {
+  const el = document.querySelector("#ticket-parts-section");
+  if (!el || !supabaseClient) return;
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
+  if (!isUUID) return;
+
+  const { data: items } = await supabaseClient
+    .from("ticket_items").select("*").eq("ticket_id", ticketId).order("created_at");
+  const products = branchProducts();
+
+  const renderPartsList = (list) => list?.length ? list.map(it => `
+    <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+      <span style="flex:1">${escapeHtml(it.description)}</span>
+      <span class="muted">${it.quantity} × ${money.format(it.unit_price)}</span>
+      <strong>${money.format(Number(it.quantity)*Number(it.unit_price))}</strong>
+      <button class="mini-button danger-btn" style="padding:2px 8px;font-size:11px" data-remove-part="${it.id}">✕</button>
+    </div>`).join("") : `<p class="muted" style="font-size:12px">Sin refacciones añadidas.</p>`;
+
+  const total = (items||[]).reduce((s,it)=>s+Number(it.quantity)*Number(it.unit_price),0);
+  const productOpts = products.map(p=>`<option value="${p.id}" data-price="${p.price}">${escapeHtml(p.name)} — ${money.format(p.price)}</option>`).join("");
+
+  el.innerHTML = `
+    <div class="field is-wide" style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)">
+      <label style="font-size:12px;text-transform:uppercase;letter-spacing:.06em">Refacciones / Partes usadas</label>
+      <div id="parts-list" style="margin:10px 0 12px">${renderPartsList(items)}</div>
+      ${total>0?`<div style="text-align:right;font-size:13px;margin-bottom:12px">Total partes: <strong>${money.format(total)}</strong></div>`:""}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="field" style="flex:2;margin:0"><label style="font-size:11px">Producto</label>
+          <select id="part-product-sel" style="font-size:13px">${productOpts}</select>
+        </div>
+        <div class="field" style="width:80px;margin:0"><label style="font-size:11px">Cantidad</label>
+          <input id="part-qty" type="number" min="1" step="1" value="1" style="font-size:13px" />
+        </div>
+        <button class="mini-button" id="add-part-btn" type="button">+ Agregar</button>
+      </div>
+    </div>`;
+
+  // Add part
+  el.querySelector("#add-part-btn")?.addEventListener("click", async () => {
+    const sel   = el.querySelector("#part-product-sel");
+    const qty   = Number(el.querySelector("#part-qty").value || 1);
+    const prod  = products.find(p => p.id === sel.value);
+    if (!prod || qty <= 0) return;
+    const { error } = await supabaseClient.from("ticket_items").insert({
+      ticket_id: ticketId, product_id: prod.id,
+      description: prod.name, quantity: qty, unit_price: prod.price,
+    });
+    if (error) { alert(`Error: ${error.message}`); return; }
+    loadTicketParts(ticketId);
+  });
+
+  // Remove part (delegated)
+  el.querySelector("#parts-list")?.addEventListener("click", async ev => {
+    const btn = ev.target.closest("[data-remove-part]");
+    if (!btn) return;
+    await supabaseClient.from("ticket_items").delete().eq("id", btn.dataset.removePart);
+    loadTicketParts(ticketId);
+  });
 }
 
 async function loadTicketEvents(ticketId) {
@@ -2001,6 +2181,13 @@ document.querySelectorAll("[data-open-form]").forEach(btn => {
 });
 
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
+document.querySelector("#new-quote-btn")?.addEventListener("click", () => {
+  openForm("ticket", { status: "Cotizacion" });
+  setTimeout(() => {
+    const sel = document.querySelector("#status");
+    if (sel) sel.value = "Cotizacion";
+  }, 0);
+});
 document.querySelector("#close-modal").addEventListener("click",  () => modal.close());
 document.querySelector("#cancel-record").addEventListener("click",() => modal.close());
 
@@ -2075,6 +2262,9 @@ document.addEventListener("click", async e => {
   // Abono
   const abonoBtn = e.target.closest("[data-abono-ticket]");
   if (abonoBtn) { openAbonoModal(abonoBtn.dataset.abonoTicket); return; }
+
+  const approveBtn = e.target.closest("[data-approve-quote]");
+  if (approveBtn) { approveQuoteToTicket(approveBtn.dataset.approveQuote); return; }
 
   // Delete ticket
   const delTicket = e.target.closest("[data-delete-ticket]");

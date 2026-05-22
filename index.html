@@ -36,6 +36,9 @@
           <button class="nav-item" data-view="tickets" title="Tickets">
             <span aria-hidden="true">✦</span> Tickets
           </button>
+          <button class="nav-item" data-view="cotizaciones" title="Cotizaciones">
+            <span aria-hidden="true">📋</span> Cotizaciones
+          </button>
           <button class="nav-item" data-view="supplies" title="Insumos">
             <span aria-hidden="true">◉</span> Insumos
           </button>
@@ -158,6 +161,16 @@
           <div class="inventory-grid" id="products-grid"></div>
         </section>
 
+        <!-- ── Cotizaciones ─────────────────────────────────────────────── -->
+        <section class="view" id="cotizaciones-view" data-title="Cotizaciones">
+          <div class="section-heading">
+            <h2>Cotizaciones pendientes</h2>
+            <button class="primary-action" id="new-quote-btn">+ Cotización</button>
+          </div>
+          <p class="muted" style="margin-bottom:16px;font-size:13px">Presupuestos antes de ser aprobados. Pulsa <strong>Aprobar</strong> para convertir a ticket activo.</p>
+          <div class="inventory-grid" id="cotizaciones-board" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
+        </section>
+
         <!-- ── Tickets ───────────────────────────────────────────────────── -->
         <section class="view" id="tickets-view" data-title="Tickets">
           <div class="section-heading">
@@ -224,6 +237,7 @@
           <div id="reports-cash"></div>
           <div id="reports-tickets"></div>
           <div id="reports-stock"></div>
+          <div id="reports-productivity"></div>
         </section>
 
         <!-- ── Usuarios (Admin + IT) ─────────────────────────────────────── -->
