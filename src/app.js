@@ -85,7 +85,13 @@ const formSchemas = {
   ticket: {
     title: "Ticket", collection: "tickets",
     fields: [
-      ["client","Cliente","text"],["productName","Producto / equipo","text"],["issue","Falla / trabajo","text",null,true],
+      ["client","Cliente","text"],["productName","Producto / equipo","text"],
+      // Device detail fields
+      ["imei","IMEI / No. Serie","text"],
+      ["color","Color","text"],
+      ["accessories","Accesorios recibidos","text",null,true],
+      ["physicalCondition","Condición física","select",["Bueno","Regular","Con daños","Muy dañado"]],
+      ["issue","Falla / trabajo","text",null,true],
       ["branch","Sucursal","select",BRANCHES],["assignedTo","Empleado","select",employees],
       ["status","Stage","select",ticketStages],["priority","Prioridad","select",["Normal","Media","Alta","Urgente"]],
       ["repairAmount","Monto reparacion","number"],["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
@@ -451,7 +457,12 @@ async function loadSupabaseState() {
   };
 
   const deviceByCustomer = new Map();
-  for (const d of deviceRows) if (!deviceByCustomer.has(d.customer_id)) deviceByCustomer.set(d.customer_id,d);
+  const deviceById       = new Map();
+  for (const d of deviceRows) {
+    if (!deviceByCustomer.has(d.customer_id)) deviceByCustomer.set(d.customer_id, d);
+    deviceById.set(d.id, d);
+  }
+  const customerById = new Map(customerRows.map(c => [c.id, c]));
 
   return {
     branches:  branchRows.map(b => ({ id:b.id, name:b.name })),
@@ -476,14 +487,28 @@ async function loadSupabaseState() {
       minStock:Number(p.min_stock||0), price:Number(p.sale_price||p.unit_cost||0),
       branch:branchRows.find(b=>b.id===p.branch_id)?.name||BRANCHES[0],
     })),
-    tickets: (tRes.data||[]).map(t => ({
-      id:t.id, tracking:t.tracking_number, client:t.customer_name, productName:t.product_name,
-      issue:t.issue_description, status:t.stage, priority:t.priority,
-      repairAmount:Number(t.repair_amount||0), paymentStatus:t.payment_status, paidAmount:Number(t.paid_amount||0),
-      branch:branchRows.find(b=>b.id===t.branch_id)?.name||BRANCHES[0],
-      assignedTo:employeeRows.find(e=>e.id===t.assigned_employee_id)?.full_name||"",
-      createdAt:(t.created_at||t.received_at||"").slice(0,10),
-    })),
+    tickets: (tRes.data||[]).map(t => {
+      const dev  = deviceById.get(t.device_id);
+      const cust = customerById.get(t.customer_id);
+      return {
+        id:t.id, tracking:t.tracking_number, client:t.customer_name, productName:t.product_name,
+        issue:t.issue_description, status:t.stage, priority:t.priority,
+        repairAmount:Number(t.repair_amount||0), paymentStatus:t.payment_status, paidAmount:Number(t.paid_amount||0),
+        branch:branchRows.find(b=>b.id===t.branch_id)?.name||BRANCHES[0],
+        assignedTo:employeeRows.find(e=>e.id===t.assigned_employee_id)?.full_name||"",
+        createdAt:(t.created_at||t.received_at||"").slice(0,10),
+        notes:t.notes||"",
+        deviceId:t.device_id||null,
+        // Device fields — enable search by IMEI/serial and pre-populate edit form
+        imei:dev?.imei||"",
+        serialNumber:dev?.serial_number||"",
+        color:dev?.color||"",
+        accessories:dev?.accessories_received||"",
+        physicalCondition:dev?.physical_condition||"",
+        // Customer phone — enable search by phone number
+        phone:cust?.phone||"",
+      };
+    }),
     supplies: (puRes.data||[]).map(p => ({
       id:p.id, date:p.purchase_date, supplier:p.suppliers?.name||"Sin proveedor",
       item:p.item_name, quantity:Number(p.quantity||0), total:Number(p.total_amount||0),
@@ -633,6 +658,7 @@ function ticketCard(ticket, perms) {
     </div>
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}">Recibo</button>
+      ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
     </div>
@@ -1186,9 +1212,46 @@ function openEditTicket(ticketId) {
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide]) =>
     fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "")
-  ).join("") + buildPhotoUploadSection(ticketId);
+  ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-events-section"></div>`;
   modal.showModal();
   initPhotoUpload(ticketId);
+  loadTicketEvents(ticketId);
+}
+
+async function loadTicketEvents(ticketId) {
+  const el = document.querySelector("#ticket-events-section");
+  if (!el || !supabaseClient) return;
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
+  if (!isUUID) return;
+
+  const { data } = await supabaseClient
+    .from("ticket_events")
+    .select("event_type, from_stage, to_stage, note, created_at, employees(full_name)")
+    .eq("ticket_id", ticketId)
+    .order("created_at", { ascending: true });
+
+  if (!data?.length) { el.innerHTML = ""; return; }
+
+  el.innerHTML = `
+    <div class="field is-wide" style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08)">
+      <label style="font-size:12px;text-transform:uppercase;letter-spacing:.06em">Historial de cambios</label>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+        ${data.map(ev => {
+          const who  = ev.employees?.full_name || "Sistema";
+          const when = (ev.created_at||"").slice(0,16).replace("T"," ");
+          const desc = ev.from_stage && ev.to_stage
+            ? `<strong>${ev.from_stage}</strong> → <strong>${ev.to_stage}</strong>`
+            : ev.note || ev.event_type;
+          return `<div style="display:flex;gap:10px;align-items:flex-start;font-size:12px">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--fz-primary,#2F6FFF);margin-top:4px;flex-shrink:0"></div>
+            <div>
+              <span>${desc}</span>
+              <br><span class="muted">${who} · ${when}</span>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
 }
 
 function buildPhotoUploadSection(ticketId) {
@@ -1525,12 +1588,28 @@ async function createRemoteTicket(r) {
     product_name:r.productName, issue_description:r.issue,
     stage:r.status, priority:r.priority,
     repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
-    branch_id:branchId,
+    branch_id:branchId, notes:r.notes||null,
     assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId()
   }).select().single();
   if (error) throw error;
-  // Add the DB-created ticket to state immediately so it appears in the kanban
-  // without needing to wait for reloadState() to succeed.
+
+  // Create device record if any device fields were filled
+  let deviceId = null;
+  if (customer?.id && (r.imei||r.color||r.accessories||r.physicalCondition)) {
+    const { data: dev } = await supabaseClient.from("customer_devices").insert({
+      customer_id:          customer.id,
+      product_name:         r.productName||"Sin nombre",
+      imei:                 r.imei||null,
+      color:                r.color||null,
+      accessories_received: r.accessories||null,
+      physical_condition:   r.physicalCondition||null,
+    }).select("id").single();
+    if (dev?.id) {
+      deviceId = dev.id;
+      await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", data.id);
+    }
+  }
+
   const branchName = [...lookups.branchesByName.values()].find(b=>b.id===branchId)?.name || BRANCHES[0];
   const mapped = {
     id:data.id, tracking:data.tracking_number, client:data.customer_name,
@@ -1540,11 +1619,15 @@ async function createRemoteTicket(r) {
     paidAmount:Number(data.paid_amount||0), branch:branchName,
     assignedTo:assignedE?.full_name||r.assignedTo||"",
     createdAt:(data.created_at||"").slice(0,10),
+    notes:r.notes||"", deviceId,
+    imei:r.imei||"", color:r.color||"",
+    accessories:r.accessories||"", physicalCondition:r.physicalCondition||"",
   };
   state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
 }
 
 async function updateRemoteTicket(ticketId, r) {
+  const oldTicket = state.tickets.find(t => t.id === ticketId);
   const assignedE = lookups.employeesByName.get(r.assignedTo);
   const { error } = await supabaseClient.from("service_tickets").update({
     customer_name:        r.client,
@@ -1557,8 +1640,45 @@ async function updateRemoteTicket(ticketId, r) {
     paid_amount:          Number(r.paidAmount||0),
     branch_id:            await branchIdByName(r.branch||activeBranchId),
     assigned_employee_id: assignedE?.id||null,
+    notes:                r.notes||null,
   }).eq("id", ticketId);
   if (error) throw error;
+
+  // Log stage change event
+  if (oldTicket?.status && r.status && oldTicket.status !== r.status) {
+    await supabaseClient.from("ticket_events").insert({
+      ticket_id:  ticketId,
+      event_type: "stage_change",
+      from_stage: oldTicket.status,
+      to_stage:   r.status,
+      created_by: currentEmployeeId(),
+    });
+  }
+
+  // Update device record if exists, or create one if new device fields provided
+  if (oldTicket?.deviceId) {
+    await supabaseClient.from("customer_devices").update({
+      imei:                 r.imei||null,
+      color:                r.color||null,
+      accessories_received: r.accessories||null,
+      physical_condition:   r.physicalCondition||null,
+    }).eq("id", oldTicket.deviceId);
+  } else if (r.imei || r.color || r.accessories || r.physicalCondition) {
+    const customer = lookups.customersByName.get(r.client);
+    if (customer?.id) {
+      const { data: dev } = await supabaseClient.from("customer_devices").insert({
+        customer_id:          customer.id,
+        product_name:         r.productName||"Sin nombre",
+        imei:                 r.imei||null,
+        color:                r.color||null,
+        accessories_received: r.accessories||null,
+        physical_condition:   r.physicalCondition||null,
+      }).select("id").single();
+      if (dev?.id) {
+        await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", ticketId);
+      }
+    }
+  }
 }
 
 async function updateRemoteTask(taskId, r) {
@@ -1682,6 +1802,80 @@ function showToast(message) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// ABONOS
+// ──────────────────────────────────────────────────────────────────────────────
+let abonoTicketId = null;
+const abonoModal  = document.querySelector("#abono-modal");
+
+function openAbonoModal(ticketId) {
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket || !abonoModal) return;
+  abonoTicketId = ticketId;
+  const total   = Number(ticket.repairAmount || 0);
+  const paid    = Number(ticket.paidAmount   || 0);
+  const pending = Math.max(0, total - paid);
+  document.querySelector("#abono-modal-title").textContent   = `Abono — ${ticket.tracking}`;
+  document.querySelector("#abono-modal-eyebrow").textContent = ticket.client;
+  document.querySelector("#abono-summary").innerHTML = `
+    <div class="ticket-detail-grid">
+      <span>Total reparación</span><strong>${money.format(total)}</strong>
+      <span>Ya pagado</span><strong class="paid-amount">${money.format(paid)}</strong>
+      <span>Saldo pendiente</span><strong style="color:#ff9f43">${money.format(pending)}</strong>
+    </div>`;
+  const amountInput = document.querySelector("#abono-amount");
+  amountInput.max   = pending;
+  amountInput.value = "";
+  abonoModal.showModal();
+}
+
+document.querySelector("#close-abono-modal")?.addEventListener("click", () => abonoModal?.close());
+document.querySelector("#cancel-abono")?.addEventListener("click",       () => abonoModal?.close());
+
+document.querySelector("#abono-form")?.addEventListener("submit", async e => {
+  e.preventDefault();
+  const ticket = state.tickets.find(t => t.id === abonoTicketId);
+  if (!ticket) return;
+  const amount    = Number(document.querySelector("#abono-amount").value || 0);
+  const method    = document.querySelector("#abono-method").value;
+  if (amount <= 0) return;
+
+  const total     = Number(ticket.repairAmount || 0);
+  const newPaid   = Number(ticket.paidAmount || 0) + amount;
+  const newStatus = newPaid >= total ? "Pagado" : "Abonado";
+  const isUUID    = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(abonoTicketId);
+
+  try {
+    if (dataMode === "remote" && isUUID) {
+      const { error } = await supabaseClient.from("service_tickets").update({
+        paid_amount:    newPaid,
+        payment_status: newStatus,
+      }).eq("id", abonoTicketId);
+      if (error) throw error;
+
+      await createRemoteTransaction({
+        date:     dateStamp(),
+        type:     "Ingreso",
+        concept:  `Abono ${ticket.tracking} (${method})`,
+        category: "Servicio",
+        amount,
+      });
+
+      try { await reloadState(); } catch(re) { console.warn("reload:", re); }
+    }
+    // Update local state regardless so UI reflects immediately
+    const idx = state.tickets.findIndex(t => t.id === abonoTicketId);
+    if (idx !== -1) {
+      state.tickets[idx] = { ...state.tickets[idx], paidAmount: newPaid, paymentStatus: newStatus };
+    }
+    abonoModal.close();
+    render();
+    showToast(`✓ Abono de ${money.format(amount)} registrado`);
+  } catch(err) {
+    alert(`No se pudo registrar el abono: ${err.message}`);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // EVENT LISTENERS
 // ──────────────────────────────────────────────────────────────────────────────
 document.querySelectorAll("[data-open-form]").forEach(btn => {
@@ -1743,6 +1937,10 @@ document.addEventListener("click", async e => {
   // Print ticket
   const printBtn = e.target.closest("[data-print-ticket]");
   if (printBtn) { const t = state.tickets.find(i=>i.id===printBtn.dataset.printTicket); if(t) printTicket(t); return; }
+
+  // Abono
+  const abonoBtn = e.target.closest("[data-abono-ticket]");
+  if (abonoBtn) { openAbonoModal(abonoBtn.dataset.abonoTicket); return; }
 
   // Delete ticket
   const delTicket = e.target.closest("[data-delete-ticket]");

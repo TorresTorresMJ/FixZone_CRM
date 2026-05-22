@@ -376,6 +376,39 @@
     <!-- ── Print area ───────────────────────────────────────────────────────── -->
     <section class="print-receipt" id="print-receipt" aria-hidden="true"></section>
 
+    <!-- ── Abono modal ────────────────────────────────────────────────────────── -->
+    <dialog class="modal" id="abono-modal" style="max-width:380px">
+      <div class="modal-header">
+        <div>
+          <small class="eyebrow" id="abono-modal-eyebrow">Pago parcial</small>
+          <h2 class="modal-title" id="abono-modal-title">Registrar abono</h2>
+        </div>
+        <button class="icon-button" type="button" id="close-abono-modal" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="abono-summary" style="margin-bottom:20px"></div>
+        <form id="abono-form" class="form-fields">
+          <div class="field">
+            <label for="abono-amount">Monto del abono</label>
+            <input id="abono-amount" type="number" min="0.01" step="0.01" required placeholder="0.00" />
+          </div>
+          <div class="field">
+            <label for="abono-method">Método de pago</label>
+            <select id="abono-method">
+              <option>Efectivo</option>
+              <option>Transferencia</option>
+              <option>Tarjeta</option>
+              <option>Otro</option>
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="ghost-button" id="cancel-abono">Cancelar</button>
+            <button type="submit" class="primary-action">Guardar abono</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
     <!-- ── Help / IT modal ──────────────────────────────────────────────────── -->
     <dialog class="modal help-modal" id="help-modal">
       <form id="help-form">
