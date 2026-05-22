@@ -573,26 +573,43 @@ function sumByType(list, type) { return list.filter(i=>i.type===type).reduce((s,
 
 function renderMetrics() {
   const branchTxs   = branchTransactions();
-  const income      = sumByType(branchTxs,"Ingreso");
-  const expenses    = sumByType(branchTxs,"Egreso");
+  const today       = dateStamp();
+  const todayTxs    = branchTxs.filter(t => t.date === today);
+  const income      = sumByType(todayTxs,"Ingreso");
+  const expenses    = sumByType(todayTxs,"Egreso");
   const openTickets = branchTickets().filter(t=>t.status!=="Entregado").length;
-  const lowStock    = branchProducts().filter(p=>Number(p.stock)<=Number(p.minStock)).length;
+  const lowStockItems = branchProducts().filter(p=>Number(p.stock)<=Number(p.minStock)&&Number(p.minStock)>0);
 
   document.querySelector("#metric-grid").innerHTML = [
-    ["Clientes",branchClients().length],["Tickets abiertos",openTickets],
-    ["Balance",money.format(income-expenses)],["Stock bajo",lowStock],
-  ].map(([l,v])=>`<article class="metric"><span>${l}</span><strong>${v}</strong></article>`).join("");
+    ["Clientes",branchClients().length,""],
+    ["Tickets abiertos",openTickets,""],
+    ["Ingresos hoy",money.format(income),"type-income"],
+    ["Egresos hoy",money.format(expenses),"type-expense"],
+  ].map(([l,v,cls])=>`<article class="metric"><span>${l}</span><strong class="${cls}">${v}</strong></article>`).join("");
+
+  // Stock-low alert banner
+  const banner = document.querySelector("#stock-alert-banner");
+  if (banner) {
+    banner.innerHTML = lowStockItems.length
+      ? `<div style="background:rgba(255,159,67,0.12);border:1px solid rgba(255,159,67,0.3);border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px">⚠️</span>
+          <div><strong>${lowStockItems.length} producto${lowStockItems.length>1?"s":""} con stock bajo:</strong>
+          ${lowStockItems.map(p=>`<span style="margin-left:8px;opacity:.8">${escapeHtml(p.name)} (${p.stock}/${p.minStock})</span>`).join("")}</div>
+          <button class="ghost-button" data-view="products" style="margin-left:auto;font-size:12px">Ver productos →</button>
+        </div>`
+      : "";
+  }
 
   document.querySelector("#active-ticket-list").innerHTML = branchTickets()
     .filter(t=>t.status!=="Entregado").slice(0,5).map(ticketCard).join("")||emptyMessage("No hay tickets activos.");
 
-  document.querySelector("#recent-activity").innerHTML = branchTransactions()
+  document.querySelector("#recent-activity").innerHTML = branchTxs
     .slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6)
     .map(item=>`
       <div class="activity-item">
-        <div><strong>${item.concept}</strong><br><span class="muted">${item.date} · ${item.category}</span></div>
+        <div><strong>${escapeHtml(item.concept)}</strong><br><span class="muted">${item.date} · ${escapeHtml(item.category)}</span></div>
         <span class="type-pill ${item.type==="Ingreso"?"type-income":"type-expense"}">${item.type==="Ingreso"?"+":"-"}${money.format(item.amount)}</span>
-      </div>`).join("");
+      </div>`).join("")||emptyMessage("Sin movimientos recientes.");
 }
 
 function renderClients() {
@@ -675,27 +692,46 @@ function renderSupplies() {
   `).join("")||tableEmpty(6);
 }
 
+let financePeriod = "month"; // "today" | "week" | "month" | "all"
+
+function financeFilteredTxs() {
+  const all   = branchTransactions();
+  const today = dateStamp();
+  if (financePeriod === "today") return all.filter(t => t.date === today);
+  if (financePeriod === "week")  { const d=new Date(); d.setDate(d.getDate()-6); const s=d.toISOString().slice(0,10); return all.filter(t=>t.date>=s); }
+  if (financePeriod === "month") { const s=today.slice(0,7)+"-01"; return all.filter(t=>t.date>=s); }
+  return all;
+}
+
 function renderFinance() {
-  const txs     = branchTransactions();
+  const txs     = financeFilteredTxs();
   const income  = sumByType(txs,"Ingreso");
   const expenses= sumByType(txs,"Egreso");
   const bal     = income-expenses;
   const perms   = currentPerms();
-
+  const periodLabel = {today:"Hoy",week:"7 días",month:"Este mes",all:"Total"}[financePeriod];
   const canFinance = perms.canManageFinance;
-  document.querySelector("#finance-summary").innerHTML = [
-    ["Ingresos",money.format(income), canFinance ? `<button class="mini-button" style="margin-top:10px" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>` : ""],
-    ["Egresos",money.format(expenses), canFinance ? `<button class="mini-button danger-btn" style="margin-top:10px" onclick="openTransactionForm('Egreso')">+ Egreso</button>` : ""],
-    ["Balance",money.format(bal), ""],
-    ["Margen",income?`${Math.round((bal/income)*100)}%`:"0%", ""],
-  ].map(([l,v,btn])=>`<article class="metric"><span>${l}</span><strong>${v}</strong>${btn}</article>`).join("");
+
+  document.querySelector("#finance-summary").innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      ${["today","week","month","all"].map(p=>`<button class="mini-button fin-filter${financePeriod===p?" is-active":""}" data-fin="${p}">${{today:"Hoy",week:"7 días",month:"Este mes",all:"Todo"}[p]}</button>`).join("")}
+    </div>
+    <div class="metric-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
+      ${[
+        [`Ingresos (${periodLabel})`,money.format(income),"type-income", canFinance?`<button class="mini-button" style="margin-top:8px" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>`:""],
+        [`Egresos (${periodLabel})`,money.format(expenses),"type-expense", canFinance?`<button class="mini-button danger-btn" style="margin-top:8px" onclick="openTransactionForm('Egreso')">+ Egreso</button>`:""],
+        ["Balance",money.format(bal),bal>=0?"type-income":"type-expense",""],
+        ["Margen",income?`${Math.round((bal/income)*100)}%`:"0%","",""],
+      ].map(([l,v,cls,btn])=>`<article class="metric"><span>${l}</span><strong class="${cls}">${v}</strong>${btn}</article>`).join("")}
+    </div>`;
 
   document.querySelector("#transactions-table").innerHTML = bySearch(txs).map(i=>`
     <tr>
       <td>${i.date}</td>
       <td><span class="type-pill ${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type}</span></td>
-      <td>${i.concept}</td><td>${i.category}</td>
-      <td><strong>${money.format(i.amount)}</strong></td>
+      <td>${escapeHtml(i.concept)}</td>
+      <td><span class="muted">${escapeHtml(i.category)}</span></td>
+      <td><strong class="${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type==="Ingreso"?"+":"-"}${money.format(i.amount)}</strong></td>
       <td>
         <div class="action-row" style="justify-content:flex-end;gap:6px">
           <button class="mini-button" data-edit-tx="${i.id}">Editar</button>
@@ -705,20 +741,102 @@ function renderFinance() {
     </tr>`).join("")||tableEmpty(6);
 }
 
-function renderReports() {
-  const bTickets   = branchTickets();
-  const bSupplies  = branchSupplies();
-  const finished   = bTickets.filter(t=>["Listo","Entregado"].includes(t.status)).length;
-  const revenue    = bTickets.reduce((s,t)=>s+Number(t.repairAmount??t.total??0),0);
-  const invValue   = branchProducts().reduce((s,p)=>s+Number(p.price||0)*Number(p.stock||0),0);
-  const lastSupply = bSupplies.slice().sort((a,b)=>b.date.localeCompare(a.date))[0];
+let reportsPeriod = "today"; // "today" | "week" | "month" | "all"
 
+function reportDateRange() {
+  const today = dateStamp();
+  if (reportsPeriod === "today")  return [today, today];
+  if (reportsPeriod === "week")   { const d=new Date(); d.setDate(d.getDate()-6); return [d.toISOString().slice(0,10), today]; }
+  if (reportsPeriod === "month")  { return [today.slice(0,7)+"-01", today]; }
+  return ["2000-01-01", today];
+}
+
+function renderReports() {
+  const [from, to] = reportDateRange();
+  const bTxs       = branchTransactions().filter(t => t.date >= from && t.date <= to);
+  const bTickets   = branchTickets();
+  const bProducts  = branchProducts();
+
+  const income     = sumByType(bTxs,"Ingreso");
+  const expenses   = sumByType(bTxs,"Egreso");
+  const balance    = income - expenses;
+  const finished   = bTickets.filter(t=>["Listo","Entregado"].includes(t.status)).length;
+  const invValue   = bProducts.reduce((s,p)=>s+Number(p.price||0)*Number(p.stock||0),0);
+  const lowStock   = bProducts.filter(p=>Number(p.stock)<=Number(p.minStock)&&Number(p.minStock)>0);
+  const periodLabel= {today:"Hoy",week:"Últimos 7 días",month:"Este mes",all:"Todo el tiempo"}[reportsPeriod];
+
+  // Summary cards
   document.querySelector("#reports-grid").innerHTML = [
-    ["Servicios cerrados",finished,"Tickets listos o entregados"],
-    ["Valor inventario",money.format(invValue),"Refacciones y accesorios"],
-    ["Venta potencial",money.format(revenue),"Total registrado en tickets"],
-    ["Ultima compra",lastSupply?lastSupply.supplier:"Sin compras",lastSupply?money.format(lastSupply.total):"0"],
-  ].map(([l,v,n])=>`<article class="report-card"><span>${l}</span><strong>${v}</strong><p class="muted">${n}</p></article>`).join("");
+    ["Ingresos",money.format(income),periodLabel,"type-income"],
+    ["Egresos",money.format(expenses),periodLabel,"type-expense"],
+    ["Balance",money.format(balance),balance>=0?"Positivo":"Negativo",balance>=0?"type-income":"type-expense"],
+    ["Tickets cerrados",finished,"Listos o entregados",""],
+    ["Valor inventario",money.format(invValue),"Productos activos",""],
+    ["Stock bajo",lowStock.length,lowStock.length?"Requieren reposición":"Todo OK",lowStock.length?"type-expense":""],
+  ].map(([l,v,n,cls])=>`<article class="report-card"><span>${l}</span><strong class="${cls}">${v}</strong><p class="muted">${n}</p></article>`).join("");
+
+  // Cash detail: breakdown by category
+  const byCat = {};
+  for (const t of bTxs) { byCat[t.category] = (byCat[t.category]||{income:0,expense:0}); if(t.type==="Ingreso") byCat[t.category].income+=Number(t.amount); else byCat[t.category].expense+=Number(t.amount); }
+  const catRows = Object.entries(byCat).sort((a,b)=>(b[1].income+b[1].expense)-(a[1].income+a[1].expense))
+    .map(([cat,vals])=>`<tr><td>${escapeHtml(cat)}</td><td class="type-income">${vals.income>0?money.format(vals.income):""}</td><td class="type-expense">${vals.expense>0?money.format(vals.expense):""}</td></tr>`).join("");
+
+  document.querySelector("#reports-cash").innerHTML = bTxs.length ? `
+    <div class="card" style="margin-top:24px">
+      <h3 style="margin:0 0 16px;font-size:14px">Movimientos por categoría — ${periodLabel}</h3>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+            <th style="text-align:left;padding:6px 8px">Categoría</th>
+            <th style="text-align:right;padding:6px 8px;color:#2ecc71">Ingreso</th>
+            <th style="text-align:right;padding:6px 8px;color:#ff6b6b">Egreso</th>
+          </tr></thead>
+          <tbody>${catRows}</tbody>
+        </table>
+      </div>
+    </div>` : "";
+
+  // Tickets by stage
+  const stageRows = ticketStages.map(s=>{
+    const n = bTickets.filter(t=>t.status===s).length;
+    const pct = bTickets.length ? Math.round((n/bTickets.length)*100) : 0;
+    return `<tr><td style="padding:6px 8px">${s}</td><td style="padding:6px 8px;text-align:center"><strong>${n}</strong></td>
+      <td style="padding:6px 8px;min-width:120px"><div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px"><div style="width:${pct}%;background:var(--fz-primary,#2F6FFF);height:6px;border-radius:4px"></div></div></td></tr>`;
+  }).join("");
+
+  document.querySelector("#reports-tickets").innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin:0 0 16px;font-size:14px">Tickets por etapa</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+          <th style="text-align:left;padding:6px 8px">Etapa</th>
+          <th style="text-align:center;padding:6px 8px">Tickets</th>
+          <th style="padding:6px 8px">Distribución</th>
+        </tr></thead>
+        <tbody>${stageRows}</tbody>
+      </table>
+    </div>`;
+
+  // Low stock list
+  document.querySelector("#reports-stock").innerHTML = lowStock.length ? `
+    <div class="card" style="margin-top:16px;border-left:3px solid #ff9f43">
+      <h3 style="margin:0 0 12px;font-size:14px;color:#ff9f43">⚠️ Productos con stock bajo</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+          <th style="text-align:left;padding:6px 8px">Producto</th>
+          <th style="text-align:center;padding:6px 8px">Actual</th>
+          <th style="text-align:center;padding:6px 8px">Mínimo</th>
+          <th style="text-align:center;padding:6px 8px">Faltante</th>
+        </tr></thead>
+        <tbody>${lowStock.map(p=>{
+          const falta=Math.max(0,Number(p.minStock)-Number(p.stock));
+          return `<tr><td style="padding:6px 8px">${escapeHtml(p.name)}</td>
+            <td style="text-align:center;padding:6px 8px;color:#ff6b6b"><strong>${p.stock}</strong></td>
+            <td style="text-align:center;padding:6px 8px">${p.minStock}</td>
+            <td style="text-align:center;padding:6px 8px;color:#ff9f43">+${falta}</td></tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>` : "";
 }
 
 // ── Users panel ───────────────────────────────────────────────────────────────
@@ -1919,6 +2037,22 @@ document.querySelectorAll("[data-view], [data-view-target]").forEach(btn => {
   btn.addEventListener("click", () => setView(btn.dataset.view||btn.dataset.viewTarget));
 });
 
+document.querySelector("#reports-date-filter")?.addEventListener("click", e => {
+  const btn = e.target.closest(".rpt-filter");
+  if (!btn) return;
+  reportsPeriod = btn.dataset.rpt;
+  document.querySelectorAll(".rpt-filter").forEach(b => b.classList.toggle("is-active", b===btn));
+  renderReports();
+});
+
+// Finance period filter — rendered dynamically so use delegated event on #finance-view parent
+document.querySelector("#finance-view")?.addEventListener("click", e => {
+  const btn = e.target.closest(".fin-filter");
+  if (!btn) return;
+  financePeriod = btn.dataset.fin;
+  renderFinance();
+});
+
 document.querySelector("#export-data").addEventListener("click",  () => exportWorkbook());
 document.querySelectorAll("[data-export-sheet]").forEach(btn => {
   btn.addEventListener("click", () => exportWorkbook(btn.dataset.exportSheet));
@@ -2124,6 +2258,10 @@ function printTicket(ticket) {
 
   <p class="rct-label">EQUIPO:</p>
   <p class="rct-value">${escapeHtml(ticket.productName || ticket.device || "Sin especificar")}</p>
+  ${ticket.imei        ? `<p class="rct-value"><strong>IMEI / SERIE:</strong> ${escapeHtml(ticket.imei)}</p>` : ""}
+  ${ticket.color       ? `<p class="rct-value"><strong>COLOR:</strong> ${escapeHtml(ticket.color)}</p>` : ""}
+  ${ticket.accessories ? `<p class="rct-value"><strong>ACCESORIOS:</strong> ${escapeHtml(ticket.accessories)}</p>` : ""}
+  ${ticket.physicalCondition ? `<p class="rct-value"><strong>CONDICIÓN:</strong> ${escapeHtml(ticket.physicalCondition)}</p>` : ""}
   <p class="rct-value"><strong>PRIORIDAD:</strong> ${escapeHtml(ticket.priority || "Normal")} &nbsp;|&nbsp; <strong>ESTADO:</strong> ${escapeHtml(ticket.status)}</p>
 
   <p class="rct-dash">${D}</p>

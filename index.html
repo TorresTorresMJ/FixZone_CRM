@@ -105,6 +105,7 @@
         <!-- ── Dashboard ─────────────────────────────────────────────────── -->
         <section class="view is-visible" id="dashboard-view" data-title="Home">
           <div class="metric-grid" id="metric-grid"></div>
+          <div id="stock-alert-banner"></div>
           <div class="split-layout">
             <section class="home">
               <div class="section-heading">
@@ -211,9 +212,18 @@
         <!-- ── Reportes ──────────────────────────────────────────────────── -->
         <section class="view" id="reports-view" data-title="Reportes">
           <div class="section-heading">
-            <h2>Records y analitica</h2>
+            <h2>Reportes y analítica</h2>
+            <div style="display:flex;gap:8px" id="reports-date-filter">
+              <button class="mini-button rpt-filter is-active" data-rpt="today">Hoy</button>
+              <button class="mini-button rpt-filter" data-rpt="week">7 días</button>
+              <button class="mini-button rpt-filter" data-rpt="month">Mes</button>
+              <button class="mini-button rpt-filter" data-rpt="all">Todo</button>
+            </div>
           </div>
           <div class="report-grid" id="reports-grid"></div>
+          <div id="reports-cash"></div>
+          <div id="reports-tickets"></div>
+          <div id="reports-stock"></div>
         </section>
 
         <!-- ── Usuarios (Admin + IT) ─────────────────────────────────────── -->
