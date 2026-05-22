@@ -26,14 +26,14 @@
 
 ## Fase 3: Migrar app actual a Supabase
 
-- [ ] Reemplazar `localStorage` por Supabase.
+- [x] Reemplazar `localStorage` por Supabase (modo remoto activo en producción).
 - [x] $Agregar pantalla de login con Google.$ Log in será con creación de usuarios y contraseña.  Usuarios internos de base de datos. 
 - [x] Bloquear la app si el correo no existe en `employees`.
-- [ ] Conectar clientes a la base de datos.
-- [ ] Conectar productos e inventario a la base de datos.
-- [ ] Conectar tickets a la base de datos.
-- [ ] Conectar compras de insumos a la base de datos.
-- [ ] Conectar ingresos y egresos a la base de datos.
+- [x] Conectar clientes a la base de datos.
+- [x] Conectar productos e inventario a la base de datos.
+- [x] Conectar tickets a la base de datos.
+- [x] Conectar compras de insumos a la base de datos.
+- [x] Conectar ingresos y egresos a la base de datos.
 - [ ] Agregar estados de carga, errores y confirmaciones.
 
 ## Fase 4: Tickets y recibos
@@ -105,13 +105,25 @@
 - [ ] Mini explicacion de que hace cada seccion o para que es, con un pequeño boton de ayuda donde al pasarle el cursor se despliegue el texto explicativo 
 
 ## Fase 10: Fixes
-- [x] Arreglar error de Finanzas : No se pudo guardar: new row violates row-level security policy for table "transactions"
-- [ ] Editar Tasks (IT) no permite la edicion
-- [x] Eliminar boton  "restaurar demo"
-- [ ]! Tickets - Se guarda pero no aparece en el KANBAN
-- [ ] Tickets - Funcion para cargar imagenes en el ticket existe ene l codigo pero no aparece en el form de la pagina al crearlo, solo al editar. 
-- [ ] Brand de RefacZone es igual en tipografia y paleta de colores a Fixzone. Solo son diferentes areas pero es la misma compañia practicamente. En documentacion, sin embargo en Dashboard, que la visualizacion de colores sea diferente para poder distinguir visualmente cuando se esta en una locacion y otra. 
-- [ ] Insumos y productos deben ser editables. 
+- [x] Arreglar error de Finanzas: RLS en tabla "transactions" — rol `it` no reconocido
+- [x] Arreglar error de Finanzas: nueva transacción no aparecía en dashboard/finanzas
+- [x] Editar Tasks (IT) — función duplicada/rota, schema incorrecto, handler inexistente
+- [x] Nuevo registro Soporte — "Tipo no soportado" por mismatch en activeForm key
+- [x] Botón Eliminar en Soporte no aparecía — `canDeleteTask` faltaba en PERMISSIONS
+- [x] Eliminar botón "restaurar demo"
+- [x] Tickets — se guardaba en Supabase pero no aparecía en KANBAN (reloadState fallback + branch vacío)
+- [x] RLS bloqueaba escritura en service_tickets, products, suppliers, attachments para rol `it`
+- [x] Fotos en tickets — Storage bucket `ticket-photos` sin políticas RLS
+- [x] Roles normalizados: `it`→`admin`, `standard`→`technician`, `marketing`→`technician` en DB
+- [x] Editor de permisos por rol en sección Usuarios (checkboxes, persistido en localStorage)
+- [x] ROLE_LABELS actualizado: `technician` muestra "Estándar", `owner`/`admin`/`it` muestran "Admin"
+- [ ] Tickets - Funcion para cargar imagenes existe solo al editar, no al crear (diseño intencional por ahora)
+- [ ] Brand de RefacZone — diferenciar paleta de colores del dashboard vs FixZone
+- [x] Insumos y productos — hacer editables desde la UI
+- [x] Editar ingresos y egresos en Finanzas
+- [x] Mostrar categorías filtradas por tipo en Finanzas (Ingreso/Egreso)
+- [x] Botón de perfil de usuario para cambiar contraseña (dropdown en header)
+- [ ] Cards del KANBAN arrastrables entre columnas
 
 ## Fase 11 Cotizaciones: 
 - [ ] Nueva sección: Cotizaciones. En base a agregar productos + hora trabajo o añadir listado de costo de trabajo. 

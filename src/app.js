@@ -591,10 +591,13 @@ function renderProducts() {
     const stock=Number(p.stock), min=Number(p.minStock);
     const pct=Math.min(100,Math.round((stock/Math.max(min*2,1))*100));
     return `<article class="product-card">
-      <div class="product-meta"><strong>${p.name}</strong><span class="${stock<=min?"low-stock":"status ready"}">${stock<=min?"Bajo":"OK"}</span></div>
-      <span>${p.sku} · ${p.category}</span>
+      <div class="product-meta"><strong>${escapeHtml(p.name)}</strong><span class="${stock<=min?"low-stock":"status ready"}">${stock<=min?"Bajo":"OK"}</span></div>
+      <span>${escapeHtml(p.sku)} · ${escapeHtml(p.category)}</span>
       <div class="product-meta"><strong>${stock} piezas</strong><strong>${money.format(p.price)}</strong></div>
       <div class="stock-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
+      <div class="action-row" style="margin-top:8px;justify-content:flex-end">
+        <button class="mini-button" data-edit-product="${p.id}">Editar</button>
+      </div>
     </article>`;
   }).join("")||emptyMessage("No hay productos registrados.");
 }
@@ -638,8 +641,12 @@ function ticketCard(ticket, perms) {
 
 function renderSupplies() {
   document.querySelector("#supplies-table").innerHTML = bySearch(branchSupplies()).map(i=>`
-    <tr><td>${i.date}</td><td>${i.supplier}</td><td>${i.item}</td><td>${i.quantity}</td><td><strong>${money.format(i.total)}</strong></td></tr>
-  `).join("")||tableEmpty(5);
+    <tr>
+      <td>${i.date}</td><td>${escapeHtml(i.supplier)}</td><td>${escapeHtml(i.item)}</td>
+      <td>${i.quantity}</td><td><strong>${money.format(i.total)}</strong></td>
+      <td><button class="mini-button" data-edit-supply="${i.id}">Editar</button></td>
+    </tr>
+  `).join("")||tableEmpty(6);
 }
 
 function renderFinance() {
@@ -1023,13 +1030,46 @@ async function updateRemoteSupportTask(taskId, data) {
   if (error) throw error;
 }
 
+// ── Edit: Product ─────────────────────────────────────────────────────────────
+function openEditProduct(productId) {
+  const product = state.products.find(p => p.id === productId);
+  if (!product) return;
+  activeForm      = "product";
+  editingTicketId = productId;
+  modalTitle.textContent = "Editar producto";
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+  formFields.innerHTML = formSchemas["product"].fields.map(([name,label,ftype,opts,wide]) =>
+    fieldTemplate(name, label, ftype, opts, wide, product[name] ?? "")
+  ).join("");
+  modal.showModal();
+}
+
+async function updateRemoteProduct(productId, data) {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId);
+  if (!isUUID) {
+    const idx = state.products.findIndex(p => p.id === productId);
+    if (idx !== -1) state.products[idx] = { ...state.products[idx], ...data };
+    return;
+  }
+  const { error } = await supabaseClient.from("products").update({
+    name:       data.name,
+    sku:        data.sku || null,
+    category:   data.category,
+    stock:      Number(data.stock || 0),
+    min_stock:  Number(data.minStock || 0),
+    sale_price: Number(data.price || 0),
+    branch_id:  await branchIdByName(data.branch || activeBranchId),
+  }).eq("id", productId);
+  if (error) throw error;
+}
+
 // ── Edit: Supply ──────────────────────────────────────────────────────────────
 function openEditSupply(supplyId) {
   const supply = branchSupplies().find(s => s.id === supplyId);
   if (!supply) return;
   activeForm      = "supply";
   editingTicketId = supplyId;
-  modalTitle.textContent = "ar compra";
+  modalTitle.textContent = "Editar compra";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["supply"].fields.map(([name,label,ftype,opts,wide]) =>
     fieldTemplate(name, label, ftype, opts, wide, supply[name] ?? "")
@@ -1053,20 +1093,6 @@ async function updateRemoteSupply(supplyId, data) {
     total_amount:  Number(data.total || 0),
   }).eq("id", supplyId);
   if (error) throw error;
-}
-
-// ── Edit: Transaction ─────────────────────────────────────────────────────────
-function openEditTransaction(txId) {
-  const tx = branchTransactions().find(t => t.id === txId);
-  if (!tx) return;
-  activeForm      = "transaction";
-  editingTicketId = txId;
-  modalTitle.textContent = "Editar movimiento";
-  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["transaction"].fields.map(([name,label,ftype,opts,wide]) =>
-    fieldTemplate(name, label, ftype, opts, wide, tx[name] ?? "")
-  ).join("");
-  modal.showModal();
 }
 
 async function updateRemoteTransaction(txId, data) {
@@ -1115,13 +1141,40 @@ function openForm(type, prefill = {}) {
   modal.showModal();
 }
 
+function syncTransactionCategories(type) {
+  const cats = type === "Ingreso" ? TX_CATEGORIES_INCOME : TX_CATEGORIES_EXPENSE;
+  const catSel = formFields.querySelector("#category");
+  if (!catSel) return;
+  const current = catSel.value;
+  catSel.innerHTML = cats.map(c => `<option value="${c}" ${c===current?"selected":""}>${c}</option>`).join("");
+}
+
 function openTransactionForm(type) {
   openForm("transaction", { type, date: dateStamp() });
-  // After the modal renders, force the type select to the correct value
   setTimeout(() => {
     const sel = formFields.querySelector("#type");
-    if (sel) { sel.value = type; sel.dispatchEvent(new Event("change")); }
+    if (sel) { sel.value = type; syncTransactionCategories(type); }
+    const typeSel = formFields.querySelector("#type");
+    typeSel?.addEventListener("change", e => syncTransactionCategories(e.target.value));
   }, 0);
+}
+
+function openEditTransaction(txId) {
+  const tx = branchTransactions().find(t => t.id === txId);
+  if (!tx) return;
+  activeForm      = "transaction";
+  editingTicketId = txId;
+  modalTitle.textContent = "Editar movimiento";
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+  formFields.innerHTML = formSchemas["transaction"].fields.map(([name,label,ftype,opts,wide]) =>
+    fieldTemplate(name, label, ftype, opts, wide, tx[name] ?? "")
+  ).join("");
+  // Sync categories to match the current type and attach change listener
+  setTimeout(() => {
+    syncTransactionCategories(tx.type);
+    formFields.querySelector("#type")?.addEventListener("change", e => syncTransactionCategories(e.target.value));
+  }, 0);
+  modal.showModal();
 }
 
 function openEditTicket(ticketId) {
@@ -1243,6 +1296,8 @@ recordForm.addEventListener("submit", async e => {
     try {
       if (activeForm === "client") {
         await updateRemoteClient(editingTicketId, data);
+      } else if (activeForm === "product") {
+        await updateRemoteProduct(editingTicketId, data);
       } else if (activeForm === "supply") {
         await updateRemoteSupply(editingTicketId, data);
       } else if (activeForm === "transaction") {
@@ -1637,7 +1692,7 @@ document.querySelector("#quick-ticket").addEventListener("click", () => openForm
 document.querySelector("#close-modal").addEventListener("click",  () => modal.close());
 document.querySelector("#cancel-record").addEventListener("click",() => modal.close());
 
-document.querySelector("#logout-button").addEventListener("click", async () => {
+async function performLogout() {
   if (supabaseClient) await supabaseClient.auth.signOut();
   currentEmployee = null;
   currentSession  = null;
@@ -1646,7 +1701,25 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
   document.querySelector("#logout-button").classList.add("is-hidden");
   document.querySelector(".app-shell").style.display = "none";
   showLoginScreen();
-});
+}
+document.querySelector("#logout-button").addEventListener("click", performLogout);
+
+// ── User profile dropdown ─────────────────────────────────────────────────────
+const profileTrigger = document.querySelector("#user-profile-trigger");
+const profileMenu    = document.querySelector("#user-profile-menu");
+
+if (profileTrigger && profileMenu) {
+  profileTrigger.addEventListener("click", e => {
+    e.stopPropagation();
+    profileMenu.style.display = profileMenu.style.display === "none" ? "block" : "none";
+  });
+  document.addEventListener("click", () => { profileMenu.style.display = "none"; });
+  document.querySelector("#change-pw-trigger")?.addEventListener("click", () => {
+    profileMenu.style.display = "none";
+    showChangePasswordScreen();
+  });
+  document.querySelector("#logout-from-menu")?.addEventListener("click", performLogout);
+}
 
 document.querySelectorAll("[data-view], [data-view-target]").forEach(btn => {
   btn.addEventListener("click", () => setView(btn.dataset.view||btn.dataset.viewTarget));
@@ -1716,6 +1789,9 @@ document.addEventListener("click", async e => {
   // Edit client
   const editClient = e.target.closest("[data-edit-client]");
   if (editClient) { openEditClient(editClient.dataset.editClient); return; }
+
+  const editProduct = e.target.closest("[data-edit-product]");
+  if (editProduct) { openEditProduct(editProduct.dataset.editProduct); return; }
 
   // Edit support task
   const editSupport = e.target.closest("[data-edit-support]");

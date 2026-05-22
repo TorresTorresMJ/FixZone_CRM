@@ -80,10 +80,15 @@
             </div>
           </div>
           <div class="topbar-actions">
-            <div class="auth-box" id="auth-box">
-              <div class="auth-info">
+            <div class="auth-box" id="auth-box" style="position:relative">
+              <div class="auth-info" id="user-profile-trigger" title="Mi perfil" style="cursor:pointer">
                 <span id="auth-user-name">—</span>
                 <small id="auth-user-role" class="muted"></small>
+              </div>
+              <div id="user-profile-menu" style="display:none;position:absolute;top:100%;right:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;min-width:180px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+                <button class="ghost-button" id="change-pw-trigger" style="width:100%;text-align:left;padding:8px 12px;font-size:13px">🔑 Cambiar contraseña</button>
+                <hr style="border:0;border-top:1px solid rgba(255,255,255,0.08);margin:4px 0">
+                <button class="ghost-button" id="logout-from-menu" style="width:100%;text-align:left;padding:8px 12px;font-size:13px;color:#ff6b6b">Salir</button>
               </div>
               <button class="help-button" id="help-button" title="Contactar a IT">?</button>
               <button class="ghost-button is-hidden" id="logout-button">Salir</button>
@@ -176,7 +181,7 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>Fecha</th><th>Proveedor</th><th>Insumo</th><th>Cantidad</th><th>Total</th></tr>
+                <tr><th>Fecha</th><th>Proveedor</th><th>Insumo</th><th>Cantidad</th><th>Total</th><th></th></tr>
               </thead>
               <tbody id="supplies-table"></tbody>
             </table>
