@@ -89,7 +89,7 @@
 ## Fase 9: Mejoras futuras
 
 - [ ] Agregar notificaciones por WhatsApp o email.
-- [ ] Agregar cotizaciones antes de autorizar reparaciones.
+- [x] Agregar cotizaciones antes de autorizar reparaciones (sección Cotizaciones, botón Aprobar convierte a ticket).
 - [x] Agregar firma de cliente.
 - [ ] Agregar lector de codigos QR para tickets.
 - [ ] Agregar busqueda avanzada por telefono, IMEI, folio o cliente.
@@ -101,7 +101,7 @@
 - [ ] Agregar boton para editar ingresos y egresos en Finanzas
 - [ ] Mostrar las categorias en selects
 - [ ] Boton de usuario, par configuraciones basicas, como renovar contraseña 
-- [ ] Cards en los KANBAN se puedanmover arrastrandolas entre columnas
+- [x] Cards en los KANBAN se pueden mover arrastrándolas entre columnas (drag & drop, actualiza stage en Supabase).
 - [ ] Mini explicacion de que hace cada seccion o para que es, con un pequeño boton de ayuda donde al pasarle el cursor se despliegue el texto explicativo 
 
 ## Fase 10: Fixes
@@ -126,6 +126,6 @@
 - [ ] Cards del KANBAN arrastrables entre columnas
 
 ## Fase 11 Cotizaciones: 
-- [ ] Nueva sección: Cotizaciones. En base a agregar productos + hora trabajo o añadir listado de costo de trabajo. 
+- [x] Nueva sección: Cotizaciones. Sección dedicada, cotización se convierte a ticket con un clic. Partes/refacciones se agregan directamente desde el modal de edición del ticket.
 
 
