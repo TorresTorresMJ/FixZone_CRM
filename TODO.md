@@ -9,7 +9,7 @@
 - [x] Decidir si se usaran correos Gmail existentes o dominio propio mas adelante.
 - [x] Definir flujo real de reparacion: Cotizacion, Recibido, En reparacion, Listo, Entregado, Garantia.
 - [ ] Definir datos obligatorios de cliente: nombre, telefono, email, direccion, notas.
-- [ ] Definir datos obligatorios de equipo: marca, modelo, IMEI/serie, color, accesorios recibidos, estado fisico y foto de estado en que ingresa y egresa. 
+- [x] Definir datos obligatorios de equipo: IMEI/serie, color, accesorios recibidos, estado fisico (campos en form de ticket, guardado en customer_devices). 
 - [x] Cambiar a RefaxZone los nombres de FixZone cuando la sucursal sea puebla
 
 ## Fase 2: Base de datos y seguridad
@@ -44,8 +44,8 @@
 - [ ] Agregar impresion de recibo de pago.
 - [ ] Agregar impresion de garantia.
 - [ ] Agregar plantilla con terminos y condiciones.
-- [ ] Permitir abonos, saldo pendiente y pagos parciales.
-- [ ] Agregar historial de eventos por ticket.
+- [x] Permitir abonos, saldo pendiente y pagos parciales.
+- [x] Agregar historial de eventos por ticket (detecta cambio de stage, timeline en modal de edición).
 - [ ] Agregar fotos de evidencia antes y despues.
 - [ ] Modificar el tamaño del recibo a impresión de maquina
 
