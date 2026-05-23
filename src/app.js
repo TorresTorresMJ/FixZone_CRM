@@ -2268,19 +2268,12 @@ recordForm.addEventListener("submit", async e => {
 
 // ── Edge function caller ──────────────────────────────────────────────────────
 async function callEdgeFunction(action, payload) {
-  const cfg = window.FIXZONE_SUPABASE;
-  const url  = `${cfg.url}/functions/v1/create-employee`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type":  "application/json",
-      "Authorization": `Bearer ${currentSession.access_token}`,
-    },
-    body: JSON.stringify({ action, payload }),
+  const { data, error } = await supabaseClient.functions.invoke("create-employee", {
+    body: { action, payload },
   });
-  const result = await resp.json();
-  if (!result.success) throw new Error(result.error||"Error en la función");
-  return result;
+  if (error) throw new Error(error.message || "Error de red al llamar función");
+  if (!data?.success) throw new Error(data?.error || "Error en la función");
+  return data;
 }
 
 async function deleteEmployee(employeeId) {
