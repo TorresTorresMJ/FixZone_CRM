@@ -244,7 +244,7 @@ async function afterLogin() {
     render();
   } catch(err) {
     console.error(err);
-    await supabaseClient.auth.signOut();
+    supabaseClient.auth.signOut().catch(() => {});
     showLoginScreen(err.message || "Error al verificar acceso. Contacta a IT.");
   }
 }
@@ -308,6 +308,11 @@ async function handleLogin(e) {
   const btn      = document.querySelector(".login-btn");
   btn.textContent = "Verificando...";
   btn.disabled    = true;
+  const resetBtn = () => { btn.textContent = "Iniciar sesión"; btn.disabled = false; };
+  const loginTimeout = setTimeout(() => {
+    resetBtn();
+    showLoginScreen("Tiempo de espera agotado. Verifica tu conexión e intenta de nuevo.");
+  }, 20000);
   try {
     const authEmail = `${username}@fixzone.internal`;
     const { data, error } = await supabaseClient.auth.signInWithPassword({
@@ -317,7 +322,9 @@ async function handleLogin(e) {
     if (error) throw new Error("Usuario o contraseña incorrectos.");
     currentSession = data.session;
     await afterLogin();
+    clearTimeout(loginTimeout);
   } catch(err) {
+    clearTimeout(loginTimeout);
     showLoginScreen(err.message || "Credenciales incorrectas.");
   }
 }
