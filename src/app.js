@@ -3310,6 +3310,11 @@ function applyBranchBrand(branchName) {
   for (const [key, val] of Object.entries(brand.colors)) {
     root.style.setProperty(key, val);
   }
+  if (brand.dashboardColors) {
+    for (const [key, val] of Object.entries(brand.dashboardColors)) {
+      root.style.setProperty(key, val);
+    }
+  }
   const overrides = getBrandOverrides()[branchName] || {};
   for (const [key, val] of Object.entries(overrides)) {
     root.style.setProperty(key, val);

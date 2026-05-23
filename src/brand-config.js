@@ -30,6 +30,11 @@ window.BRANCH_BRANDS = {
       "--fz-tab-active-bg":   "linear-gradient(135deg,#085ACB,#2678E8)",
       "--fz-topbar-glow":     "rgba(8,90,203,0.20)",
     },
+    dashboardColors: {
+      "--fz-dash-accent":     "#085ACB",
+      "--fz-dash-accent-rgb": "8, 90, 203",
+      "--fz-dash-tint":       "rgba(8,90,203,0.06)",
+    },
     sidebarBg:   "linear-gradient(180deg,#04080f 0%,#080d18 58%,#04080e 100%)",
     workspaceBg: "radial-gradient(circle at top right,rgba(8,90,203,0.20),transparent 34%),linear-gradient(180deg,#08090f 0%,#090909 100%)",
     loginBg:     "radial-gradient(ellipse at 60% 0%,rgba(8,90,203,0.25) 0%,transparent 55%),radial-gradient(ellipse at 10% 100%,rgba(5,62,143,0.20) 0%,transparent 50%),#04080e",
@@ -75,6 +80,11 @@ window.BRANCH_BRANDS = {
       "--fz-btn-gradient":    "linear-gradient(135deg,#085ACB,#2678E8)",
       "--fz-tab-active-bg":   "linear-gradient(135deg,#085ACB,#2678E8)",
       "--fz-topbar-glow":     "rgba(8,90,203,0.20)",
+    },
+    dashboardColors: {
+      "--fz-dash-accent":     "#2678E8",
+      "--fz-dash-accent-rgb": "38, 120, 232",
+      "--fz-dash-tint":       "rgba(38,120,232,0.09)",
     },
     sidebarBg:   "linear-gradient(180deg,#04080f 0%,#080d18 58%,#04080e 100%)",
     workspaceBg: "radial-gradient(circle at top right,rgba(8,90,203,0.20),transparent 34%),linear-gradient(180deg,#08090f 0%,#090909 100%)",
