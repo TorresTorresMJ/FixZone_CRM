@@ -7,10 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 FixZone CRM is a **vanilla HTML/CSS/JS single-page app** for managing a cell-phone repair shop. It has no build step and no framework — the browser loads scripts directly via `<script>` tags in `index.html`. The backend is **Supabase** (PostgreSQL + Auth + RLS). Deployed on **Cloudflare Pages** (`fixzone-crm.pages.dev`) — push to `main` triggers auto-deploy.
 
 There are two branches/brands operated from the same codebase:
-- **Puerto Vallarta → FixZone** (blue palette, `#2F6FFF`)
+- **Puerto Vallarta → FixZone** (blue palette, `#085ACB`)
 - **Puebla → RefaxZone** (orange palette, `#E85D04`)
 
-Brand theming is driven entirely by `src/brand-config.js` (`window.BRANCH_BRANDS`). Switching the active branch swaps CSS custom properties, logos, and copy at runtime.
+Brand theming is driven entirely by `src/brand-config.js` (`window.BRANCH_BRANDS`). Switching the active branch swaps CSS custom properties, logos, and copy at runtime. All dynamic colors use `--fz-primary`, `--fz-primary-rgb`, `--fz-secondary`, etc. — never the legacy `--fz-blue-*` tokens. A block of `!important` rules at the bottom of `app.css` ensures brand tokens override any earlier stylesheet values.
 
 ## Running the app
 
@@ -28,11 +28,13 @@ There is no test suite and no linter configured.
 | File | Purpose |
 |---|---|
 | `index.html` | App shell — all view sections are `<section class="view">` |
-| `src/app.js` | All client-side logic (~2 000 lines, single file) |
+| `src/app.js` | All client-side logic (~2 400 lines, single file) |
 | `src/supabase-config.js` | Supabase project URL and anon key (`window.FIXZONE_SUPABASE`) |
 | `src/brand-config.js` | Per-branch brand config — colors, logos, copy, marketing links (`window.BRANCH_BRANDS`) |
-| `src/styles/brand-tokens.css` | CSS custom properties for brand colors |
-| `src/styles/app.css` | All styles |
+| `src/styles/brand-tokens.css` | Static CSS custom properties (fallback values only — JS overrides at runtime) |
+| `src/styles/app.css` | All styles — bottom section has `!important` block that binds brand CSS vars to UI elements |
+| `assets/brand/fixzone/` | Brand assets folder for FixZone (logos, icons, patterns) |
+| `assets/brand/refaxzone/` | Brand assets folder for RefaxZone (logos, icons, patterns) |
 | `supabase/schema.sql` | Original DB schema |
 | `supabase/02_security_rls.sql` | RLS helper functions and base policies |
 | `supabase/03_fix_rls_functions.sql` | `is_active_employee()` and `has_employee_role()` use `auth_user_id OR email` |
@@ -122,6 +124,12 @@ Two Deno Edge Functions in `supabase/functions/`:
 
 To add or change brand config, edit `src/brand-config.js` under `window.BRANCH_BRANDS["Branch Name"]`. The object shape includes `colors` (CSS custom properties), `marketingLinks`, `autoFlows`, logo paths, and copy strings. `window.getBranchBrand(branchName)` is the accessor used throughout `app.js`.
 
+**Runtime brand editor** (tab Diseño → "Editor de marca"): marketing can change the color palette and logo directly from the UI. Changes are saved to `localStorage` key `fixzone-brand-overrides-v1` keyed by branch name and re-applied on `applyBranchBrand()`. Logo can be uploaded as a file (stored as base64) or pasted as a URL. To reset to code defaults, use "Restaurar defaults" in the editor.
+
+**Brand asset folders**: `assets/brand/fixzone/` and `assets/brand/refaxzone/` hold official logos and graphic files. Place PNG/SVG files here and reference their paths in `brand-config.js` (`logoSrc`, `logoMonoSrc`).
+
+**CSS variable pattern**: `applyBranchBrand(branchName)` sets all `--fz-*` properties as inline styles on `:root` via `root.style.setProperty()`. Any CSS rule that needs brand-aware color must use `var(--fz-primary)`, `rgba(var(--fz-primary-rgb), alpha)`, etc. Never use `--fz-blue-*` tokens — those are legacy static values left as fallbacks in `brand-tokens.css`.
+
 ## UI language
 
 All UI text, form labels, status values, and copy are in **Spanish**.
@@ -140,3 +148,6 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **`branchIdByName(name)`** has a 3-step fallback: in-memory lookup → direct DB query → first branch. If branches fail to load, the last resort may return the wrong branch. Ensure `is_active_employee()` works for the current user.
 - **RLS `with check` vs `using`**: INSERT only uses `with check`. SELECT only uses `using`. UPDATE uses both. A passing INSERT does not guarantee SELECT will return the row — both need separate policies.
 - **`reloadState()` seed fallback**: if a table's SELECT returns 0 rows (RLS block or query error), that table falls back to hardcoded `seed` data. Newly created records won't appear. Check `pg_policies` if data seems stale.
+- **Brand colors in CSS**: never add `rgba(47,111,255,...)` or `#2F6FFF` hardcoded in `app.css` — those won't switch with the branch. Always use `rgba(var(--fz-primary-rgb), alpha)` and `var(--fz-primary)`.
+- **Optional form fields**: the `fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional)` function controls `required` attribute. Pass `true` as 6th element in the field tuple (schema) and `optional` as 7th arg to `fieldTemplate` to make a field non-required. Currently: `discountCode`, `discountAmount`, `notes` are optional in the ticket schema.
+- **Browser cache after deploy**: Cloudflare Pages may serve cached JS/CSS. Users should hard-refresh (`Cmd+Shift+R` / `Ctrl+Shift+R`) after a new deploy if they see stale styles.

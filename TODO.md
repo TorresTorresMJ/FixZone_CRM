@@ -71,10 +71,11 @@
 - [ ] Exportar reportes a Excel.
 
 ## Fase 7: Marketing
-- [ ] Permitir crear folder y añadir imagenes, documentos, pdf, gifs. Dar estructura limpia y de facil accesibilidad. 
-- [ ] Crear seccion de plantillas: de email para clientes, editable.
-- [ ] Agregar en la seccion de plantillas: de mensaje para WhatsApp, editable.
-- [ ] Agregar función para añadir funciones como :  para enviar recordatorios de garantia por email o WhatsApp a clientes y para enviar promociones por email o WhatsApp a clientes.
+- [x] Carpetas de assets de marca creadas: `assets/brand/fixzone/` y `assets/brand/refaxzone/` con README de guía.
+- [ ] Permitir subir/gestionar imagenes, documentos, pdf desde la UI (por ahora solo upload de logo en Editor de marca).
+- [ ] Crear seccion de plantillas de email para clientes, editable.
+- [x] Plantillas de mensaje WhatsApp editables (renderWATemplates — tab Automatización).
+- [ ] Función para enviar recordatorios de garantia o promociones por WhatsApp / email.
 
 
 ## Fase 8: Deploy interno
@@ -102,7 +103,7 @@
 - [x] Categorías filtradas por tipo en form de Finanzas (Ingreso/Egreso)
 - [x] Botón de usuario en header para cambiar contraseña (dropdown perfil)
 - [x] Cards en los KANBAN se pueden mover arrastrándolas entre columnas (drag & drop, actualiza stage en Supabase).
-- [ ] Mini explicacion de que hace cada seccion o para que es, con un pequeño boton de ayuda donde al pasarle el cursor se despliegue el texto explicativo 
+- [x] Mini explicacion de que hace cada seccion o para que es, con un pequeño boton de ayuda donde al pasarle el cursor se despliegue el texto explicativo 
 
 ## Fase 10: Fixes
 - [x] Arreglar error de Finanzas: RLS en tabla "transactions" — rol `it` no reconocido
@@ -119,6 +120,10 @@
 - [x] ROLE_LABELS actualizado: `technician` muestra "Estándar", `owner`/`admin`/`it` muestran "Admin"
 - [ ] Tickets - Funcion para cargar imagenes existe solo al editar, no al crear (diseño intencional por ahora)
 - [x] Brand RefaxZone — franja de color en topbar + CSS variables por sucursal
+- [x] Brand RefaxZone — paleta naranja correcta en TODOS los elementos: nav, tabs, kanban, marketing cards, login, mini-buttons, drag-over (tokens CSS dinámicos, 13 reglas corregidas)
+- [x] Editor de paleta de marca movido al tab Diseño (estaba en Automatización)
+- [x] Editor de marca ampliado: upload de logo por sucursal (archivo PNG/SVG/WEBP o URL), guardado en localStorage, se aplica en sidebar y favicon
+- [x] Campos "Notas internas", "Código de descuento" y "Descuento ($)" marcados como opcionales en formulario de ticket (sin required, con etiqueta "(opcional)")
 - [x] Insumos y productos — hacer editables desde la UI
 - [x] Editar ingresos y egresos en Finanzas
 - [x] Mostrar categorías filtradas por tipo en Finanzas (Ingreso/Egreso)
@@ -127,5 +132,8 @@
 
 ## Fase 11 Cotizaciones: 
 - [x] Nueva sección: Cotizaciones. Sección dedicada, cotización se convierte a ticket con un clic. Partes/refacciones se agregan directamente desde el modal de edición del ticket.
+- [ ] Acceso para enviar la cotizacion a Whatsapp directamente, en PDF 
+- [ ] Cambio de status de Cotizacion a venta concretada. 
+
 
 
