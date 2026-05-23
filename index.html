@@ -66,10 +66,13 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>Base local activa</span>
+          <span id="app-status">Base local activa</span>
           <strong id="record-count">0 registros</strong>
           <div class="branch-indicator" id="active-branch-label">Puerto Vallarta</div>
         </div>
+
+        <!-- Global loading bar -->
+        <div id="loading-bar" style="display:none;position:fixed;top:3px;left:0;right:0;height:2px;z-index:10000;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.8) 40%,rgba(255,255,255,.8) 60%,transparent 100%);background-size:200% 100%;animation:loadingBar 1.2s linear infinite"></div>
       </aside>
 
       <main class="workspace">
@@ -164,6 +167,7 @@
                 <button class="mini-button ptype-filter" data-ptype="refaccion">Refacciones</button>
                 <button class="mini-button ptype-filter" data-ptype="insumo">Insumos</button>
               </div>
+              <button class="ghost-button" id="btn-movimiento">± Movimiento</button>
               <button class="ghost-button" data-export-sheet="products">XLS</button>
               <button class="primary-action" data-open-form="product">+ Producto</button>
             </div>
@@ -397,6 +401,8 @@
 
           <!-- Códigos de descuento — gestionados por Marketing -->
           <div id="discount-manager"></div>
+          <!-- Plantillas WhatsApp -->
+          <div id="wa-templates-manager"></div>
         </section>
 
       </main>
@@ -422,6 +428,44 @@
 
     <!-- ── Print area ───────────────────────────────────────────────────────── -->
     <section class="print-receipt" id="print-receipt" aria-hidden="true"></section>
+
+    <!-- ── Movimiento de inventario modal ───────────────────────────────────── -->
+    <dialog class="modal" id="movimiento-modal" style="max-width:420px">
+      <div class="modal-header">
+        <div><small class="eyebrow">Inventario</small><h2 class="modal-title">Registrar movimiento</h2></div>
+        <button class="icon-button" type="button" id="close-movimiento-modal" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="movimiento-form" class="form-fields">
+          <div class="field">
+            <label for="mov-product">Producto</label>
+            <select id="mov-product"></select>
+          </div>
+          <div class="field">
+            <label for="mov-type">Tipo de movimiento</label>
+            <select id="mov-type">
+              <option value="entrada">📥 Entrada (reposición)</option>
+              <option value="salida">📤 Salida (uso/venta)</option>
+              <option value="ajuste">✏️ Ajuste de inventario</option>
+              <option value="merma">🗑 Merma / pérdida</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="mov-qty">Cantidad</label>
+            <input id="mov-qty" type="number" min="0.01" step="0.01" required placeholder="1" />
+          </div>
+          <div class="field">
+            <label for="mov-note">Nota (opcional)</label>
+            <input id="mov-note" type="text" placeholder="Motivo del ajuste..." />
+          </div>
+          <div id="mov-stock-preview" style="font-size:12px;padding:8px 12px;background:rgba(255,255,255,.05);border-radius:6px;margin-top:4px"></div>
+          <div class="modal-actions">
+            <button type="button" class="ghost-button" id="cancel-movimiento">Cancelar</button>
+            <button type="submit" class="primary-action">Registrar</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
 
     <!-- ── Abono modal ────────────────────────────────────────────────────────── -->
     <dialog class="modal" id="abono-modal" style="max-width:380px">

@@ -201,17 +201,29 @@ async function refreshSession() {
   await afterLogin();
 }
 
+function setLoading(on, label = "") {
+  const bar    = document.querySelector("#loading-bar");
+  const status = document.querySelector("#app-status");
+  if (bar)    bar.style.display    = on ? "block" : "none";
+  if (status) status.textContent   = on ? (label || "Cargando…") : (dataMode === "remote" ? "Supabase activo" : "Base local activa");
+}
+
 async function reloadState() {
-  const remote = await loadSupabaseState();
-  state = {
-    ...remote,
-    clients:      remote.clients.length      ? remote.clients      : structuredClone(seed.clients),
-    products:     remote.products.length     ? remote.products     : structuredClone(seed.products),
-    tickets:      remote.tickets.length      ? remote.tickets      : structuredClone(seed.tickets),
-    supplies:     remote.supplies.length     ? remote.supplies     : structuredClone(seed.supplies),
-    transactions: remote.transactions.length ? remote.transactions : structuredClone(seed.transactions),
-  };
-  return state;
+  setLoading(true, "Sincronizando…");
+  try {
+    const remote = await loadSupabaseState();
+    state = {
+      ...remote,
+      clients:      remote.clients.length      ? remote.clients      : structuredClone(seed.clients),
+      products:     remote.products.length     ? remote.products     : structuredClone(seed.products),
+      tickets:      remote.tickets.length      ? remote.tickets      : structuredClone(seed.tickets),
+      supplies:     remote.supplies.length     ? remote.supplies     : structuredClone(seed.supplies),
+      transactions: remote.transactions.length ? remote.transactions : structuredClone(seed.transactions),
+    };
+    return state;
+  } finally {
+    setLoading(false);
+  }
 }
 
 async function afterLogin() {
@@ -715,8 +727,8 @@ async function handleKanbanDrop(event, newStage) {
   }
   // WhatsApp notification when ticket is ready for pickup
   if (newStage === "Listo") {
-    showWhatsAppToast(ticket,
-      `Hola ${ticket.client} 👋, tu equipo *${ticket.productName}* está listo para recoger en ${ticket.branch}. Folio: ${ticket.tracking}. ¡Gracias!`);
+    const msg = fillWATemplate("listo", ticket);
+    showWhatsAppToast(ticket, msg);
   }
 }
 window.handleKanbanDrop = handleKanbanDrop;
@@ -793,7 +805,14 @@ function ticketCard(ticket, perms) {
       <small class="muted">${escapeHtml(ticket.assignedTo)}</small>
     </div>
     <div class="ticket-actions">
-      <button class="mini-button" data-print-ticket="${ticket.id}">Recibo</button>
+      <div style="position:relative;display:inline-block">
+        <button class="mini-button" data-print-ticket="${ticket.id}" title="Recibo de servicio">Recibo ▾</button>
+        <div class="print-menu" style="display:none;position:absolute;bottom:110%;left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:160px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-recepcion="${ticket.id}">📋 Recepción</button>
+          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-pago="${ticket.id}">💳 Pago / Entrega</button>
+          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-garantia="${ticket.id}">🛡 Garantía</button>
+        </div>
+      </div>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
@@ -1311,10 +1330,70 @@ function renderDiseno() {
   }
 
   renderDiscountManager();
+  renderWATemplates();
+}
+
+// ── WhatsApp message templates ────────────────────────────────────────────────
+function renderWATemplates() {
+  const el = document.querySelector("#wa-templates-manager");
+  if (!el) return;
+  const tpls = getWATemplates();
+  const LABELS = { listo:"✅ Equipo Listo", abono:"💳 Abono recibido", pagado:"✅ Pago completo", garantia:"🛡 Garantía" };
+  const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo}";
+  el.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <div style="margin-bottom:16px">
+        <h3 style="margin:0 0 4px;font-size:14px">Plantillas de WhatsApp</h3>
+        <small class="muted">Variables disponibles: <code>${HINTS}</code></small>
+      </div>
+      ${Object.keys(LABELS).map(k=>`
+        <div style="margin-bottom:14px">
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px">${LABELS[k]}</label>
+          <textarea id="wt-${k}" rows="3" style="width:100%;resize:vertical;font-size:12px;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;font-family:inherit">${escapeHtml(tpls[k]||"")}</textarea>
+        </div>`).join("")}
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="ghost-button" id="wt-reset-btn">Restaurar predeterminados</button>
+        <button class="primary-action" id="wt-save-btn">Guardar plantillas</button>
+      </div>
+    </div>`;
+
+  el.querySelector("#wt-save-btn")?.addEventListener("click", () => {
+    const saved = {};
+    Object.keys(LABELS).forEach(k => { saved[k] = el.querySelector(`#wt-${k}`)?.value||""; });
+    saveWATemplates(saved);
+    showToast("✓ Plantillas de WhatsApp guardadas");
+  });
+  el.querySelector("#wt-reset-btn")?.addEventListener("click", () => {
+    localStorage.removeItem(WA_TEMPLATES_KEY);
+    renderWATemplates();
+    showToast("✓ Plantillas restauradas");
+  });
 }
 
 // ── Discount codes (managed by Marketing, stored in localStorage) ─────────────
-const DISCOUNTS_KEY = "fixzone-discounts-v1";
+const DISCOUNTS_KEY  = "fixzone-discounts-v1";
+const WA_TEMPLATES_KEY = "fixzone-wa-templates-v1";
+const DEFAULT_WA_TEMPLATES = {
+  listo:  "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!",
+  abono:  "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.",
+  pagado: "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!",
+  garantia: "Hola {cliente} 👋, tu equipo {equipo} está en garantía. Folio: {folio}. Contáctanos para coordinar.",
+};
+
+function getWATemplates() {
+  try { return { ...DEFAULT_WA_TEMPLATES, ...JSON.parse(localStorage.getItem(WA_TEMPLATES_KEY)||"{}") }; } catch { return DEFAULT_WA_TEMPLATES; }
+}
+function saveWATemplates(t) { localStorage.setItem(WA_TEMPLATES_KEY, JSON.stringify(t)); }
+function fillWATemplate(key, vars) {
+  const tpl = getWATemplates()[key] || DEFAULT_WA_TEMPLATES[key] || "";
+  return tpl
+    .replace(/{cliente}/g, vars.client||"")
+    .replace(/{equipo}/g,  vars.productName||"")
+    .replace(/{sucursal}/g,vars.branch||"")
+    .replace(/{folio}/g,   vars.tracking||"")
+    .replace(/{monto}/g,   vars.amount||"")
+    .replace(/{saldo}/g,   vars.pending||"");
+}
 
 function getDiscounts() {
   try { return JSON.parse(localStorage.getItem(DISCOUNTS_KEY) || "[]"); } catch { return []; }
@@ -1832,6 +1911,7 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue) {
 
 recordForm.addEventListener("submit", async e => {
   e.preventDefault();
+  setLoading(true, "Guardando…");
   const schema = formSchemas[activeForm];
   const data   = Object.fromEntries(new FormData(recordForm).entries());
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
@@ -1962,6 +2042,8 @@ recordForm.addEventListener("submit", async e => {
   } catch(err) {
     console.error(err);
     alert(`No se pudo guardar: ${err.message}`);
+  } finally {
+    setLoading(false);
   }
 });
 
@@ -2341,6 +2423,76 @@ function showWhatsAppToast(ticket, msgText) {
 // ──────────────────────────────────────────────────────────────────────────────
 // ABONOS
 // ──────────────────────────────────────────────────────────────────────────────
+// ── Inventory movements ───────────────────────────────────────────────────────
+const movModal = document.querySelector("#movimiento-modal");
+
+document.querySelector("#btn-movimiento")?.addEventListener("click", () => {
+  const sel = document.querySelector("#mov-product");
+  if (sel) {
+    sel.innerHTML = branchProducts().map(p =>
+      `<option value="${p.id}" data-stock="${p.stock}" data-type="${p.productType||"refaccion"}">${escapeHtml(p.name)} (stock: ${p.stock})</option>`
+    ).join("");
+  }
+  updateMovPreview();
+  movModal?.showModal();
+});
+
+function updateMovPreview() {
+  const sel    = document.querySelector("#mov-product");
+  const type   = document.querySelector("#mov-type")?.value;
+  const qty    = Number(document.querySelector("#mov-qty")?.value || 0);
+  const prev   = document.querySelector("#mov-stock-preview");
+  if (!sel || !prev) return;
+  const opt    = sel.options[sel.selectedIndex];
+  const current = Number(opt?.dataset.stock || 0);
+  const delta   = (type === "entrada") ? qty : -qty;
+  const newStock = Math.max(0, current + delta);
+  prev.innerHTML = `Stock actual: <strong>${current}</strong> → Nuevo stock: <strong style="color:${newStock<current?"#ff9f43":"#2ecc71"}">${newStock}</strong>`;
+}
+
+document.querySelector("#mov-product")?.addEventListener("change", updateMovPreview);
+document.querySelector("#mov-type")?.addEventListener("change", updateMovPreview);
+document.querySelector("#mov-qty")?.addEventListener("input", updateMovPreview);
+document.querySelector("#close-movimiento-modal")?.addEventListener("click", () => movModal?.close());
+document.querySelector("#cancel-movimiento")?.addEventListener("click",       () => movModal?.close());
+
+document.querySelector("#movimiento-form")?.addEventListener("submit", async e => {
+  e.preventDefault();
+  const sel      = document.querySelector("#mov-product");
+  const movType  = document.querySelector("#mov-type").value;
+  const qty      = Number(document.querySelector("#mov-qty").value || 0);
+  const note     = document.querySelector("#mov-note").value.trim();
+  const prodId   = sel.value;
+  const prod     = state.products.find(p => p.id === prodId);
+  if (!prod || qty <= 0) return;
+
+  const delta    = movType === "entrada" ? qty : -qty;
+  const newStock = Math.max(0, Number(prod.stock) + delta);
+  const isUUID   = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(prodId);
+
+  try {
+    if (dataMode === "remote" && isUUID) {
+      const branchId = await branchIdByName(activeBranchId);
+      await supabaseClient.from("inventory_movements").insert({
+        product_id:    prodId,
+        branch_id:     branchId,
+        movement_type: movType,
+        quantity:      movType === "entrada" ? qty : -qty,
+        note:          note || null,
+        created_by:    currentEmployeeId(),
+      });
+      await supabaseClient.from("products").update({ stock: newStock }).eq("id", prodId);
+    }
+    const pidx = state.products.findIndex(p => p.id === prodId);
+    if (pidx !== -1) state.products[pidx] = { ...state.products[pidx], stock: newStock };
+    movModal?.close();
+    render();
+    showToast(`✓ ${movType.charAt(0).toUpperCase()+movType.slice(1)} de ${qty} unidades registrada — nuevo stock: ${newStock}`);
+  } catch(err) {
+    alert(`Error: ${err.message}`);
+  }
+});
+
 let abonoTicketId = null;
 const abonoModal  = document.querySelector("#abono-modal");
 
@@ -2409,9 +2561,8 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
     const updatedTicket = state.tickets.find(t => t.id === abonoTicketId);
     showToast(`✓ Abono de ${money.format(amount)} registrado`);
     if (updatedTicket) {
-      const waMsg = newStatus === "Pagado"
-        ? `Hola ${updatedTicket.client} 👋, tu pago de *${money.format(amount)}* fue recibido. Tu equipo ${updatedTicket.productName} (${updatedTicket.tracking}) está *PAGADO* ✅. ¡Gracias!`
-        : `Hola ${updatedTicket.client} 👋, recibimos tu abono de *${money.format(amount)}*. Saldo pendiente: ${money.format(Math.max(0,(updatedTicket.repairAmount||0)-newPaid))}. Folio: ${updatedTicket.tracking}.`;
+      const vars = { ...updatedTicket, amount: money.format(amount), pending: money.format(Math.max(0,(updatedTicket.repairAmount||0)-newPaid)) };
+      const waMsg = fillWATemplate(newStatus === "Pagado" ? "pagado" : "abono", vars);
       showWhatsAppToast(updatedTicket, waMsg);
     }
   } catch(err) {
@@ -2503,7 +2654,22 @@ document.addEventListener("click", async e => {
 
   // Print ticket
   const printBtn = e.target.closest("[data-print-ticket]");
-  if (printBtn) { const t = state.tickets.find(i=>i.id===printBtn.dataset.printTicket); if(t) printTicket(t); return; }
+  if (printBtn) {
+    // Toggle dropdown
+    const menu = printBtn.nextElementSibling;
+    if (menu?.classList.contains("print-menu")) {
+      const isOpen = menu.style.display === "block";
+      document.querySelectorAll(".print-menu").forEach(m => m.style.display="none");
+      menu.style.display = isOpen ? "none" : "block";
+    }
+    return;
+  }
+  const printRec = e.target.closest("[data-print-recepcion]");
+  if (printRec) { document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none"); const t=state.tickets.find(i=>i.id===printRec.dataset.printRecepcion); if(t) printRecibo(t,"recepcion"); return; }
+  const printPago = e.target.closest("[data-print-pago]");
+  if (printPago) { document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none"); const t=state.tickets.find(i=>i.id===printPago.dataset.printPago); if(t) printRecibo(t,"pago"); return; }
+  const printGar = e.target.closest("[data-print-garantia]");
+  if (printGar) { document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none"); const t=state.tickets.find(i=>i.id===printGar.dataset.printGarantia); if(t) printRecibo(t,"garantia"); return; }
 
   // Abono
   const abonoBtn = e.target.closest("[data-abono-ticket]");
@@ -2627,6 +2793,11 @@ document.querySelector("#seed-data")?.addEventListener("click", () => {
 });
 
 searchInput.addEventListener("input", render);
+document.addEventListener("click", e => {
+  if (!e.target.closest("[data-print-ticket]")) {
+    document.querySelectorAll(".print-menu").forEach(m => m.style.display = "none");
+  }
+}, true);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // BRANCH TABS
@@ -2645,6 +2816,101 @@ window.openTransactionForm = openTransactionForm;
 // ──────────────────────────────────────────────────────────────────────────────
 // PRINT / EXPORT
 // ──────────────────────────────────────────────────────────────────────────────
+// ── Receipt variants ──────────────────────────────────────────────────────────
+function printRecibo(ticket, type) {
+  const client    = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const repair    = Number(ticket.repairAmount || 0);
+  const discount  = Number(ticket.discountAmount || 0);
+  const total     = Math.max(0, repair - discount);
+  const paid      = Number(ticket.paidAmount || 0);
+  const pending   = Math.max(0, total - paid);
+  const brand     = window.getBranchBrand(ticket.branch || activeBranchId);
+  const D         = "────────────────────────────────────────";
+  const now       = new Date();
+  const timeStr   = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
+  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "80mm";
+  document.documentElement.style.setProperty("--receipt-width", receiptWidth);
+
+  const header = `
+    <div class="rct-logo"><img src="${brand.logoMonoSrc||brand.logoSrc}" alt="${brand.displayName}" onerror="this.src='${brand.logoSrc}'"/></div>
+    <p class="rct-dash">${D}</p>
+    <p class="rct-center rct-title">${{recepcion:"RECIBO DE RECEPCIÓN",pago:"COMPROBANTE DE PAGO",garantia:"CERTIFICADO DE GARANTÍA"}[type]}</p>
+    <p class="rct-dash">${D}</p>
+    <p class="rct-row"><strong>FOLIO:</strong> <span>${escapeHtml(ticket.tracking)}</span></p>
+    <p class="rct-row"><strong>FECHA:</strong> <span>${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</span></p>
+    <p class="rct-row"><strong>SUCURSAL:</strong> <span>${escapeHtml(brand.displayName)}</span></p>
+    <p class="rct-dash">${D}</p>
+    <p class="rct-label">CLIENTE:</p>
+    <p class="rct-value">${escapeHtml(ticket.client)}</p>
+    <p class="rct-value">Tel: ${escapeHtml(client?.phone||ticket.phone||"No registrado")}</p>
+    <p class="rct-dash">${D}</p>
+    <p class="rct-label">EQUIPO:</p>
+    <p class="rct-value">${escapeHtml(ticket.productName)}</p>
+    ${ticket.imei?`<p class="rct-value"><strong>IMEI/Serie:</strong> ${escapeHtml(ticket.imei)}</p>`:""}
+    ${ticket.color?`<p class="rct-value"><strong>Color:</strong> ${escapeHtml(ticket.color)}</p>`:""}
+    ${ticket.physicalCondition?`<p class="rct-value"><strong>Condición:</strong> ${escapeHtml(ticket.physicalCondition)}</p>`:""}
+    ${ticket.accessories?`<p class="rct-value"><strong>Accesorios:</strong> ${escapeHtml(ticket.accessories)}</p>`:""}`;
+
+  let body = "";
+  if (type === "recepcion") {
+    body = `
+      <p class="rct-dash">${D}</p>
+      <p class="rct-label">FALLA REPORTADA:</p>
+      <p class="rct-value">${escapeHtml(ticket.issue)}</p>
+      <p class="rct-dash">${D}</p>
+      <p class="rct-row"><strong>COSTO ESTIMADO:</strong> <span>${money.format(repair)}</span></p>
+      ${ticket.discountCode?`<p class="rct-row"><strong>DESCUENTO (${escapeHtml(ticket.discountCode)}):</strong> <span>-${money.format(discount)}</span></p>`:""}
+      <p class="rct-row"><strong>ANTICIPO:</strong> <span>${money.format(paid)}</span></p>
+      <p class="rct-row"><strong>SALDO PENDIENTE:</strong> <span>${money.format(pending)}</span></p>
+      <p class="rct-dash">${D}</p>
+      <p class="rct-value" style="font-size:7.5pt">El tiempo estimado de reparación será notificado. El equipo no reclamado después de 30 días podrá ser dado de baja.</p>
+      <p class="rct-dash">${D}</p>
+      <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE CLIENTE — RECIBIDO CONFORME</p></div>`;
+  } else if (type === "pago") {
+    body = `
+      <p class="rct-dash">${D}</p>
+      <p class="rct-label">CONCEPTO:</p>
+      <p class="rct-value">${escapeHtml(ticket.issue)}</p>
+      <p class="rct-dash">${D}</p>
+      <table class="rct-table"><thead><tr><th>Descripción</th><th>Importe</th></tr></thead>
+      <tbody>
+        <tr><td>${escapeHtml(ticket.issue||"Servicio de reparación")}</td><td>${money.format(repair)}</td></tr>
+        ${discount>0?`<tr><td>Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</td><td>-${money.format(discount)}</td></tr>`:""}
+      </tbody></table>
+      <p class="rct-dash">${D}</p>
+      <div class="rct-totals">
+        <div class="rct-total-row rct-total-main"><span>TOTAL</span><strong>${money.format(total)}</strong></div>
+        <div class="rct-total-row"><span>PAGADO</span><span>${money.format(paid)}</span></div>
+        <div class="rct-total-row"><span>SALDO</span><span>${money.format(pending)}</span></div>
+        <div class="rct-total-row"><span>ESTADO</span><span>${escapeHtml(ticket.paymentStatus)}</span></div>
+      </div>
+      <p class="rct-dash">${D}</p>
+      <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA — PAGO RECIBIDO CONFORME</p></div>`;
+  } else { // garantia
+    const warrantyDate = ticket.warrantyUntil || (() => {
+      const d = new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10);
+    })();
+    body = `
+      <p class="rct-dash">${D}</p>
+      <p class="rct-label">TRABAJO REALIZADO:</p>
+      <p class="rct-value">${escapeHtml(ticket.issue)}</p>
+      <p class="rct-dash">${D}</p>
+      <p class="rct-row"><strong>GARANTÍA VÁLIDA HASTA:</strong></p>
+      <p class="rct-value rct-title">${warrantyDate}</p>
+      <p class="rct-dash">${D}</p>
+      <p class="rct-label">CONDICIONES DE GARANTÍA:</p>
+      <p class="rct-policy">• 30 días en mano de obra desde la fecha de entrega.</p>
+      <p class="rct-policy">• No aplica por daños físicos, humedad, mal uso o intervención de terceros.</p>
+      <p class="rct-policy">• Solo cubre la falla por la cual fue reparado el equipo.</p>
+      <p class="rct-policy">• Conserve este documento para hacer válida la garantía.</p>
+      <p class="rct-dash">${D}</p>
+      <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE ENTREGA CONFORME</p></div>`;
+  }
+
+  document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}<p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p><p class="rct-dash">${D}</p></div>`;
+  window.print();
+}
+
 function printTicket(ticket) {
   const client    = state.clients.find(c => c.name.toLowerCase() === ticket.client.toLowerCase());
   const repairAmt = Number(ticket.repairAmount ?? ticket.total ?? 0);
@@ -2885,10 +3151,45 @@ function applyBranchBrand(branchName) {
   favicon.href = brand.logoSrc;
 }
 
+// ── Section tooltips ─────────────────────────────────────────────────────────
+const NAV_TOOLTIPS = {
+  dashboard:      "Vista general: métricas del día, tickets activos y movimientos recientes.",
+  cotizaciones:   "Presupuestos pendientes de aprobación. Aprueba para convertir en ticket.",
+  clients:        "Registro de clientes y sus equipos. Busca por nombre, teléfono o IMEI.",
+  products:       "Inventario de refacciones, accesorios y productos vendibles.",
+  tickets:        "Kanban de reparaciones. Arrastra las cards para cambiar el stage.",
+  supplies:       "Compras de insumos y materiales. Se registran como egreso automáticamente.",
+  finance:        "Ingresos y egresos del negocio con filtro por período.",
+  reports:        "Reportes de caja, tickets por etapa y productividad del equipo.",
+  users:          "Gestión de empleados, roles y permisos de acceso.",
+  soporte:        "Kanban de tareas internas del equipo de IT/Soporte.",
+  diseno:         "Herramientas de marketing, plantillas de WhatsApp y códigos de descuento.",
+  automatizacion: "Flujos y automatizaciones para la sucursal activa.",
+};
+
+function initNavTooltips() {
+  document.querySelectorAll(".nav-item[data-view]").forEach(btn => {
+    const tip = NAV_TOOLTIPS[btn.dataset.view];
+    if (!tip) return;
+    btn.setAttribute("title", tip); // fallback
+    let tooltip = null;
+    btn.addEventListener("mouseenter", () => {
+      tooltip = document.createElement("div");
+      tooltip.textContent = tip;
+      tooltip.style.cssText = "position:fixed;left:260px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:8px 12px;font-size:11px;line-height:1.5;max-width:220px;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5)";
+      const rect = btn.getBoundingClientRect();
+      tooltip.style.top = `${rect.top}px`;
+      document.body.appendChild(tooltip);
+    });
+    btn.addEventListener("mouseleave", () => { tooltip?.remove(); tooltip = null; });
+  });
+}
+
 async function initializeApp() {
   loadSavedPermissions();
   applyBranchBrand(activeBranchId);
   setupSupabase();
+  initNavTooltips();
   await refreshSession();
 }
 

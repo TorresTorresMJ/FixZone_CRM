@@ -47,13 +47,13 @@
 - [x] Permitir abonos, saldo pendiente y pagos parciales.
 - [x] Agregar historial de eventos por ticket (detecta cambio de stage, timeline en modal de edición).
 - [ ] Agregar fotos de evidencia antes y despues.
-- [ ] Modificar el tamaño del recibo a impresión de maquina
+- [x] Modificar el tamaño del recibo — botones 58mm/80mm en el header, persiste en localStorage.
 
 ## Fase 5: Inventario e insumos
 
-- [ ] Separar productos vendibles, refacciones e insumos internos.
+- [x] Separar productos vendibles, refacciones e insumos internos (filtro en Productos + tipo guardado en DB).
 - [ ] Registrar entradas, salidas, ajustes y mermas.
-- [ ] Descontar refacciones automaticamente cuando se usan en un ticket.
+- [x] Descontar refacciones automaticamente cuando se usan en un ticket (al mover a Entregado).
 - [x] Alertar stock bajo (banner en dashboard + tabla en reportes con cantidad faltante).
 - [ ] Registrar proveedores.
 - [ ] Asociar compras de insumos con proveedor y comprobante [Permitir adjuntar foto de comprobante].
@@ -61,13 +61,13 @@
 
 ## Fase 6: Finanzas y reportes
 
-- [ ] Separar ingresos por servicios, ventas y anticipos.
-- [ ] Separar egresos por inventario, renta, servicio de luz, nomina, herramientas y operacion.
+- [x] Separar ingresos por servicios, ventas y anticipos (categorías TX_CATEGORIES_INCOME ya definidas y filtradas).
+- [x] Separar egresos por inventario, renta, nómina, etc. (categorías TX_CATEGORIES_EXPENSE ya definidas y filtradas).
 - [x] Crear reporte de caja (hoy / 7 días / mes / todo con filtro de período).
 - [x] Crear reporte mensual de ingresos y egresos (con desglose por categoría).
 - [ ] Crear reporte de utilidad estimada.
 - [x] Crear reporte de tickets por estado (distribución con barra visual).
-- [ ] Crear reporte de empleados y productividad.
+- [x] Crear reporte de empleados y productividad (tabla por empleado: tickets, cerrados, efectividad %, valor generado).
 - [ ] Exportar reportes a Excel.
 
 ## Fase 7: Marketing
@@ -92,15 +92,15 @@
 - [x] Agregar cotizaciones antes de autorizar reparaciones (sección Cotizaciones, botón Aprobar convierte a ticket).
 - [x] Agregar firma de cliente.
 - [ ] Agregar lector de codigos QR para tickets.
-- [ ] Agregar busqueda avanzada por telefono, IMEI, folio o cliente.
+- [x] Búsqueda avanzada por teléfono, IMEI, folio o cliente (Sprint 2 — campos incluidos en ticket object).
 - [x] Filtrar dashboard por sucursal FixZone: Puerto Vallarta | Puebla. Faltan: insumos, clientes, finanzas, resportes.
 - [ ] Agregar integracion contable si se requiere facturacion formal.
 - [ ] Agregar función para añadir imagenes a los tickets, para registrar como viene el dispositivo antes y después. 
 - [x] Poder Editar los campos de datos de los clientes,
 - [x] Agregar boton para añadir ingresos y egresos en Finanzas
-- [ ] Agregar boton para editar ingresos y egresos en Finanzas
-- [ ] Mostrar las categorias en selects
-- [ ] Boton de usuario, par configuraciones basicas, como renovar contraseña 
+- [x] Editar ingresos y egresos en Finanzas (botón Editar en tabla)
+- [x] Categorías filtradas por tipo en form de Finanzas (Ingreso/Egreso)
+- [x] Botón de usuario en header para cambiar contraseña (dropdown perfil)
 - [x] Cards en los KANBAN se pueden mover arrastrándolas entre columnas (drag & drop, actualiza stage en Supabase).
 - [ ] Mini explicacion de que hace cada seccion o para que es, con un pequeño boton de ayuda donde al pasarle el cursor se despliegue el texto explicativo 
 
@@ -118,12 +118,12 @@
 - [x] Editor de permisos por rol en sección Usuarios (checkboxes, persistido en localStorage)
 - [x] ROLE_LABELS actualizado: `technician` muestra "Estándar", `owner`/`admin`/`it` muestran "Admin"
 - [ ] Tickets - Funcion para cargar imagenes existe solo al editar, no al crear (diseño intencional por ahora)
-- [ ] Brand de RefacZone — diferenciar paleta de colores del dashboard vs FixZone
+- [x] Brand RefaxZone — franja de color en topbar + CSS variables por sucursal
 - [x] Insumos y productos — hacer editables desde la UI
 - [x] Editar ingresos y egresos en Finanzas
 - [x] Mostrar categorías filtradas por tipo en Finanzas (Ingreso/Egreso)
 - [x] Botón de perfil de usuario para cambiar contraseña (dropdown en header)
-- [ ] Cards del KANBAN arrastrables entre columnas
+- [x] Cards del KANBAN arrastrables entre columnas (tickets + soporte IT)
 
 ## Fase 11 Cotizaciones: 
 - [x] Nueva sección: Cotizaciones. Sección dedicada, cotización se convierte a ticket con un clic. Partes/refacciones se agregan directamente desde el modal de edición del ticket.
