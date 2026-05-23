@@ -806,7 +806,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 @media print {
 
   @page {
-    size: 80mm auto;
+    size: var(--receipt-width, 80mm) auto;
     margin: 0;
   }
 
@@ -815,7 +815,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   body > #print-receipt { display: block !important; }
 
   html, body {
-    width: 80mm;
+    width: var(--receipt-width, 80mm);
     margin: 0;
     padding: 0;
     background: #fff !important;
@@ -832,7 +832,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   #print-receipt {
     display: block !important;
     position: static !important;
-    width: 80mm;
+    width: var(--receipt-width, 80mm);
     margin: 0;
     padding: 0;
     background: #fff;
@@ -842,7 +842,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
   /* ── Receipt wrapper ──────────────────────────────────── */
   .rct {
-    width: 80mm;
+    width: var(--receipt-width, 80mm);
     margin: 0;
     padding: 0 3mm 2mm;            /* sides 3mm · bottom 2mm only */
     font-family: "Courier New", Courier, monospace;

@@ -100,6 +100,10 @@
               <span aria-hidden="true">⌕</span>
               <input id="global-search" type="search" placeholder="Buscar cliente, ticket, producto..." />
             </label>
+            <div title="Tamaño de recibo" style="display:flex;gap:4px;align-items:center">
+              <button class="mini-button" style="font-size:10px;padding:3px 7px" onclick="setReceiptWidth('58mm')" title="Impresora 58mm">58</button>
+              <button class="mini-button" style="font-size:10px;padding:3px 7px" onclick="setReceiptWidth('80mm')" title="Impresora 80mm">80</button>
+            </div>
             <button class="icon-button" id="export-data" title="Exportar Excel">XLS</button>
             <button class="primary-action" id="quick-ticket">+ Ticket</button>
           </div>
@@ -154,7 +158,13 @@
           <div class="section-heading">
             <h2>Productos y refacciones</h2>
             <div class="action-row">
-              <button class="ghost-button" data-export-sheet="products">Excel</button>
+              <div style="display:flex;gap:6px" id="product-type-bar">
+                <button class="mini-button ptype-filter is-active" data-ptype="all">Todos</button>
+                <button class="mini-button ptype-filter" data-ptype="producto">Vendibles</button>
+                <button class="mini-button ptype-filter" data-ptype="refaccion">Refacciones</button>
+                <button class="mini-button ptype-filter" data-ptype="insumo">Insumos</button>
+              </div>
+              <button class="ghost-button" data-export-sheet="products">XLS</button>
               <button class="primary-action" data-open-form="product">+ Producto</button>
             </div>
           </div>

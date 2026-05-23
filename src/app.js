@@ -79,6 +79,7 @@ const formSchemas = {
     title: "Producto", collection: "products",
     fields: [
       ["branch","Sucursal","select",BRANCHES],["name","Nombre","text"],["sku","SKU","text"],
+      ["productType","Tipo","select",["refaccion","producto","insumo"]],
       ["category","Categoria","select",PRODUCT_CATEGORIES],["stock","Stock","number"],["minStock","Minimo","number"],["price","Precio","number"],
     ],
   },
@@ -488,6 +489,7 @@ async function loadSupabaseState() {
     products: (pRes.data||[]).map(p => ({
       id:p.id, name:p.name, sku:p.sku||"", category:p.category, stock:Number(p.stock||0),
       minStock:Number(p.min_stock||0), price:Number(p.sale_price||p.unit_cost||0),
+      productType:p.product_type||"refaccion",
       branch:branchRows.find(b=>b.id===p.branch_id)?.name||BRANCHES[0],
     })),
     tickets: (tRes.data||[]).map(t => {
@@ -635,21 +637,42 @@ function renderClients() {
     </tr>`).join("")||tableEmpty(6);
 }
 
+let productTypeFilter = "all";
+const PTYPE_LABEL = { producto:"Vendible", refaccion:"Refacción", insumo:"Insumo" };
+
 function renderProducts() {
-  document.querySelector("#products-grid").innerHTML = bySearch(branchProducts()).map(p=>{
+  // Sync filter buttons
+  document.querySelectorAll(".ptype-filter").forEach(b =>
+    b.classList.toggle("is-active", b.dataset.ptype === productTypeFilter));
+
+  const filtered = bySearch(branchProducts())
+    .filter(p => productTypeFilter === "all" || p.productType === productTypeFilter);
+
+  document.querySelector("#products-grid").innerHTML = filtered.map(p=>{
     const stock=Number(p.stock), min=Number(p.minStock);
     const pct=Math.min(100,Math.round((stock/Math.max(min*2,1))*100));
+    const typeLabel = PTYPE_LABEL[p.productType] || p.productType || "Refacción";
     return `<article class="product-card">
-      <div class="product-meta"><strong>${escapeHtml(p.name)}</strong><span class="${stock<=min?"low-stock":"status ready"}">${stock<=min?"Bajo":"OK"}</span></div>
-      <span>${escapeHtml(p.sku)} · ${escapeHtml(p.category)}</span>
+      <div class="product-meta"><strong>${escapeHtml(p.name)}</strong><span class="${stock<=min&&min>0?"low-stock":"status ready"}">${stock<=min&&min>0?"Bajo":"OK"}</span></div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:11px;margin-bottom:2px">
+        <span class="muted">${escapeHtml(p.sku||"")}${p.sku?" · ":""}${escapeHtml(p.category)}</span>
+        <span style="background:rgba(255,255,255,.08);border-radius:4px;padding:1px 6px">${typeLabel}</span>
+      </div>
       <div class="product-meta"><strong>${stock} piezas</strong><strong>${money.format(p.price)}</strong></div>
       <div class="stock-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
       <div class="action-row" style="margin-top:8px;justify-content:flex-end">
         <button class="mini-button" data-edit-product="${p.id}">Editar</button>
       </div>
     </article>`;
-  }).join("")||emptyMessage("No hay productos registrados.");
+  }).join("")||emptyMessage("No hay productos en esta categoría.");
 }
+
+document.querySelector("#product-type-bar")?.addEventListener("click", e => {
+  const btn = e.target.closest(".ptype-filter");
+  if (!btn) return;
+  productTypeFilter = btn.dataset.ptype;
+  renderProducts();
+});
 
 function renderTickets() {
   const perms = currentPerms();
@@ -687,7 +710,13 @@ async function handleKanbanDrop(event, newStage) {
       if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], status: oldStatus };
       render();
       alert(`Error al mover ticket: ${err.message}`);
+      return;
     }
+  }
+  // WhatsApp notification when ticket is ready for pickup
+  if (newStage === "Listo") {
+    showWhatsAppToast(ticket,
+      `Hola ${ticket.client} 👋, tu equipo *${ticket.productName}* está listo para recoger en ${ticket.branch}. Folio: ${ticket.tracking}. ¡Gracias!`);
   }
 }
 window.handleKanbanDrop = handleKanbanDrop;
@@ -1469,13 +1498,14 @@ async function updateRemoteProduct(productId, data) {
     return;
   }
   const { error } = await supabaseClient.from("products").update({
-    name:       data.name,
-    sku:        data.sku || null,
-    category:   data.category,
-    stock:      Number(data.stock || 0),
-    min_stock:  Number(data.minStock || 0),
-    sale_price: Number(data.price || 0),
-    branch_id:  await branchIdByName(data.branch || activeBranchId),
+    name:         data.name,
+    sku:          data.sku || null,
+    category:     data.category,
+    product_type: data.productType || "refaccion",
+    stock:        Number(data.stock || 0),
+    min_stock:    Number(data.minStock || 0),
+    sale_price:   Number(data.price || 0),
+    branch_id:    await branchIdByName(data.branch || activeBranchId),
   }).eq("id", productId);
   if (error) throw error;
 }
@@ -2027,7 +2057,7 @@ async function createRemoteClient(r) {
 }
 
 async function createRemoteProduct(r) {
-  const { error } = await supabaseClient.from("products").insert({ name:r.name, sku:r.sku, category:r.category, stock:r.stock, min_stock:r.minStock, sale_price:r.price, branch_id:await branchIdByName(r.branch) });
+  const { error } = await supabaseClient.from("products").insert({ name:r.name, sku:r.sku||null, category:r.category, product_type:r.productType||"refaccion", stock:r.stock, min_stock:r.minStock, sale_price:r.price, branch_id:await branchIdByName(r.branch) });
   if (error) throw error;
 }
 
@@ -2104,7 +2134,8 @@ async function updateRemoteTicket(ticketId, r) {
   if (error) throw error;
 
   // Log stage change event
-  if (oldTicket?.status && r.status && oldTicket.status !== r.status) {
+  const stageChanged = oldTicket?.status && r.status && oldTicket.status !== r.status;
+  if (stageChanged) {
     await supabaseClient.from("ticket_events").insert({
       ticket_id:  ticketId,
       event_type: "stage_change",
@@ -2112,6 +2143,24 @@ async function updateRemoteTicket(ticketId, r) {
       to_stage:   r.status,
       created_by: currentEmployeeId(),
     });
+  }
+
+  // Auto-deduct inventory when ticket is delivered (stage → Entregado)
+  if (stageChanged && r.status === "Entregado" && oldTicket.status !== "Entregado") {
+    const { data: items } = await supabaseClient
+      .from("ticket_items").select("product_id, quantity").eq("ticket_id", ticketId);
+    if (items?.length) {
+      for (const item of items) {
+        if (!item.product_id) continue;
+        const prod = state.products.find(p => p.id === item.product_id);
+        if (!prod) continue;
+        const newStock = Math.max(0, Number(prod.stock) - Number(item.quantity));
+        await supabaseClient.from("products").update({ stock: newStock }).eq("id", item.product_id);
+        // Update local state immediately
+        const pidx = state.products.findIndex(p => p.id === item.product_id);
+        if (pidx !== -1) state.products[pidx] = { ...state.products[pidx], stock: newStock };
+      }
+    }
   }
 
   // Update device record if exists, or create one if new device fields provided
@@ -2249,14 +2298,44 @@ helpForm.addEventListener("submit", async e => {
   }
 });
  
-function showToast(message) {
+function showToast(message, html = "") {
   const existing = document.querySelector(".help-toast");
   if (existing) existing.remove();
   const toast = document.createElement("div");
-  toast.className   = "help-toast";
-  toast.textContent = message;
+  toast.className = "help-toast";
+  if (html) toast.innerHTML = `${message} ${html}`;
+  else toast.textContent = message;
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3500);
+  if (!html) setTimeout(() => toast.remove(), 3500);
+  else {
+    // Toasts with links stay until closed
+    toast.style.cursor = "default";
+    const close = document.createElement("span");
+    close.textContent = " ✕";
+    close.style.cssText = "cursor:pointer;margin-left:10px;opacity:.7";
+    close.onclick = () => toast.remove();
+    toast.appendChild(close);
+    setTimeout(() => toast.remove(), 12000);
+  }
+}
+
+function waLink(phone, message) {
+  const clean = (phone || "").replace(/\D/g, "");
+  if (!clean || clean.length < 8) return "";
+  const num = clean.startsWith("52") ? clean : `52${clean}`;
+  const url = `https://wa.me/${num}?text=${encodeURIComponent(message)}`;
+  return `<a href="${url}" target="_blank" rel="noopener"
+    style="color:#25d366;font-weight:700;text-decoration:none;background:rgba(37,211,102,.15);padding:3px 10px;border-radius:4px">
+    📲 WhatsApp
+  </a>`;
+}
+
+function showWhatsAppToast(ticket, msgText) {
+  const client = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const phone  = ticket.phone || client?.phone || "";
+  if (!phone) return; // no phone — no toast
+  const link = waLink(phone, msgText);
+  showToast(`✓ Avisa al cliente:`, link);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2327,7 +2406,14 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
     }
     abonoModal.close();
     render();
+    const updatedTicket = state.tickets.find(t => t.id === abonoTicketId);
     showToast(`✓ Abono de ${money.format(amount)} registrado`);
+    if (updatedTicket) {
+      const waMsg = newStatus === "Pagado"
+        ? `Hola ${updatedTicket.client} 👋, tu pago de *${money.format(amount)}* fue recibido. Tu equipo ${updatedTicket.productName} (${updatedTicket.tracking}) está *PAGADO* ✅. ¡Gracias!`
+        : `Hola ${updatedTicket.client} 👋, recibimos tu abono de *${money.format(amount)}*. Saldo pendiente: ${money.format(Math.max(0,(updatedTicket.repairAmount||0)-newPaid))}. Folio: ${updatedTicket.tracking}.`;
+      showWhatsAppToast(updatedTicket, waMsg);
+    }
   } catch(err) {
     alert(`No se pudo registrar el abono: ${err.message}`);
   }
@@ -2666,8 +2752,20 @@ function printTicket(ticket) {
   </div>
 
 </div>`;
+
+  // Set paper width via CSS variable before printing
+  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "80mm";
+  document.documentElement.style.setProperty("--receipt-width", receiptWidth);
   window.print();
+  // Show size toggle in a small floating bar before print dialog
 }
+
+// Expose receipt size toggle so it can be called from the header/receipt area
+window.setReceiptWidth = function(w) {
+  localStorage.setItem("fixzone-receipt-width", w);
+  document.documentElement.style.setProperty("--receipt-width", w);
+  showToast(`✓ Tamaño de recibo: ${w}`);
+};
 
 function receiptQrTarget() {
   try {
@@ -2734,6 +2832,20 @@ function applyBranchBrand(branchName) {
 
   // Título de pestaña
   document.title = brand.pageTitle;
+
+  // Top accent bar — 3px colored stripe at the top of the topbar
+  let bar = document.querySelector("#brand-accent-bar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "brand-accent-bar";
+    bar.style.cssText = "position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;transition:background .3s";
+    document.body.prepend(bar);
+  }
+  bar.style.background = `linear-gradient(90deg, var(--fz-primary), var(--fz-secondary,var(--fz-primary)))`;
+
+  // Update sidebar-footer branch indicator dot color
+  const dot = document.querySelector(".sidebar-footer .dot, #branch-dot");
+  if (dot) dot.style.background = brand.colors["--fz-primary"] || "#2F6FFF";
 
   // Sidebar: logo, nombre, label
   const brandLogoImg = document.querySelector(".brand img");
