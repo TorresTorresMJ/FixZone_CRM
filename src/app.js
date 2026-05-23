@@ -3414,11 +3414,82 @@ function initNavTooltips() {
   });
 }
 
+function setupDogCursor() {
+  const dogNormal = `<svg xmlns='http://www.w3.org/2000/svg' width='40' height='44' viewBox='0 0 40 44'>
+    <path d='M33 18 Q38 10 36 5' stroke='#b8742a' stroke-width='3.5' fill='none' stroke-linecap='round'/>
+    <ellipse cx='26' cy='27' rx='10' ry='9' fill='#c8853a'/>
+    <ellipse cx='18' cy='22' rx='5' ry='7' fill='#c8853a'/>
+    <circle cx='14' cy='14' r='10' fill='#c8853a'/>
+    <ellipse cx='10' cy='5' rx='4.5' ry='7' fill='#8b4a1a' transform='rotate(-15 10 5)'/>
+    <ellipse cx='5' cy='17' rx='6.5' ry='4.5' fill='#e0a868'/>
+    <ellipse cx='1' cy='16' rx='3.5' ry='2.5' fill='#111'/>
+    <circle cx='0.8' cy='14.8' r='1' fill='rgba(255,255,255,0.75)'/>
+    <circle cx='12' cy='12' r='3' fill='#111'/>
+    <circle cx='13.2' cy='11' r='1' fill='rgba(255,255,255,0.85)'/>
+    <path d='M3 21 Q7 24 11 21' stroke='#8b4a1a' stroke-width='1.5' fill='none' stroke-linecap='round'/>
+    <rect x='12' y='28' width='5' height='11' rx='2.5' fill='#c8853a'/>
+    <rect x='22' y='34' width='5' height='9' rx='2.5' fill='#c8853a'/>
+    <rect x='29' y='34' width='5' height='9' rx='2.5' fill='#c8853a'/>
+  </svg>`;
+
+  const dogPooping = `<svg xmlns='http://www.w3.org/2000/svg' width='52' height='66' viewBox='0 0 52 66'>
+    <!-- Tail from low rear going right -->
+    <path d='M44 36 Q52 30 50 24' stroke='#b8742a' stroke-width='3.5' fill='none' stroke-linecap='round'/>
+    <!-- Body: front high, rear very low -->
+    <path d='M20 20 Q31 13 43 28 Q48 36 44 42 Q40 46 32 44 Q22 42 20 32 Q19 26 20 20 Z' fill='#c8853a'/>
+    <!-- Neck -->
+    <ellipse cx='18' cy='23' rx='5' ry='7' fill='#c8853a'/>
+    <!-- Head — same position as normal -->
+    <circle cx='12' cy='16' r='11' fill='#c8853a'/>
+    <!-- Ear — same floppy style as normal dog, shifted slightly back -->
+    <ellipse cx='13' cy='7' rx='4.5' ry='7' fill='#8b4a1a' transform='rotate(-15 13 7)'/>
+    <!-- Snout -->
+    <ellipse cx='3' cy='19' rx='7' ry='4.5' fill='#e0a868'/>
+    <!-- Nose (hotspot 1,18) -->
+    <ellipse cx='0.5' cy='17.5' rx='3' ry='2.5' fill='#111'/>
+    <circle cx='0.4' cy='16.3' r='0.9' fill='rgba(255,255,255,0.7)'/>
+    <!-- Eye squinting with effort -->
+    <path d='M8 14 Q12 11 16 14' stroke='#111' stroke-width='2' fill='none' stroke-linecap='round'/>
+    <!-- Front legs — same proportions as normal dog, NOT extra long -->
+    <rect x='14' y='30' width='5' height='14' rx='2.5' fill='#c8853a'/>
+    <rect x='21' y='30' width='5' height='14' rx='2.5' fill='#c8853a'/>
+    <!-- Back legs — squatting short below the lowered rear -->
+    <path d='M34 44 Q31 52 33 58' stroke='#c8853a' stroke-width='6' fill='none' stroke-linecap='round'/>
+    <path d='M41 44 Q39 52 41 58' stroke='#c8853a' stroke-width='6' fill='none' stroke-linecap='round'/>
+    <!-- Poop pile — shifted right so it's away from the back legs -->
+    <ellipse cx='47' cy='65' rx='8' ry='2.5' fill='#2d1506'/>
+    <ellipse cx='47' cy='61' rx='6' ry='3' fill='#3d2008'/>
+    <ellipse cx='47' cy='57' rx='4.5' ry='3' fill='#4d2c0a'/>
+    <ellipse cx='48' cy='53.5' rx='3' ry='2.5' fill='#5d360c'/>
+    <circle cx='48' cy='51' r='2' fill='#6b3e0e'/>
+    <circle cx='45' cy='62' r='1' fill='white'/>
+    <circle cx='49' cy='62' r='1' fill='white'/>
+    <circle cx='45.3' cy='62' r='0.5' fill='#111'/>
+    <circle cx='49.3' cy='62' r='0.5' fill='#111'/>
+  </svg>`;
+
+  const toUri = svg => 'data:image/svg+xml,' + encodeURIComponent(svg);
+  const uriNormal  = toUri(dogNormal);
+  const uriPooping = toUri(dogPooping);
+
+  const styleEl = document.createElement('style');
+  styleEl.id = 'dog-cursor-style';
+  document.head.appendChild(styleEl);
+
+  const applyNormal  = () => { styleEl.textContent = `* { cursor: url("${uriNormal}") 1 16, auto !important; }`; };
+  const applyPooping = () => { styleEl.textContent = `* { cursor: url("${uriPooping}") 1 18, auto !important; }`; };
+
+  applyNormal();
+  document.addEventListener('mousedown', applyPooping);
+  document.addEventListener('mouseup',   applyNormal);
+}
+
 async function initializeApp() {
   loadSavedPermissions();
   applyBranchBrand(activeBranchId);
   setupSupabase();
   initNavTooltips();
+  setupDogCursor();
   await refreshSession();
 }
 
