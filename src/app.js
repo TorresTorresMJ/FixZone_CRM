@@ -1331,6 +1331,124 @@ function renderDiseno() {
 
   renderDiscountManager();
   renderWATemplates();
+  renderBrandEditor();
+}
+
+// ── Brand palette editor ──────────────────────────────────────────────────────
+const BRAND_OVERRIDES_KEY = "fixzone-brand-overrides-v1";
+
+function getBrandOverrides() {
+  try { return JSON.parse(localStorage.getItem(BRAND_OVERRIDES_KEY) || "{}"); } catch { return {}; }
+}
+function saveBrandOverrides(overrides) {
+  localStorage.setItem(BRAND_OVERRIDES_KEY, JSON.stringify(overrides));
+}
+function applyBrandOverrides() {
+  const all = getBrandOverrides();
+  const over = all[activeBranchId];
+  if (!over) return;
+  const root = document.documentElement;
+  Object.entries(over).forEach(([k, v]) => root.style.setProperty(k, v));
+}
+
+function renderBrandEditor() {
+  const el = document.querySelector("#brand-palette-editor");
+  if (!el) return;
+  const brand    = window.getBranchBrand(activeBranchId);
+  const all      = getBrandOverrides();
+  const saved    = all[activeBranchId] || {};
+  const current  = { ...brand.colors, ...saved };
+
+  const FIELDS = [
+    { key:"--fz-primary",   label:"Color principal",   hint:"Botones, badges, links activos" },
+    { key:"--fz-secondary", label:"Color secundario",  hint:"Hover, íconos, detalles" },
+    { key:"--fz-deep",      label:"Color profundo",    hint:"Sombras, estados presionados" },
+  ];
+
+  el.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>
+          <h3 style="margin:0;font-size:14px">Paleta de marca — ${brand.displayName}</h3>
+          <small class="muted">Los cambios se aplican en tiempo real y se guardan por sucursal.</small>
+        </div>
+        <button class="ghost-button" id="brand-reset-btn" style="font-size:12px">Restaurar defaults</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:16px">
+        ${FIELDS.map(f => {
+          const hex = (current[f.key]||"#085ACB").replace(/[^#0-9a-fA-F]/g,"").slice(0,7);
+          return `<div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${f.label}</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="color" id="bp-${f.key.replace(/--/g,'').replace(/-/g,'_')}"
+                value="${hex}" data-var="${f.key}"
+                style="width:48px;height:48px;border-radius:8px;border:2px solid rgba(255,255,255,.15);cursor:pointer;background:none;padding:2px" />
+              <div>
+                <span id="bp-hex-${f.key.replace(/--/g,'').replace(/-/g,'_')}" style="font-family:monospace;font-size:12px">${hex.toUpperCase()}</span>
+                <br><small class="muted">${f.hint}</small>
+              </div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">
+        <div style="flex:1;height:32px;border-radius:6px;background:linear-gradient(90deg,var(--fz-deep),var(--fz-primary),var(--fz-secondary))" id="brand-preview-bar"></div>
+        <button class="primary-action" id="brand-save-btn" style="font-size:13px">Guardar paleta</button>
+      </div>
+    </div>`;
+
+  // Live preview on change
+  FIELDS.forEach(f => {
+    const id = `bp-${f.key.replace(/--/g,'').replace(/-/g,'_')}`;
+    const input = el.querySelector(`#${id}`);
+    const hexSpan = el.querySelector(`#bp-hex-${f.key.replace(/--/g,'').replace(/-/g,'_')}`);
+    input?.addEventListener("input", e => {
+      document.documentElement.style.setProperty(f.key, e.target.value);
+      if (hexSpan) hexSpan.textContent = e.target.value.toUpperCase();
+      // Also compute rgb for primary
+      if (f.key === "--fz-primary") {
+        const r = parseInt(e.target.value.slice(1,3),16);
+        const g = parseInt(e.target.value.slice(3,5),16);
+        const b = parseInt(e.target.value.slice(5,7),16);
+        document.documentElement.style.setProperty("--fz-primary-rgb", `${r}, ${g}, ${b}`);
+      }
+    });
+  });
+
+  el.querySelector("#brand-save-btn")?.addEventListener("click", () => {
+    const patch = {};
+    FIELDS.forEach(f => {
+      const id = `bp-${f.key.replace(/--/g,'').replace(/-/g,'_')}`;
+      const v = el.querySelector(`#${id}`)?.value;
+      if (v) {
+        patch[f.key] = v;
+        if (f.key === "--fz-primary") {
+          const r=parseInt(v.slice(1,3),16), g=parseInt(v.slice(3,5),16), b=parseInt(v.slice(5,7),16);
+          patch["--fz-primary-rgb"] = `${r}, ${g}, ${b}`;
+          patch["--fz-glow"]         = `0 0 32px rgba(${r},${g},${b},0.45)`;
+          patch["--fz-shadow"]       = `0 18px 48px rgba(${r},${g},${b},0.35)`;
+          patch["--fz-nav-hover-bg"] = `rgba(${r},${g},${b},0.16)`;
+          patch["--fz-btn-gradient"] = `linear-gradient(135deg,${v},${el.querySelector("#bp-fz_secondary")?.value||v})`;
+          patch["--fz-tab-active-bg"]= `linear-gradient(135deg,${v},${el.querySelector("#bp-fz_secondary")?.value||v})`;
+          patch["--fz-topbar-glow"]  = `rgba(${r},${g},${b},0.20)`;
+        }
+      }
+    });
+    const all = getBrandOverrides();
+    all[activeBranchId] = { ...(all[activeBranchId]||{}), ...patch };
+    saveBrandOverrides(all);
+    showToast(`✓ Paleta de ${activeBranchId} guardada`);
+  });
+
+  el.querySelector("#brand-reset-btn")?.addEventListener("click", () => {
+    if (!confirm(`¿Restaurar la paleta default de ${activeBranchId}?`)) return;
+    const all = getBrandOverrides();
+    delete all[activeBranchId];
+    saveBrandOverrides(all);
+    applyBranchBrand(activeBranchId);
+    renderDiseno();
+    showToast("✓ Paleta restaurada");
+  });
 }
 
 // ── WhatsApp message templates ────────────────────────────────────────────────
@@ -3086,9 +3204,13 @@ function applyBranchBrand(branchName) {
   const brand = window.getBranchBrand(branchName);
   if (!brand) return;
 
-  // Variables CSS en :root
+  // Variables CSS en :root — brand defaults first, then user overrides
   const root = document.documentElement;
   for (const [key, val] of Object.entries(brand.colors)) {
+    root.style.setProperty(key, val);
+  }
+  const overrides = getBrandOverrides()[branchName] || {};
+  for (const [key, val] of Object.entries(overrides)) {
     root.style.setProperty(key, val);
   }
 
@@ -3099,15 +3221,15 @@ function applyBranchBrand(branchName) {
   // Título de pestaña
   document.title = brand.pageTitle;
 
-  // Top accent bar — 3px colored stripe at the top of the topbar
+  // Top accent bar — 4px gradient stripe at top
   let bar = document.querySelector("#brand-accent-bar");
   if (!bar) {
     bar = document.createElement("div");
     bar.id = "brand-accent-bar";
-    bar.style.cssText = "position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;transition:background .3s";
+    bar.style.cssText = "position:fixed;top:0;left:0;right:0;height:4px;z-index:9999;transition:background .4s";
     document.body.prepend(bar);
   }
-  bar.style.background = `linear-gradient(90deg, var(--fz-primary), var(--fz-secondary,var(--fz-primary)))`;
+  bar.style.background = `linear-gradient(90deg, var(--fz-deep), var(--fz-primary), var(--fz-secondary))`;
 
   // Update sidebar-footer branch indicator dot color
   const dot = document.querySelector(".sidebar-footer .dot, #branch-dot");

@@ -137,8 +137,12 @@ button { cursor: pointer; }
 
 .brand strong, h1, h2 {
   font-family: var(--fz-font-heading);
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
 }
+
+/* Orbitron looks best with some letter-spacing at display sizes */
+h1, .brand strong { letter-spacing: 0.08em; }
+h2 { letter-spacing: 0.04em; }
 
 .brand strong { display: block; font-size: 18px; }
 .brand span, .eyebrow, .sidebar-footer span {
@@ -168,9 +172,9 @@ button { cursor: pointer; }
   width: 26px;
   height: 26px;
   place-items: center;
-  border: 1px solid rgba(74,141,255,0.28);
+  border: 1px solid var(--fz-nav-icon-border, rgba(38,120,232,0.30));
   border-radius: 8px;
-  color: var(--fz-blue-secondary);
+  color: var(--fz-nav-icon-color, #2678E8);
   font-size: 13px;
   flex-shrink: 0;
 }
@@ -311,11 +315,13 @@ h2 { font-size: 16px; }
 
 .primary-action {
   padding: 0 16px;
-  background: linear-gradient(135deg, var(--fz-blue-primary), var(--fz-blue-secondary));
+  background: var(--fz-btn-gradient, linear-gradient(135deg, #085ACB, #2678E8));
   color: var(--fz-white);
   font-weight: 700;
-  box-shadow: var(--fz-shadow-deep);
+  box-shadow: var(--fz-shadow, var(--fz-shadow-deep));
+  transition: filter .15s;
 }
+.primary-action:hover { filter: brightness(1.12); }
 
 .ghost-button, .icon-button {
   border: 1px solid rgba(255,255,255,0.12);
@@ -378,9 +384,10 @@ h2 { font-size: 16px; }
 .ticket-card { display: grid; gap: 8px; }
 
 .tracking-code {
-  color: var(--fz-blue-secondary);
+  color: var(--fz-secondary, #2678E8);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
+  font-family: var(--fz-font-heading);
 }
 
 .branch-pill {
@@ -1124,8 +1131,25 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   box-shadow: var(--fz-glow) !important;
 }
 
+.brand strong {
+  color: var(--fz-secondary) !important;
+}
+
 .tracking-code {
   color: var(--fz-secondary) !important;
+}
+
+/* Sidebar footer branch indicator */
+.branch-indicator {
+  color: var(--fz-primary) !important;
+  font-weight: 700 !important;
+}
+
+/* Active nav item gets primary color icon */
+.nav-item.is-active span {
+  background: var(--fz-primary) !important;
+  border-color: var(--fz-primary) !important;
+  color: #fff !important;
 }
 
 .kanban-column h3 span {
