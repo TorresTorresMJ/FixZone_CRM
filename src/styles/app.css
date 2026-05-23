@@ -23,8 +23,8 @@ button { cursor: pointer; }
   justify-content: center;
   min-height: 100vh;
   background:
-    radial-gradient(ellipse at 60% 0%, rgba(47,111,255,0.22) 0%, transparent 55%),
-    radial-gradient(ellipse at 10% 100%, rgba(31,79,204,0.18) 0%, transparent 50%),
+    radial-gradient(ellipse at 60% 0%, rgba(var(--fz-primary-rgb),0.22) 0%, transparent 55%),
+    radial-gradient(ellipse at 10% 100%, rgba(var(--fz-primary-rgb),0.14) 0%, transparent 50%),
     #08090c;
 }
 
@@ -34,7 +34,7 @@ button { cursor: pointer; }
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 16px;
   background: rgba(16,18,23,0.96);
-  box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(47,111,255,0.12);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(var(--fz-primary-rgb),0.12);
 }
 
 .login-brand {
@@ -180,7 +180,7 @@ h2 { letter-spacing: 0.04em; }
 }
 
 .nav-item:hover, .nav-item.is-active {
-  background: rgba(47,111,255,0.16);
+  background: var(--fz-nav-hover-bg);
   color: var(--fz-white);
 }
 
@@ -199,7 +199,7 @@ h2 { letter-spacing: 0.04em; }
   min-width: 0;
   padding: 28px;
   background:
-    radial-gradient(circle at top right, rgba(47,111,255,0.18), transparent 34%),
+    radial-gradient(circle at top right, rgba(var(--fz-primary-rgb),0.18), transparent 34%),
     linear-gradient(180deg, #0d0e12 0%, #090909 100%);
 }
 
@@ -238,16 +238,16 @@ h2 { font-size: 16px; }
 }
 
 .branch-tab:hover {
-  background: rgba(47,111,255,0.12);
+  background: rgba(var(--fz-primary-rgb),0.12);
   color: var(--fz-white);
-  border-color: rgba(74,141,255,0.4);
+  border-color: rgba(var(--fz-primary-rgb),0.4);
 }
 
 .branch-tab.is-active {
-  background: linear-gradient(135deg, var(--fz-blue-primary), var(--fz-blue-secondary));
+  background: var(--fz-btn-gradient);
   color: var(--fz-white);
   border-color: transparent;
-  box-shadow: var(--fz-shadow-deep);
+  box-shadow: var(--fz-shadow);
 }
 
 .auth-box {
@@ -419,9 +419,9 @@ h2 { font-size: 16px; }
 .mini-button {
   min-height: 30px;
   padding: 0 10px;
-  border: 1px solid rgba(74,141,255,0.28);
+  border: 1px solid rgba(var(--fz-primary-rgb),0.28);
   border-radius: 8px;
-  background: rgba(47,111,255,0.11);
+  background: rgba(var(--fz-primary-rgb),0.11);
   color: var(--fz-white);
   font-size: 12px;
   font-weight: 700;
@@ -505,7 +505,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .stock-bar span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--fz-blue-primary), #36c6a7);
+  background: linear-gradient(90deg, var(--fz-primary), #36c6a7);
 }
 
 /* ── Kanban ──────────────────────────────────────────────────────────────── */
@@ -541,8 +541,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   min-height: 26px;
   place-items: center;
   border-radius: 999px;
-  background: rgba(47,111,255,0.15);
-  color: var(--fz-blue-secondary);
+  background: rgba(var(--fz-primary-rgb),0.15);
+  color: var(--fz-secondary);
 }
 
 /* ── Marketing tabs ──────────────────────────────────────────────────────── */
@@ -564,8 +564,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 }
 
 .marketing-card:hover {
-  background: rgba(47,111,255,0.1);
-  border-color: rgba(47,111,255,0.4);
+  background: rgba(var(--fz-primary-rgb),0.1);
+  border-color: rgba(var(--fz-primary-rgb),0.4);
   transform: translateY(-2px);
 }
 
@@ -603,8 +603,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .auto-step {
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(47,111,255,0.15);
-  color: #8eb5ff;
+  background: rgba(var(--fz-primary-rgb),0.15);
+  color: var(--fz-secondary);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -712,15 +712,15 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   height: 32px;
   border: 0;
   border-radius: 50%;
-  background: rgba(47,111,255,0.2);
-  color: var(--fz-blue-secondary);
+  background: rgba(var(--fz-primary-rgb),0.2);
+  color: var(--fz-secondary);
   font-size: 15px;
   font-weight: 800;
   cursor: pointer;
   transition: background 0.15s, transform 0.15s;
   flex-shrink: 0;
 }
-.help-button:hover { background: rgba(47,111,255,0.4); transform: scale(1.1); }
+.help-button:hover { background: rgba(var(--fz-primary-rgb),0.4); transform: scale(1.1); }
 
 /* ── Help modal ──────────────────────────────────────────────────────────── */
 .help-modal {
@@ -770,8 +770,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .priority-chip input:checked + span {
-  background: rgba(47,111,255,0.2);
-  border-color: var(--fz-blue-primary);
+  background: rgba(var(--fz-primary-rgb),0.2);
+  border-color: var(--fz-primary);
   color: var(--fz-white);
 }
 .priority-chip span.urgente { color: #ff9b9b; }
@@ -805,7 +805,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-.drag-over { outline: 2px dashed var(--fz-primary,#2F6FFF); outline-offset:-2px; background:rgba(47,111,255,.06); }
+.drag-over { outline: 2px dashed var(--fz-primary,#2F6FFF); outline-offset:-2px; background:rgba(var(--fz-primary-rgb),.06); }
 
 /* ─────────────────────────────────────────────────────────
    THERMAL RECEIPT — FIXZONE

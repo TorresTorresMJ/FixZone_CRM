@@ -96,11 +96,11 @@ const formSchemas = {
       ["branch","Sucursal","select",BRANCHES],["assignedTo","Empleado","select",employees],
       ["status","Stage","select",ticketStages],["priority","Prioridad","select",["Normal","Media","Alta","Urgente"]],
       ["repairAmount","Monto reparacion","number"],
-      ["discountCode","Código de descuento","text"],
-      ["discountAmount","Descuento ($)","number"],
+      ["discountCode","Código de descuento","text",null,false,true],
+      ["discountAmount","Descuento ($)","number",null,false,true],
       ["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
       ["paidAmount","Monto pagado","number"],["createdAt","Fecha","date"],
-      ["notes","Notas internas","text",null,true],
+      ["notes","Notas internas","text",null,true,true],
     ],
   },
   supply: {
@@ -1358,6 +1358,7 @@ function renderBrandEditor() {
   const all      = getBrandOverrides();
   const saved    = all[activeBranchId] || {};
   const current  = { ...brand.colors, ...saved };
+  const savedLogo = saved["--fz-logo-src"] || "";
 
   const FIELDS = [
     { key:"--fz-primary",   label:"Color principal",   hint:"Botones, badges, links activos" },
@@ -1365,11 +1366,16 @@ function renderBrandEditor() {
     { key:"--fz-deep",      label:"Color profundo",    hint:"Sombras, estados presionados" },
   ];
 
+  const logoPreviewStyle = savedLogo
+    ? `background:rgba(255,255,255,.05);border-radius:8px;padding:8px;text-align:center`
+    : `display:none`;
+
   el.innerHTML = `
-    <div class="card" style="margin-top:16px">
+    <div class="section-heading" style="margin-top:24px"><h2>Editor de marca</h2></div>
+    <div class="card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <div>
-          <h3 style="margin:0;font-size:14px">Paleta de marca — ${brand.displayName}</h3>
+          <h3 style="margin:0;font-size:14px">Paleta de colores — ${brand.displayName}</h3>
           <small class="muted">Los cambios se aplican en tiempo real y se guardan por sucursal.</small>
         </div>
         <button class="ghost-button" id="brand-reset-btn" style="font-size:12px">Restaurar defaults</button>
@@ -1395,9 +1401,38 @@ function renderBrandEditor() {
         <div style="flex:1;height:32px;border-radius:6px;background:linear-gradient(90deg,var(--fz-deep),var(--fz-primary),var(--fz-secondary))" id="brand-preview-bar"></div>
         <button class="primary-action" id="brand-save-btn" style="font-size:13px">Guardar paleta</button>
       </div>
+    </div>
+
+    <div class="card">
+      <div style="margin-bottom:12px">
+        <h3 style="margin:0 0 4px;font-size:14px">Logo de la sucursal — ${brand.displayName}</h3>
+        <small class="muted">Sube una imagen o pega una URL. Se guarda localmente en este navegador.</small>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+        <div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Subir archivo (PNG/SVG/WEBP)</label>
+          <input type="file" id="bp-logo-file" accept="image/png,image/svg+xml,image/webp,image/jpeg"
+            style="width:100%;font-size:12px;color:var(--fz-gray-light);cursor:pointer" />
+          <small class="muted" style="display:block;margin-top:4px">Recomendado: fondo transparente, min 200px</small>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">O pegar URL directa</label>
+          <input type="url" id="bp-logo-url" placeholder="https://..." value="${escapeHtml(savedLogo.startsWith('data:') ? '' : savedLogo)}"
+            style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--fz-white);font-size:13px;box-sizing:border-box" />
+        </div>
+      </div>
+      <div id="bp-logo-preview" style="${logoPreviewStyle}">
+        <img id="bp-logo-img" src="${escapeHtml(savedLogo)}" alt="Logo preview"
+          style="max-height:80px;max-width:200px;object-fit:contain" />
+        <small class="muted" style="display:block;margin-top:4px">Logo guardado para ${brand.displayName}</small>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">
+        <button class="primary-action" id="brand-logo-save-btn" style="font-size:13px">Guardar logo</button>
+        ${savedLogo ? `<button class="ghost-button" id="brand-logo-reset-btn" style="font-size:12px">Eliminar logo guardado</button>` : ""}
+      </div>
     </div>`;
 
-  // Live preview on change
+  // Live preview on color change
   FIELDS.forEach(f => {
     const id = `bp-${f.key.replace(/--/g,'').replace(/-/g,'_')}`;
     const input = el.querySelector(`#${id}`);
@@ -1405,7 +1440,6 @@ function renderBrandEditor() {
     input?.addEventListener("input", e => {
       document.documentElement.style.setProperty(f.key, e.target.value);
       if (hexSpan) hexSpan.textContent = e.target.value.toUpperCase();
-      // Also compute rgb for primary
       if (f.key === "--fz-primary") {
         const r = parseInt(e.target.value.slice(1,3),16);
         const g = parseInt(e.target.value.slice(3,5),16);
@@ -1443,11 +1477,75 @@ function renderBrandEditor() {
   el.querySelector("#brand-reset-btn")?.addEventListener("click", () => {
     if (!confirm(`¿Restaurar la paleta default de ${activeBranchId}?`)) return;
     const all = getBrandOverrides();
+    const logo = all[activeBranchId]?.["--fz-logo-src"];
     delete all[activeBranchId];
+    if (logo) { all[activeBranchId] = { "--fz-logo-src": logo }; }
     saveBrandOverrides(all);
     applyBranchBrand(activeBranchId);
     renderDiseno();
     showToast("✓ Paleta restaurada");
+  });
+
+  // Logo: preview when file selected
+  el.querySelector("#bp-logo-file")?.addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const src = ev.target.result;
+      const preview = el.querySelector("#bp-logo-preview");
+      const img = el.querySelector("#bp-logo-img");
+      if (preview) preview.style.cssText = `background:rgba(255,255,255,.05);border-radius:8px;padding:8px;text-align:center`;
+      if (img) img.src = src;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Logo URL: preview on blur
+  el.querySelector("#bp-logo-url")?.addEventListener("blur", e => {
+    const url = e.target.value.trim();
+    if (!url) return;
+    const preview = el.querySelector("#bp-logo-preview");
+    const img = el.querySelector("#bp-logo-img");
+    if (preview) preview.style.cssText = `background:rgba(255,255,255,.05);border-radius:8px;padding:8px;text-align:center`;
+    if (img) img.src = url;
+  });
+
+  el.querySelector("#brand-logo-save-btn")?.addEventListener("click", () => {
+    const fileInput = el.querySelector("#bp-logo-file");
+    const urlInput = el.querySelector("#bp-logo-url");
+    const previewImg = el.querySelector("#bp-logo-img");
+    const file = fileInput?.files[0];
+
+    const applyLogo = src => {
+      const all = getBrandOverrides();
+      all[activeBranchId] = { ...(all[activeBranchId]||{}), "--fz-logo-src": src };
+      saveBrandOverrides(all);
+      const logoImg = document.querySelector(".brand img");
+      if (logoImg) logoImg.src = src;
+      showToast(`✓ Logo de ${activeBranchId} guardado`);
+      renderBrandEditor();
+    };
+
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = ev => applyLogo(ev.target.result);
+      reader.readAsDataURL(file);
+    } else if (urlInput?.value.trim()) {
+      applyLogo(urlInput.value.trim());
+    } else if (previewImg?.src) {
+      showToast("Selecciona un archivo o pega una URL primero");
+    }
+  });
+
+  el.querySelector("#brand-logo-reset-btn")?.addEventListener("click", () => {
+    if (!confirm(`¿Eliminar el logo guardado de ${activeBranchId}?`)) return;
+    const all = getBrandOverrides();
+    if (all[activeBranchId]) delete all[activeBranchId]["--fz-logo-src"];
+    saveBrandOverrides(all);
+    applyBranchBrand(activeBranchId);
+    renderBrandEditor();
+    showToast("✓ Logo eliminado, usando logo default");
   });
 }
 
@@ -1611,8 +1709,8 @@ function openEditClient(clientId) {
   editingTicketId = clientId;
   modalTitle.textContent = "Editar cliente";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["client"].fields.map(([name,label,ftype,opts,wide]) =>
-    fieldTemplate(name, label, ftype, opts, wide, client[name] ?? "")
+  formFields.innerHTML = formSchemas["client"].fields.map(([name,label,ftype,opts,wide,optional]) =>
+    fieldTemplate(name, label, ftype, opts, wide, client[name] ?? "", optional)
   ).join("");
   modal.showModal();
 }
@@ -1651,8 +1749,8 @@ function openEditSupportTask(taskId) {
   editingTaskId = taskId;
   modalTitle.textContent = "Editar tarea";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["supportTasks"].fields.map(([name,label,ftype,opts,wide]) =>
-    fieldTemplate(name, label, ftype, opts, wide, task[name] ?? "")
+  formFields.innerHTML = formSchemas["supportTasks"].fields.map(([name,label,ftype,opts,wide,optional]) =>
+    fieldTemplate(name, label, ftype, opts, wide, task[name] ?? "", optional)
   ).join("");
   modal.showModal();
 }
@@ -1681,8 +1779,8 @@ function openEditProduct(productId) {
   editingTicketId = productId;
   modalTitle.textContent = "Editar producto";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["product"].fields.map(([name,label,ftype,opts,wide]) =>
-    fieldTemplate(name, label, ftype, opts, wide, product[name] ?? "")
+  formFields.innerHTML = formSchemas["product"].fields.map(([name,label,ftype,opts,wide,optional]) =>
+    fieldTemplate(name, label, ftype, opts, wide, product[name] ?? "", optional)
   ).join("");
   modal.showModal();
 }
@@ -1715,8 +1813,8 @@ function openEditSupply(supplyId) {
   editingTicketId = supplyId;
   modalTitle.textContent = "Editar compra";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["supply"].fields.map(([name,label,ftype,opts,wide]) =>
-    fieldTemplate(name, label, ftype, opts, wide, supply[name] ?? "")
+  formFields.innerHTML = formSchemas["supply"].fields.map(([name,label,ftype,opts,wide,optional]) =>
+    fieldTemplate(name, label, ftype, opts, wide, supply[name] ?? "", optional)
   ).join("");
   modal.showModal();
 }
@@ -1767,7 +1865,7 @@ function openForm(type, prefill = {}) {
   if (!schema) return;
   modalTitle.textContent = schema.title;
   document.querySelector("#modal-eyebrow").textContent = "Nuevo registro";
-  formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide]) => fieldTemplate(name,label,ftype,opts,wide,prefill[name])).join("");
+  formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide,optional]) => fieldTemplate(name,label,ftype,opts,wide,prefill[name],optional)).join("");
   if (type==="ticket"||type==="product") {
     const sel = formFields.querySelector("#branch");
     if (sel) sel.value = activeBranchId;
@@ -1810,8 +1908,8 @@ function openEditTransaction(txId) {
   editingTicketId = txId;
   modalTitle.textContent = "Editar movimiento";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["transaction"].fields.map(([name,label,ftype,opts,wide]) =>
-    fieldTemplate(name, label, ftype, opts, wide, tx[name] ?? "")
+  formFields.innerHTML = formSchemas["transaction"].fields.map(([name,label,ftype,opts,wide,optional]) =>
+    fieldTemplate(name, label, ftype, opts, wide, tx[name] ?? "", optional)
   ).join("");
   // Sync categories to match the current type and attach change listener
   setTimeout(() => {
@@ -1828,8 +1926,8 @@ function openEditTicket(ticketId) {
   editingTicketId = ticketId;
   modalTitle.textContent = `Editar ${ticket.tracking}`;
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
-  formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide]) =>
-    fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "")
+  formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide,optional]) =>
+    fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "", optional)
   ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
   modal.showModal();
   initPhotoUpload(ticketId);
@@ -2011,19 +2109,22 @@ async function loadTicketPhotos(ticketId) {
     </div>`).join("");
 }
 
-function fieldTemplate(name, label, ftype, opts, wide, defaultValue) {
+function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=false) {
+  const labelHtml = optional
+    ? `${label} <span style="font-size:11px;font-weight:400;opacity:0.45;text-transform:none;letter-spacing:0">(opcional)</span>`
+    : label;
   if (ftype==="select") {
     const options = (name==="branch_id") ? (state.branches||[]).map(b=>b.name) : (opts||[]);
     return `<div class="field ${wide?"is-wide":""}">
-      <label for="${name}">${label}</label>
+      <label for="${name}">${labelHtml}</label>
       <select id="${name}" name="${name}">
         ${options.map(o=>`<option value="${o}" ${o===defaultValue?"selected":""}>${name==="role"?(ROLE_LABELS[o]||o):o}</option>`).join("")}
       </select></div>`;
   }
   const val = defaultValue ?? (ftype==="date" ? new Date().toISOString().slice(0,10) : "");
   return `<div class="field ${wide?"is-wide":""}">
-    <label for="${name}">${label}</label>
-    <input id="${name}" name="${name}" type="${ftype}" value="${escapeHtml(String(val))}" required />
+    <label for="${name}">${labelHtml}</label>
+    <input id="${name}" name="${name}" type="${ftype}" value="${escapeHtml(String(val))}" ${optional?"":"required"} />
   </div>`;
 }
 
@@ -3240,9 +3341,10 @@ function applyBranchBrand(branchName) {
   const brandNameEl  = document.querySelector(".brand strong");
   const brandLabelEl = document.querySelector(".brand span");
   if (brandLogoImg) {
-    brandLogoImg.src = brand.logoSrc;
+    const logoOverride = overrides["--fz-logo-src"];
+    brandLogoImg.src = logoOverride || brand.logoSrc;
     brandLogoImg.alt = brand.displayName;
-    if (brand.logoFallback) {
+    if (!logoOverride && brand.logoFallback) {
       brandLogoImg.onerror = function() { this.src = brand.logoFallback; this.onerror = null; };
     }
   }
@@ -3270,7 +3372,7 @@ function applyBranchBrand(branchName) {
     favicon.rel = "icon";
     document.head.appendChild(favicon);
   }
-  favicon.href = brand.logoSrc;
+  favicon.href = overrides["--fz-logo-src"] || brand.logoSrc;
 }
 
 // ── Section tooltips ─────────────────────────────────────────────────────────
