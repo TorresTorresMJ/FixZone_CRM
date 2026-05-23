@@ -198,7 +198,7 @@ async function refreshSession() {
   const { data } = await supabaseClient.auth.getSession();
   currentSession = data.session;
   if (!currentSession) { showLoginScreen(); return; }
-  await afterLogin();
+  await afterLogin(currentSession.user);
 }
 
 function setLoading(on, label = "") {
@@ -226,9 +226,9 @@ async function reloadState() {
   }
 }
 
-async function afterLogin() {
+async function afterLogin(authUser) {
   try {
-    await resolveCurrentEmployee();
+    await resolveCurrentEmployee(authUser);
     if (currentEmployee?.force_password_change) {
       showChangePasswordScreen();
       return;
@@ -249,8 +249,8 @@ async function afterLogin() {
   }
 }
 
-async function resolveCurrentEmployee() {
-  const { data: { user } } = await supabaseClient.auth.getUser();
+async function resolveCurrentEmployee(authUser) {
+  const user = authUser ?? (await supabaseClient.auth.getSession()).data.session?.user;
   if (!user) throw new Error("Sesión inválida.");
   const { data, error } = await supabaseClient
     .from("employees")
@@ -321,7 +321,7 @@ async function handleLogin(e) {
     });
     if (error) throw new Error("Usuario o contraseña incorrectos.");
     currentSession = data.session;
-    await afterLogin();
+    await afterLogin(data.user);
     clearTimeout(loginTimeout);
   } catch(err) {
     clearTimeout(loginTimeout);
