@@ -160,3 +160,4 @@ _Última actualización: 2026-05-27_
   - Admin: Usuarios, Soporte, Diseño, Automatización
 - [ ] Agregar estados de carga, errores y confirmaciones (pendiente de Fase 3).
 - [ ] El abono en tickets debería auto-crear una transacción Ingreso en Finanzas (hoy es manual).
+- [x] Boton de Compra al lado del de Ticket, para generar la compra de POS igual de rapido que un ticket. Y entonces mas peuqeño el boton de tikcet, y que sea cuadrado, no redondeado. o circular estaria mejor para ambos botones porfavor. uno de un carrito para POS y el otro de la herramienta como la del icono para Ticket de reparacion. 
