@@ -114,8 +114,12 @@ const formSchemas = {
   supply: {
     title: "Compra de insumo", collection: "supplies",
     fields: [
-      ["date","Fecha","date"],["supplier","Proveedor","text"],["item","Insumo","text"],
-      ["quantity","Cantidad","number"],["total","Total","number"],
+      ["date","Fecha","date"],
+      ["supplier","Proveedor","text"],
+      ["product_id","Producto del catálogo","product-select",null,true,true],
+      ["item","Artículo (si no está en catálogo)","text",null,false,true],
+      ["quantity","Cantidad","number"],
+      ["total","Total MXN","number"],
     ],
   },
   transaction: {
@@ -560,6 +564,7 @@ async function loadSupabaseState() {
     supplies: (puRes.data||[]).map(p => ({
       id:p.id, date:p.purchase_date, supplier:p.suppliers?.name||"Sin proveedor",
       item:p.item_name, quantity:Number(p.quantity||0), total:Number(p.total_amount||0),
+      product_id:p.product_id||null, receipt_url:p.receipt_url||null,
       branch:branchRows.find(b=>b.id===p.branch_id)?.name||BRANCHES[0],
     })),
     transactions: (txRes.data||[]).map(t => ({
@@ -708,6 +713,7 @@ function renderProducts() {
       <div class="product-meta"><strong>${stock} piezas</strong><strong>${money.format(p.price)}</strong></div>
       <div class="stock-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
       <div class="action-row" style="margin-top:8px;justify-content:flex-end">
+        <button class="mini-button danger-btn" data-delete-product="${p.id}">Eliminar</button>
         <button class="mini-button" data-edit-product="${p.id}">Editar</button>
       </div>
     </article>`;
@@ -860,9 +866,10 @@ function renderSupplies() {
     <tr>
       <td>${i.date}</td><td>${escapeHtml(i.supplier)}</td><td>${escapeHtml(i.item)}</td>
       <td>${i.quantity}</td><td><strong>${money.format(i.total)}</strong></td>
+      <td>${i.receipt_url ? `<a href="${escapeHtml(i.receipt_url)}" target="_blank" class="mini-button">📄 Ver</a>` : ''}</td>
       <td><button class="mini-button" data-edit-supply="${i.id}">Editar</button></td>
     </tr>
-  `).join("")||tableEmpty(6);
+  `).join("")||tableEmpty(7);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2041,6 +2048,19 @@ async function updateRemoteProduct(productId, data) {
   if (error) throw error;
 }
 
+async function deleteRemoteProduct(productId) {
+  const product = state.products.find(p => p.id === productId);
+  const name = product?.name || "este producto";
+  if (!confirm(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`)) return;
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId);
+  if (isUUID) {
+    const { error } = await supabaseClient.from("products").delete().eq("id", productId);
+    if (error) { alert(`Error al eliminar: ${error.message}`); return; }
+  }
+  state.products = state.products.filter(p => p.id !== productId);
+  render();
+}
+
 // ── Edit: Supply ──────────────────────────────────────────────────────────────
 function openEditSupply(supplyId) {
   const supply = branchSupplies().find(s => s.id === supplyId);
@@ -2051,8 +2071,9 @@ function openEditSupply(supplyId) {
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["supply"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, supply[name] ?? "", optional)
-  ).join("");
+  ).join("") + buildReceiptUploadSection(supply.receipt_url);
   modal.showModal();
+  initProductAutoFill();
 }
 
 async function updateRemoteSupply(supplyId, data) {
@@ -2062,14 +2083,22 @@ async function updateRemoteSupply(supplyId, data) {
     if (idx !== -1) state.supplies[idx] = { ...state.supplies[idx], ...data };
     return;
   }
-  const suppId = await findOrCreateSupplier(data.supplier);
-  const { error } = await supabaseClient.from("supply_purchases").update({
+  let receiptUrl;
+  const fileInput = document.querySelector("#receipt-file-input");
+  if (fileInput?.files?.length) receiptUrl = await uploadReceiptFile(fileInput.files[0]);
+  const suppId    = await findOrCreateSupplier(data.supplier);
+  const productId = data.product_id || null;
+  const itemName  = data.item || (productId && state.products.find(p=>p.id===productId)?.name) || "";
+  const payload   = {
     purchase_date: data.date,
     supplier_id:   suppId,
-    item_name:     data.item,
+    item_name:     itemName,
     quantity:      Number(data.quantity || 0),
     total_amount:  Number(data.total || 0),
-  }).eq("id", supplyId);
+    product_id:    productId,
+  };
+  if (receiptUrl) payload.receipt_url = receiptUrl;
+  const { error } = await supabaseClient.from("supply_purchases").update(payload).eq("id", supplyId);
   if (error) throw error;
 }
 
@@ -2115,6 +2144,10 @@ function openForm(type, prefill = {}) {
           💡 Guarda el ticket primero y luego edítalo para agregar fotos del equipo.
         </p>
       </div>`;
+  }
+  if (type === "supply") {
+    formFields.innerHTML += buildReceiptUploadSection();
+    initProductAutoFill();
   }
   modal.showModal();
 }
@@ -2355,6 +2388,15 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
       <label for="${name}">${labelHtml}</label>
       <select id="${name}" name="${name}">
         ${options.map(o=>`<option value="${o}" ${o===defaultValue?"selected":""}>${name==="role"?(ROLE_LABELS[o]||o):o}</option>`).join("")}
+      </select></div>`;
+  }
+  if (ftype==="product-select") {
+    const products = branchProducts();
+    return `<div class="field ${wide?"is-wide":""}">
+      <label for="${name}">${labelHtml}</label>
+      <select id="${name}" name="${name}">
+        <option value="">— Ninguno —</option>
+        ${products.map(p=>`<option value="${p.id}" ${p.id===defaultValue?"selected":""}>${escapeHtml((p.sku?`[${p.sku}] `:'')+p.name)}</option>`).join("")}
       </select></div>`;
   }
   const val = defaultValue ?? (ftype==="date" ? new Date().toISOString().slice(0,10) : "");
@@ -2738,11 +2780,70 @@ async function updateRemoteTask(taskId, r) {
   if (error) throw error;
 }
 
-async function createRemoteSupply(r) {
-  const suppId = await findOrCreateSupplier(r.supplier);
-  const { error } = await supabaseClient.from("supply_purchases").insert({ supplier_id:suppId, branch_id:await branchIdByName(activeBranchId), purchase_date:r.date, item_name:r.item, quantity:r.quantity, total_amount:r.total, created_by:currentEmployeeId() });
+async function uploadReceiptFile(file) {
+  const ext  = file.name.split(".").pop();
+  const path = `receipts/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const status = document.querySelector("#receipt-upload-status");
+  if (status) status.textContent = "Subiendo…";
+  const { error } = await supabaseClient.storage.from("ticket-photos").upload(path, file, { upsert:false });
   if (error) throw error;
-  await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${r.item}`, category:"Insumos", amount:r.total });
+  const { data } = supabaseClient.storage.from("ticket-photos").getPublicUrl(path);
+  if (status) status.textContent = "✓ Comprobante listo";
+  return data.publicUrl;
+}
+
+function buildReceiptUploadSection(existingUrl=null) {
+  const hasExisting = !!existingUrl;
+  return `
+    <div class="field is-wide receipt-upload-section" style="margin-top:8px">
+      <label>Comprobante / recibo (PDF o imagen)</label>
+      ${hasExisting ? `<div style="margin:6px 0"><a href="${escapeHtml(existingUrl)}" target="_blank" class="mini-button">📄 Ver comprobante actual</a></div>` : ''}
+      <label class="ghost-button" style="display:inline-flex;align-items:center;gap:6px;padding:0 14px;min-height:38px;cursor:pointer;font-size:13px">
+        📎 ${hasExisting ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}
+        <input type="file" id="receipt-file-input" accept=".pdf,image/*" style="display:none" />
+      </label>
+      <span id="receipt-upload-status" class="muted" style="font-size:12px;margin-left:8px"></span>
+    </div>`;
+}
+
+function initProductAutoFill() {
+  const sel = formFields.querySelector("#product_id");
+  const itemInput = formFields.querySelector("#item");
+  if (!sel || !itemInput) return;
+  sel.addEventListener("change", () => {
+    if (!sel.value) return;
+    const prod = state.products.find(p => p.id === sel.value);
+    if (prod && !itemInput.value) itemInput.value = prod.name;
+  });
+}
+
+async function createRemoteSupply(r) {
+  const productId = r.product_id || null;
+  let itemName = r.item;
+  if (productId && !itemName) {
+    const prod = state.products.find(p => p.id === productId);
+    if (prod) itemName = prod.name;
+  }
+  if (!itemName) throw new Error("Ingresa el nombre del artículo o selecciona un producto del catálogo");
+
+  let receiptUrl = null;
+  const fileInput = document.querySelector("#receipt-file-input");
+  if (fileInput?.files?.length) receiptUrl = await uploadReceiptFile(fileInput.files[0]);
+
+  const suppId = await findOrCreateSupplier(r.supplier);
+  const { error } = await supabaseClient.from("supply_purchases").insert({
+    supplier_id:  suppId,
+    branch_id:    await branchIdByName(activeBranchId),
+    purchase_date:r.date,
+    item_name:    itemName,
+    quantity:     r.quantity,
+    total_amount: r.total,
+    product_id:   productId,
+    receipt_url:  receiptUrl,
+    created_by:   currentEmployeeId(),
+  });
+  if (error) throw error;
+  await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${itemName}`, category:"Insumos", amount:r.total });
 }
 
 async function findOrCreateSupplier(name) {
@@ -3242,6 +3343,9 @@ document.addEventListener("click", async e => {
   // Edit client
   const editClient = e.target.closest("[data-edit-client]");
   if (editClient) { openEditClient(editClient.dataset.editClient); return; }
+
+  const deleteProduct = e.target.closest("[data-delete-product]");
+  if (deleteProduct) { deleteRemoteProduct(deleteProduct.dataset.deleteProduct); return; }
 
   const editProduct = e.target.closest("[data-edit-product]");
   if (editProduct) { openEditProduct(editProduct.dataset.editProduct); return; }
