@@ -37,6 +37,7 @@ let posCatalogFilter = "all";
 let posDiscount = 0;
 let posPaymentMethod = "Efectivo";
 let posCustomerId = null; // null = venta anónima
+let lastPosSale = null; // sale snapshot shown after checkout for print button
 let editingTaskId   = null;
 let dataMode        = "local";
 let supabaseClient = null;
@@ -139,6 +140,17 @@ const formSchemas = {
       ["title","Titulo","text",null,true],["description","Descripcion","text",null,true],
       ["priority","Prioridad","select",["Normal","Media","Alta","Urgente"]],
       ["status","Estado","select",supportStages],
+    ],
+  },
+  cotizacion: {
+    title: "Nueva cotización", collection: "tickets",
+    fields: [
+      ["client","Cliente","text"],
+      ["productName","Producto / equipo","text"],
+      ["issue","Descripción del problema","text",null,true],
+      ["repairAmount","Precio estimado","number"],
+      ["branch","Sucursal","select",BRANCHES],
+      ["notes","Notas","text",null,true,true],
     ],
   },
 };
@@ -897,7 +909,14 @@ function renderPos() {
     <div style="font-size:14px;font-weight:600">Carrito</div>
     <div class="pos-cart-items">
       ${posCart.length === 0
-        ? '<p class="muted" style="font-size:12px;text-align:center;padding:18px 0">Toca un producto para agregarlo</p>'
+        ? lastPosSale
+          ? `<div style="text-align:center;padding:16px 0">
+              <div style="color:var(--fz-primary);font-weight:600;font-size:14px;margin-bottom:4px">✓ Venta registrada</div>
+              <div class="muted" style="font-size:12px;margin-bottom:12px">${money.format(lastPosSale.total)} · ${escapeHtml(lastPosSale.method)}</div>
+              <button class="ghost-button" onclick="printPosRecibo()" style="width:100%;margin-bottom:6px">Imprimir recibo</button>
+              <button class="mini-button" onclick="lastPosSale=null;renderPos()" style="width:100%;font-size:11px;padding:5px">Nueva venta</button>
+            </div>`
+          : '<p class="muted" style="font-size:12px;text-align:center;padding:18px 0">Toca un producto para agregarlo</p>'
         : posCart.map((item, idx) => `
           <div class="pos-cart-item">
             <div>
@@ -1026,6 +1045,12 @@ async function checkoutPos() {
     state.posSales.unshift({ id:sale.id, total, paymentMethod:method,
       discount:posDiscount, createdAt:dateStamp(), branch:activeBranchId });
 
+    lastPosSale = {
+      items: posCart.map(i => ({ ...i })),
+      total, method, discount: posDiscount,
+      clientName: clientName,
+      date: dateStamp(),
+    };
     posCart = [];
     posDiscount = 0;
     posCustomerId = null;
@@ -2077,7 +2102,7 @@ function openForm(type, prefill = {}) {
   modalTitle.textContent = schema.title;
   document.querySelector("#modal-eyebrow").textContent = "Nuevo registro";
   formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide,optional]) => fieldTemplate(name,label,ftype,opts,wide,prefill[name],optional)).join("");
-  if (type==="ticket"||type==="product") {
+  if (type==="ticket"||type==="product"||type==="cotizacion") {
     const sel = formFields.querySelector("#branch");
     if (sel) sel.value = activeBranchId;
   }
@@ -2433,11 +2458,19 @@ recordForm.addEventListener("submit", async e => {
   // ── CREATE ─────────────────────────────────────────────────────────────────
   data.id = `${activeForm}-${Date.now()}`;
 
-  if (activeForm==="ticket") {
+  if (activeForm==="ticket" || activeForm==="cotizacion") {
     data.tracking      = nextTracking(nextTicketSequence());
     data.repairAmount  = Number(data.repairAmount||0);
-    data.paidAmount    = Number(data.paidAmount||0);
-    if (data.paymentStatus==="Pagado"&&data.paidAmount===0) data.paidAmount=data.repairAmount;
+    if (activeForm==="cotizacion") {
+      data.status        = "Cotizacion";
+      data.paymentStatus = "Pendiente";
+      data.paidAmount    = 0;
+      data.priority      = "Normal";
+      data.assignedTo    = data.assignedTo || "";
+    } else {
+      data.paidAmount    = Number(data.paidAmount||0);
+      if (data.paymentStatus==="Pagado"&&data.paidAmount===0) data.paidAmount=data.repairAmount;
+    }
   }
 
   try {
@@ -2453,6 +2486,8 @@ recordForm.addEventListener("submit", async e => {
         });
       } else if (activeForm==="supportTasks") {
         await saveRemoteSupportTask(data);
+      } else if (activeForm==="cotizacion") {
+        await saveRemoteRecord("ticket", data);
       } else {
         await saveRemoteRecord(activeForm, data);
       }
@@ -3002,11 +3037,7 @@ document.querySelectorAll("[data-open-form]").forEach(btn => {
 
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
 document.querySelector("#new-quote-btn")?.addEventListener("click", () => {
-  openForm("ticket", { status: "Cotizacion" });
-  setTimeout(() => {
-    const sel = document.querySelector("#status");
-    if (sel) sel.value = "Cotizacion";
-  }, 0);
+  openForm("cotizacion");
 });
 document.querySelector("#close-modal").addEventListener("click",  () => modal.close());
 document.querySelector("#cancel-record").addEventListener("click",() => modal.close());
@@ -3083,6 +3114,7 @@ document.addEventListener("click", e => {
     }
     if (existing) { existing.qty++; }
     else { posCart.push({ productId:prod.id, name:prod.name, qty:1, unitPrice:Number(prod.price), maxStock:Number(prod.stock) }); }
+    lastPosSale = null;
     renderPos();
     return;
   }
@@ -3395,6 +3427,38 @@ function printRecibo(ticket, type) {
   }
 
   document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}<p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p><p class="rct-dash">${D}</p></div>`;
+  window.print();
+}
+
+function printPosRecibo() {
+  if (!lastPosSale) return;
+  const brand    = window.getBranchBrand(activeBranchId);
+  const D        = "─".repeat(32);
+  const { items, total, method, discount, clientName, date } = lastPosSale;
+  const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  const rows     = items.map(i =>
+    `<div style="display:flex;justify-content:space-between;font-size:11px;margin:2px 0">
+      <span>${escapeHtml(i.name)} ×${i.qty}</span>
+      <span>${money.format(i.qty * i.unitPrice)}</span>
+    </div>`
+  ).join("");
+  document.querySelector("#print-receipt").innerHTML = `
+    <div class="rct">
+      <h2 style="font-size:14px;font-weight:700;text-align:center;margin:0 0 2px">${escapeHtml(brand.displayName || activeBranchId)}</h2>
+      <p style="font-size:11px;text-align:center;margin:0 0 6px">${date}</p>
+      <p class="rct-dash">${D}</p>
+      ${rows}
+      <p class="rct-dash">${D}</p>
+      ${discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:11px"><span>Subtotal</span><span>${money.format(subtotal)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px"><span>Descuento</span><span>-${money.format(discount)}</span></div>` : ""}
+      <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:4px">
+        <span>TOTAL</span><span>${money.format(total)}</span>
+      </div>
+      <div style="font-size:11px;text-align:center;margin-top:6px">Método: ${escapeHtml(method)}</div>
+      ${clientName ? `<div style="font-size:11px;text-align:center">Cliente: ${escapeHtml(clientName)}</div>` : ""}
+      <p class="rct-thanks">★ Gracias por su compra ★</p>
+      <p class="rct-dash">${D}</p>
+    </div>`;
   window.print();
 }
 
