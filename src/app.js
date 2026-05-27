@@ -33,7 +33,8 @@ let activeBranchId  = "Puerto Vallarta";
 let activeForm      = null;
 let editingTicketId = null;
 let posCart = []; // [{productId, name, qty, unitPrice, maxStock}]
-let posCatalogFilter = "all";
+let posCatalogFilter  = "all";
+let posCatalogSearch  = "";
 let posDiscount = 0;
 let posPaymentMethod = "Efectivo";
 let posCustomerId = null; // null = venta anónima
@@ -912,30 +913,35 @@ function renderPos() {
   const allBranchProducts = branchProducts()
     .filter(p => p.productType !== "insumo" && Number(p.price) > 0);
   const catalogItems = allBranchProducts
-    .filter(p => posCatalogFilter === "all" || p.productType === posCatalogFilter);
+    .filter(p => posCatalogFilter === "all" || p.productType === posCatalogFilter)
+    .filter(p => !posCatalogSearch || p.name.toLowerCase().includes(posCatalogSearch) || (p.sku||"").toLowerCase().includes(posCatalogSearch));
 
   catalogPanel.innerHTML = `
-    <div style="display:flex;gap:6px;margin-bottom:10px">
+    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
       <button class="mini-button pos-filter${posCatalogFilter==="all"?" is-active":""}" data-pos-filter="all">Todos</button>
       <button class="mini-button pos-filter${posCatalogFilter==="producto"?" is-active":""}" data-pos-filter="producto">Vendibles</button>
       <button class="mini-button pos-filter${posCatalogFilter==="refaccion"?" is-active":""}" data-pos-filter="refaccion">Refacciones</button>
+      <input id="pos-search" type="text" placeholder="Buscar producto o SKU…" value="${escapeHtml(posCatalogSearch)}"
+        style="flex:1;min-width:160px;padding:5px 10px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:inherit;font-size:13px" />
     </div>
-    <div class="pos-catalog-grid">
+    <div class="pos-catalog-list">
       ${catalogItems.map(p => {
         const stock = Number(p.stock);
         const outOfStock = stock <= 0;
-        return `<article class="pos-product-card${outOfStock?" out-of-stock":""}" data-pos-add="${p.id}"
-          title="${outOfStock?"Sin stock — no se puede agregar":"Agregar al carrito"}">
-          <div style="font-weight:600;font-size:13px;margin-bottom:4px">${escapeHtml(p.name)}</div>
-          <div class="muted" style="font-size:11px;margin-bottom:6px">${escapeHtml(p.category)}</div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <strong style="color:var(--fz-primary)">${money.format(p.price)}</strong>
-            <span class="${stock<=0?"status urgent":stock<=(p.minStock||0)&&p.minStock>0?"low-stock":"status ready"}" style="font-size:10px">
-              ${stock<=0?"Agotado":stock+" pzs"}
-            </span>
+        const lowStock = !outOfStock && p.minStock > 0 && stock <= Number(p.minStock);
+        return `<div class="pos-list-row${outOfStock?" out-of-stock":""}" data-pos-add="${p.id}"
+          title="${outOfStock?"Sin stock":"Agregar al carrito"}">
+          <div class="pos-list-info">
+            <span class="pos-list-name">${escapeHtml(p.name)}</span>
+            <span class="pos-list-cat muted">${escapeHtml(p.category)}${p.sku?` · ${escapeHtml(p.sku)}`:""}</span>
           </div>
-        </article>`;
-      }).join("") || emptyMessage("No hay productos disponibles en este catálogo.")}
+          <span class="${outOfStock?"status urgent":lowStock?"low-stock":"muted"}" style="font-size:11px;white-space:nowrap">
+            ${outOfStock?"Agotado":stock+" pzs"}
+          </span>
+          <strong style="color:var(--fz-primary);white-space:nowrap">${money.format(p.price)}</strong>
+          <button class="pos-add-btn" data-pos-add="${p.id}" ${outOfStock?"disabled":""}>+</button>
+        </div>`;
+      }).join("") || `<p class="muted" style="padding:18px 0;text-align:center;font-size:13px">Sin resultados.</p>`}
     </div>`;
 
   const subtotal = posCart.reduce((s, i) => s + i.qty * i.unitPrice, 0);
@@ -3232,6 +3238,7 @@ document.addEventListener("click", e => {
   const posFilter = e.target.closest("[data-pos-filter]");
   if (posFilter) { posCatalogFilter = posFilter.dataset.posFilter; renderPos(); return; }
 
+
   // Add product to cart
   const posAdd = e.target.closest("[data-pos-add]");
   if (posAdd && !posAdd.classList.contains("out-of-stock")) {
@@ -3454,6 +3461,32 @@ document.querySelector("#seed-data")?.addEventListener("click", () => {
 });
 
 searchInput.addEventListener("input", render);
+
+document.addEventListener("input", e => {
+  if (e.target.id === "pos-search") {
+    posCatalogSearch = e.target.value.trim().toLowerCase();
+    const list = document.querySelector(".pos-catalog-list");
+    if (!list) return;
+    const allBranchProducts = branchProducts().filter(p => p.productType !== "insumo" && Number(p.price) > 0);
+    const catalogItems = allBranchProducts
+      .filter(p => posCatalogFilter === "all" || p.productType === posCatalogFilter)
+      .filter(p => !posCatalogSearch || p.name.toLowerCase().includes(posCatalogSearch) || (p.sku||"").toLowerCase().includes(posCatalogSearch));
+    list.innerHTML = catalogItems.map(p => {
+      const stock = Number(p.stock);
+      const outOfStock = stock <= 0;
+      const lowStock = !outOfStock && p.minStock > 0 && stock <= Number(p.minStock);
+      return `<div class="pos-list-row${outOfStock?" out-of-stock":""}" data-pos-add="${p.id}" title="${outOfStock?"Sin stock":"Agregar al carrito"}">
+        <div class="pos-list-info">
+          <span class="pos-list-name">${escapeHtml(p.name)}</span>
+          <span class="pos-list-cat muted">${escapeHtml(p.category)}${p.sku?` · ${escapeHtml(p.sku)}`:""}</span>
+        </div>
+        <span class="${outOfStock?"status urgent":lowStock?"low-stock":"muted"}" style="font-size:11px;white-space:nowrap">${outOfStock?"Agotado":stock+" pzs"}</span>
+        <strong style="color:var(--fz-primary);white-space:nowrap">${money.format(p.price)}</strong>
+        <button class="pos-add-btn" data-pos-add="${p.id}" ${outOfStock?"disabled":""}>+</button>
+      </div>`;
+    }).join("") || `<p class="muted" style="padding:18px 0;text-align:center;font-size:13px">Sin resultados.</p>`;
+  }
+});
 document.addEventListener("click", e => {
   if (!e.target.closest("[data-print-ticket]")) {
     document.querySelectorAll(".print-menu").forEach(m => m.style.display = "none");
