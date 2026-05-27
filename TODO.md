@@ -1,5 +1,7 @@
 # FixZone CRM ToDo
 
+_Última actualización: 2026-05-27_
+
 ## Fase 1: Definir operacion interna
 
 - [x] Definir lista inicial de empleados que tendran acceso.
@@ -40,9 +42,9 @@
 
 - [x] Mejorar folio de ticket con formato fijo.
 - [x] Agregar folio visible de seguimiento con formato `[FZ] 0001`.
-- [ ] Agregar impresion de recibo de recepcion.
-- [ ] Agregar impresion de recibo de pago.
-- [ ] Agregar impresion de garantia.
+- [x] Agregar impresion de recibo de recepcion.
+- [x] Agregar impresion de recibo de pago.
+- [x] Agregar impresion de garantia.
 - [ ] Agregar plantilla con terminos y condiciones.
 - [x] Permitir abonos, saldo pendiente y pagos parciales.
 - [x] Agregar historial de eventos por ticket (detecta cambio de stage, timeline en modal de edición).
@@ -52,7 +54,7 @@
 ## Fase 5: Inventario e insumos
 
 - [x] Separar productos vendibles, refacciones e insumos internos (filtro en Productos + tipo guardado en DB).
-- [ ] Registrar entradas, salidas, ajustes y mermas.
+- [x] Registrar entradas, salidas, ajustes y mermas (± Movimiento en sección Productos).
 - [x] Descontar refacciones automaticamente cuando se usan en un ticket (al mover a Entregado).
 - [x] Alertar stock bajo (banner en dashboard + tabla en reportes con cantidad faltante).
 - [ ] Registrar proveedores.
@@ -130,10 +132,31 @@
 - [x] Botón de perfil de usuario para cambiar contraseña (dropdown en header)
 - [x] Cards del KANBAN arrastrables entre columnas (tickets + soporte IT)
 
-## Fase 11 Cotizaciones: 
+## Fase 11: Cotizaciones
 - [x] Nueva sección: Cotizaciones. Sección dedicada, cotización se convierte a ticket con un clic. Partes/refacciones se agregan directamente desde el modal de edición del ticket.
-- [ ] Acceso para enviar la cotizacion a Whatsapp directamente, en PDF 
-- [ ] Cambio de status de Cotizacion a venta concretada. 
+- [ ] Acceso para enviar la cotizacion a Whatsapp directamente, en PDF.
+- [ ] Cambio de status de Cotizacion a venta concretada.
 
+## Fase 12: Punto de Venta (POS)
+- [x] Diseño y análisis de arquitectura POS vs Ticket (decisiones: sin IVA, cliente opcional, recibo en v2).
+- [x] Tablas DB: `pos_sales`, `pos_sale_items`, trigger de decremento de stock, RLS (`supabase/13_pos_tables.sql`).
+- [x] Sección POS en la app: catálogo de productos filtrable, carrito con controles de cantidad, campo de descuento, selector de método de pago.
+- [x] Checkout: INSERT pos_sales → pos_sale_items → transaction Ingreso/Venta automático. Stock decrementado por trigger en DB.
+- [x] Historial de ventas recientes en la sección POS.
+- [x] Permisos: POS disponible para admin, standard, sales, technician. No disponible para marketing ni viewer.
+- [x] Tooltip de sección POS al hacer hover en el nav.
+- [ ] **⚠️ Pendiente: aplicar `supabase/13_pos_tables.sql` en Supabase SQL Editor** (requerido para que funcione en producción).
+- [ ] Recibo imprimible de venta POS (folio, productos, total, método de pago) — v2.
+- [x] Ligar venta POS a cliente del catálogo — select opcional en el carrito; sin selección = venta anónima.
+- [ ] Descuento por porcentaje además de monto fijo.
+- [ ] Constraint `CHECK (stock >= 0)` en DB para prevenir stock negativo en ventas simultáneas.
 
-
+## Fase 13: UX / Navegación
+- [x] Sidebar compacto: 280px → 220px. Nav items 42px → 34px. Entra completo en 100% de zoom.
+- [x] Navegación reordenada por grupo de workflow con divisores visuales:
+  - Operaciones: Home, Tickets, Cotizaciones, POS, Clientes
+  - Inventario: Productos, Insumos
+  - Finanzas: Finanzas, Reportes
+  - Admin: Usuarios, Soporte, Diseño, Automatización
+- [ ] Agregar estados de carga, errores y confirmaciones (pendiente de Fase 3).
+- [ ] El abono en tickets debería auto-crear una transacción Ingreso en Finanzas (hoy es manual).

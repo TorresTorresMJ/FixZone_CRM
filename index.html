@@ -24,14 +24,9 @@
         </div>
 
         <nav class="nav-list">
+          <!-- Operaciones diarias -->
           <button class="nav-item is-active" data-view="dashboard" title="Home">
             <span aria-hidden="true">⌂</span> Home
-          </button>
-          <button class="nav-item" data-view="clients" title="Clientes">
-            <span aria-hidden="true">◎</span> Clientes
-          </button>
-          <button class="nav-item" data-view="products" title="Productos">
-            <span aria-hidden="true">◈</span> Productos
           </button>
           <button class="nav-item" data-view="tickets" title="Tickets">
             <span aria-hidden="true">✦</span> Tickets
@@ -39,24 +34,36 @@
           <button class="nav-item" data-view="cotizaciones" title="Cotizaciones">
             <span aria-hidden="true">📋</span> Cotizaciones
           </button>
+          <button class="nav-item" data-view="pos" title="Punto de Venta">
+            <span aria-hidden="true">⊞</span> POS
+          </button>
+          <button class="nav-item" data-view="clients" title="Clientes">
+            <span aria-hidden="true">◎</span> Clientes
+          </button>
+          <hr class="nav-divider">
+          <!-- Inventario -->
+          <button class="nav-item" data-view="products" title="Productos">
+            <span aria-hidden="true">◈</span> Productos
+          </button>
           <button class="nav-item" data-view="supplies" title="Insumos">
             <span aria-hidden="true">◉</span> Insumos
           </button>
+          <hr class="nav-divider">
+          <!-- Finanzas -->
           <button class="nav-item" data-view="finance" title="Finanzas">
             <span aria-hidden="true">$</span> Finanzas
           </button>
           <button class="nav-item" data-view="reports" title="Reportes">
             <span aria-hidden="true">≡</span> Reportes
           </button>
-          <!-- Admin + IT only -->
+          <hr class="nav-divider">
+          <!-- Admin / roles específicos -->
           <button class="nav-item" data-view="users" title="Usuarios">
             <span aria-hidden="true">👥</span> Usuarios
           </button>
-          <!-- IT only -->
           <button class="nav-item" data-view="soporte" title="Soporte IT">
             <span aria-hidden="true">⚙</span> Soporte
           </button>
-          <!-- Marketing only -->
           <button class="nav-item" data-view="diseno" title="Diseño">
             <span aria-hidden="true">✦</span> Diseño
           </button>
@@ -214,6 +221,22 @@
               <tbody id="supplies-table"></tbody>
             </table>
           </div>
+        </section>
+
+        <!-- ── Punto de Venta ─────────────────────────────────────────── -->
+        <section class="view" id="pos-view" data-title="Punto de Venta">
+          <div class="section-heading">
+            <h2>Punto de Venta</h2>
+          </div>
+          <div class="pos-layout">
+            <div class="pos-catalog-panel" id="pos-catalog-panel">
+              <!-- Catálogo renderizado por renderPos() -->
+            </div>
+            <div class="pos-cart-panel" id="pos-cart-panel">
+              <!-- Carrito renderizado por renderPos() -->
+            </div>
+          </div>
+          <div id="pos-history" style="margin-top:28px"></div>
         </section>
 
         <!-- ── Finanzas ──────────────────────────────────────────────────── -->

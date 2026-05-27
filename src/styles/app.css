@@ -104,7 +104,7 @@ button { cursor: pointer; }
 /* ── App shell ───────────────────────────────────────────────────────────── */
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0,1fr);
+  grid-template-columns: 220px minmax(0,1fr);
   min-height: 100vh;
 }
 
@@ -113,9 +113,9 @@ button { cursor: pointer; }
   top: 0;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 14px;
   height: 100vh;
-  padding: 22px;
+  padding: 16px 14px;
   border-right: 1px solid rgba(255,255,255,0.08);
   background: linear-gradient(180deg, #070707 0%, #101217 58%, #08090c 100%);
   overflow-y: auto;
@@ -124,12 +124,12 @@ button { cursor: pointer; }
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .brand img {
-  width: 52px;
-  height: 52px;
+  width: 40px;
+  height: 40px;
   object-fit: contain;
   border-radius: 8px;
   box-shadow: var(--fz-glow-blue);
@@ -144,39 +144,46 @@ button { cursor: pointer; }
 h1, .brand strong { letter-spacing: 0.08em; }
 h2 { letter-spacing: 0.04em; }
 
-.brand strong { display: block; font-size: 18px; }
+.brand strong { display: block; font-size: 15px; }
 .brand span, .eyebrow, .sidebar-footer span {
   color: var(--fz-gray-light);
   font-size: 11px;
   text-transform: uppercase;
 }
 
-.nav-list { display: grid; gap: 4px; }
+.nav-list { display: grid; gap: 2px; }
 
 .nav-item, .ghost-button, .icon-button, .primary-action { min-height: 42px; border: 0; border-radius: 8px; }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 9px;
   width: 100%;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 10px;
   background: transparent;
   color: var(--fz-gray-light);
   text-align: left;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .nav-item span {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   place-items: center;
   border: 1px solid var(--fz-nav-icon-border, rgba(38,120,232,0.30));
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--fz-nav-icon-color, #2678E8);
-  font-size: 13px;
+  font-size: 11px;
   flex-shrink: 0;
+}
+
+.nav-divider {
+  border: 0;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  margin: 2px 0;
 }
 
 .nav-item:hover, .nav-item.is-active {
@@ -186,7 +193,7 @@ h2 { letter-spacing: 0.04em; }
 
 .sidebar-footer {
   margin-top: auto;
-  padding: 14px;
+  padding: 10px 12px;
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px;
   background: rgba(255,255,255,0.04);
@@ -1226,4 +1233,74 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   padding-left: 10px;
   color: var(--fz-dash-accent, var(--fz-secondary)) !important;
   transition: color 0.35s ease, border-color 0.35s ease;
+}
+
+/* ── Punto de Venta ──────────────────────────────────────────────────────── */
+.pos-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 14px;
+  margin-top: 14px;
+  align-items: start;
+}
+.pos-catalog-panel { display: flex; flex-direction: column; gap: 10px; }
+.pos-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.pos-product-card {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 8px;
+  background: rgba(28,28,28,0.82);
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color .15s, transform .1s;
+}
+.pos-product-card:hover:not(.out-of-stock) {
+  border-color: var(--fz-primary);
+  transform: translateY(-1px);
+}
+.pos-product-card.out-of-stock { opacity: 0.4; cursor: not-allowed; }
+.pos-cart-panel {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 8px;
+  background: rgba(20,20,28,0.9);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 14px;
+}
+.pos-cart-items {
+  min-height: 80px;
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pos-cart-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 13px;
+}
+.pos-cart-totals {
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 10px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.pos-total-row { display: flex; justify-content: space-between; align-items: center; }
+.pos-total-row.grand { font-size: 18px; font-weight: 700; color: var(--fz-primary); margin-top: 4px; }
+@media (max-width: 900px) {
+  .pos-layout { grid-template-columns: 1fr; }
+  .pos-cart-panel { position: static; }
 }

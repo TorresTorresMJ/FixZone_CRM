@@ -28,7 +28,7 @@ There is no test suite and no linter configured.
 | File | Purpose |
 |---|---|
 | `index.html` | App shell — all view sections are `<section class="view">` |
-| `src/app.js` | All client-side logic (~2 400 lines, single file) |
+| `src/app.js` | All client-side logic (~3 600 lines, single file) |
 | `src/supabase-config.js` | Supabase project URL and anon key (`window.FIXZONE_SUPABASE`) |
 | `src/brand-config.js` | Per-branch brand config — colors, logos, copy, marketing links (`window.BRANCH_BRANDS`) |
 | `src/styles/brand-tokens.css` | Static CSS custom properties (fallback values only — JS overrides at runtime) |
@@ -41,8 +41,23 @@ There is no test suite and no linter configured.
 | `supabase/08_fix_attachments_and_remaining.sql` | Additive `it` role policies for all tables |
 | `supabase/09_normalize_all_roles.sql` | Normalizes frontend roles to DB roles in employees table |
 | `supabase/10_storage_bucket_policies.sql` | RLS for `ticket-photos` Storage bucket |
+| `supabase/12_discount_fields.sql` | Adds discount_code, discount_amount, discount_pct to service_tickets |
+| `supabase/13_pos_tables.sql` | POS tables: pos_sales, pos_sale_items, stock-decrement trigger, RLS |
 
 ## Architecture
+
+### Navigation structure
+
+The sidebar (220px wide) groups views by workflow with `<hr class="nav-divider">` separators:
+
+| Group | Views |
+|---|---|
+| Operaciones | dashboard, tickets, cotizaciones, pos, clients |
+| Inventario | products, supplies |
+| Finanzas | finance, reports |
+| Admin | users, soporte, diseno, automatizacion |
+
+Nav tooltips are defined in `NAV_TOOLTIPS` (keyed by `data-view`) and rendered by `initNavTooltips()`. Add a new entry there whenever a new view is added.
 
 ### Auth flow
 Login uses **username + password**. The username is converted to an internal email (`username@fixzone.internal`) and passed to `supabase.auth.signInWithPassword`. After login, `resolveCurrentEmployee()` looks up the employee record by `auth_user_id` (not email). The app blocks access if the user is not in `employees` with `status = 'active'`.
@@ -54,12 +69,14 @@ Login uses **username + password**. The username is converted to an internal ema
 | DB role | UI label | Access level |
 |---|---|---|
 | `admin` | Admin | Full access |
-| `technician` | Estándar | Tickets, clients, products, supplies, view-only finance |
+| `technician` | Estándar | Tickets, clients, products, supplies, POS, view-only finance |
 | `marketing` | Marketing | Tickets, clients, design, automation |
-| `sales` | Ventas | Tickets, clients, products, supplies, manage finance |
+| `sales` | Ventas | Tickets, clients, products, supplies, POS, manage finance |
 | `viewer` | Solo lectura | Dashboard, reports only |
 
 The `PERMISSIONS` map in `app.js` is the source of truth for which tabs are visible and which actions are enabled. It is **editable at runtime** via the "Permisos por Rol" editor in the Usuarios section — saved to `localStorage` key `fixzone-role-permissions-v1` and loaded at startup via `loadSavedPermissions()`.
+
+`PERM_SECTIONS` lists all tabs that can be toggled in the permissions editor. When adding a new view, add it to both `PERMISSIONS` (for each role) and `PERM_SECTIONS`.
 
 **Important:** The Edge Function `create_employee` maps frontend role labels to DB roles at creation time:
 - `it` → `owner` (then normalized to `admin` via migration 09)
@@ -78,7 +95,7 @@ Both functions are `security definer` (bypass RLS when querying employees, no ci
 All per-branch tables have a `branch_id` FK to `public.branches`. The frontend filters with `branchTickets()`, `branchTransactions()`, etc. using `!t.branch || t.branch === activeBranchId` (permissive — records with unresolved branch show everywhere rather than disappearing). In remote mode, `branchSupplies()` and `branchTransactions()` use the same permissive logic.
 
 ### State management
-- `state` is the in-memory object holding all data: `tickets`, `clients`, `products`, `supplies`, `transactions`, `employees`, `branches`, `supportTasks`
+- `state` is the in-memory object holding all data: `tickets`, `clients`, `products`, `supplies`, `transactions`, `employees`, `branches`, `supportTasks`, `posSales`
 - `reloadState()` fetches all tables from Supabase in a `Promise.all` and overwrites state. If any individual query returns empty, the corresponding key falls back to `seed` data
 - `reloadState()` failure after a successful INSERT is **non-fatal** — caught with `console.warn`, UI still renders with the locally-added record
 - `createRemoteTicket` and `createRemoteTransaction` use `.select().single()` to get the created row back and add it to state immediately, so the kanban/dashboard updates even if `reloadState()` subsequently fails
@@ -101,6 +118,31 @@ A single `<dialog id="record-modal">` is reused for all create/edit forms. `app.
 | `"supportTasks"` | `saveRemoteSupportTask` | `updateRemoteSupportTask` |
 | `"employee"` | Edge Function `create` | Edge Function `update` |
 
+### Punto de Venta (POS)
+
+The POS view (`#pos-view`) handles **direct retail sales** — selling products from inventory without opening a repair ticket.
+
+**POS vs Ticket distinction:**
+- **Ticket**: repair service — has a device, kanban stages, assigned technician, `ticket_items` for parts used in the repair
+- **POS**: direct retail sale — no device, no stages, immediate checkout, stock decremented automatically via DB trigger
+
+**POS state variables** (module-level in `app.js`):
+- `posCart` — array of `{productId, name, qty, unitPrice, maxStock}`
+- `posCatalogFilter` — `"all"` | `"producto"` | `"refaccion"`
+- `posDiscount` — discount amount in MXN
+- `posPaymentMethod` — selected payment method string
+
+**Checkout flow (`checkoutPos()`):**
+1. INSERT `pos_sales` → get sale `id`
+2. INSERT `pos_sale_items` for each cart line → DB trigger `pos_sale_items_decrement_stock` decrements `products.stock`
+3. INSERT `transactions` (type: `"Ingreso"`, category: `"Venta"`, concept: `"POS: …"`)
+4. UPDATE `pos_sales.transaction_id` to link the transaction
+5. Update local state immediately; call `reloadState()` in background
+
+**Important:** `supabase/13_pos_tables.sql` must be applied in the Supabase SQL Editor before the POS section works in production. Without it, checkout will fail with a table-not-found error.
+
+**Known limitation:** No DB-level `CHECK (stock >= 0)` constraint — concurrent sales of the last unit can produce negative stock. The trigger decrements without a minimum check.
+
 ### Supabase SQL files (apply in order)
 SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 1. `schema.sql` — base tables, triggers, indexes, sequences
@@ -112,6 +154,8 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 7. `09_normalize_all_roles.sql` — normalize employee roles to valid DB values
 8. `10_storage_bucket_policies.sql` — Storage bucket RLS for `ticket-photos`
 9. `11_merge_owner_into_admin.sql` — merge `owner` → `admin`
+10. `12_discount_fields.sql` — discount fields on service_tickets
+11. `13_pos_tables.sql` — POS tables, RLS, and stock-decrement trigger
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -150,4 +194,7 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **`reloadState()` seed fallback**: if a table's SELECT returns 0 rows (RLS block or query error), that table falls back to hardcoded `seed` data. Newly created records won't appear. Check `pg_policies` if data seems stale.
 - **Brand colors in CSS**: never add `rgba(47,111,255,...)` or `#2F6FFF` hardcoded in `app.css` — those won't switch with the branch. Always use `rgba(var(--fz-primary-rgb), alpha)` and `var(--fz-primary)`.
 - **Optional form fields**: the `fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional)` function controls `required` attribute. Pass `true` as 6th element in the field tuple (schema) and `optional` as 7th arg to `fieldTemplate` to make a field non-required. Currently: `discountCode`, `discountAmount`, `notes` are optional in the ticket schema.
+- **Sidebar tooltip position**: `NAV_TOOLTIPS` renders tooltips at `left: 220px` (sidebar width). If the sidebar width changes, update that value in `initNavTooltips()`.
+- **Adding a new view**: (1) add nav button in `index.html`, (2) add `<section class="view" id="{name}-view">`, (3) add `"{name}"` to the relevant role tabs in `PERMISSIONS`, (4) add to `PERM_SECTIONS`, (5) add entry to `NAV_TOOLTIPS`, (6) call `render{Name}()` from `render()`.
+- **POS requires migration 13**: `supabase/13_pos_tables.sql` must be applied in the Supabase SQL Editor. Until then, `checkoutPos()` will throw a table-not-found error.
 - **Browser cache after deploy**: Cloudflare Pages may serve cached JS/CSS. Users should hard-refresh (`Cmd+Shift+R` / `Ctrl+Shift+R`) after a new deploy if they see stale styles.

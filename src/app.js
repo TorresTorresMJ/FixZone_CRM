@@ -12,25 +12,31 @@ const TX_CATEGORIES_INCOME  = ["Servicio","Venta","Anticipo","Garantia","Otro"];
 const TX_CATEGORIES_EXPENSE = ["Inventario","Insumos","Renta","Nomina","Servicios","Herramientas","Operacion","Otro"];
 const TX_CATEGORIES_ALL     = [...new Set([...TX_CATEGORIES_INCOME, ...TX_CATEGORIES_EXPENSE])];
 const PRODUCT_CATEGORIES    = ["Refaccion","Bateria","Pantalla","Accesorio","Microsoldadura","Cable","Cargador","Otro"];
+const POS_PAYMENT_METHODS   = ["Efectivo","Tarjeta","Transferencia","Otro"];
 const ROLE_LABELS  = { it: "Admin", owner: "Admin", admin: "Admin", standard: "Estándar", technician: "Estándar", marketing: "Marketing", viewer: "Solo lectura", sales: "Ventas" };
 
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
   // Frontend roles
-  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  standard:  { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  standard:  { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   marketing: { tabs: ["dashboard","cotizaciones","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
   // DB roles (map to equivalent frontend permission sets)
-  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  sales:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
-  technician: { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  sales:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
+  technician: { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
 };
 
 let activeBranchId  = "Puerto Vallarta";
 let activeForm      = null;
 let editingTicketId = null;
+let posCart = []; // [{productId, name, qty, unitPrice, maxStock}]
+let posCatalogFilter = "all";
+let posDiscount = 0;
+let posPaymentMethod = "Efectivo";
+let posCustomerId = null; // null = venta anónima
 let editingTaskId   = null;
 let dataMode        = "local";
 let supabaseClient = null;
@@ -50,6 +56,7 @@ const seed = {
   supplies: [],
   transactions: [],
   supportTasks: [],
+  posSales: [],
 };
 
 let state = loadState();
@@ -219,6 +226,7 @@ async function reloadState() {
       tickets:      remote.tickets.length      ? remote.tickets      : structuredClone(seed.tickets),
       supplies:     remote.supplies.length     ? remote.supplies     : structuredClone(seed.supplies),
       transactions: remote.transactions.length ? remote.transactions : structuredClone(seed.transactions),
+      posSales:     remote.posSales            ? remote.posSales     : [],
     };
     return state;
   } finally {
@@ -455,7 +463,7 @@ function currentPerms() {
 // REMOTE DATA
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadSupabaseState() {
-  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes] = await Promise.all([
+  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("name"),
     supabaseClient.from("employees").select("*").order("full_name"),
     supabaseClient.from("customers").select("*").order("created_at",{ascending:false}),
@@ -465,6 +473,7 @@ async function loadSupabaseState() {
     supabaseClient.from("supply_purchases").select("*, suppliers(name)").order("purchase_date",{ascending:false}),
     supabaseClient.from("transactions").select("*").order("transaction_date",{ascending:false}),
     supabaseClient.from("support_tasks").select("*, employees!support_tasks_assigned_to_fkey(full_name)").order("created_at",{ascending:false}),
+    supabaseClient.from("pos_sales").select("*").order("created_at",{ascending:false}).limit(50),
   ]);
 
   const branchRows   = bRes.data  || [];
@@ -551,6 +560,12 @@ async function loadSupabaseState() {
       status:t.status, assignedTo:t.employees?.full_name||"Sin asignar",
       createdAt:(t.created_at||"").slice(0,10),
     })),
+    posSales: (psRes.data||[]).map(s => ({
+      id:s.id, total:Number(s.total||0), paymentMethod:s.payment_method||"",
+      discount:Number(s.discount_amount||0),
+      createdAt:(s.created_at||"").slice(0,10),
+      branch:branchRows.find(b=>b.id===s.branch_id)?.name||BRANCHES[0],
+    })),
   };
 }
 
@@ -575,6 +590,7 @@ function render() {
   renderTickets();
   renderCotizaciones();
   renderSupplies();
+  renderPos();
   renderFinance();
   renderReports();
   renderUsers();
@@ -837,6 +853,193 @@ function renderSupplies() {
   `).join("")||tableEmpty(6);
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// PUNTO DE VENTA (POS)
+// ──────────────────────────────────────────────────────────────────────────────
+function renderPos() {
+  const catalogPanel = document.querySelector("#pos-catalog-panel");
+  const cartPanel    = document.querySelector("#pos-cart-panel");
+  if (!catalogPanel || !cartPanel) return;
+
+  const allBranchProducts = branchProducts()
+    .filter(p => p.productType !== "insumo" && Number(p.price) > 0);
+  const catalogItems = allBranchProducts
+    .filter(p => posCatalogFilter === "all" || p.productType === posCatalogFilter);
+
+  catalogPanel.innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button class="mini-button pos-filter${posCatalogFilter==="all"?" is-active":""}" data-pos-filter="all">Todos</button>
+      <button class="mini-button pos-filter${posCatalogFilter==="producto"?" is-active":""}" data-pos-filter="producto">Vendibles</button>
+      <button class="mini-button pos-filter${posCatalogFilter==="refaccion"?" is-active":""}" data-pos-filter="refaccion">Refacciones</button>
+    </div>
+    <div class="pos-catalog-grid">
+      ${catalogItems.map(p => {
+        const stock = Number(p.stock);
+        const outOfStock = stock <= 0;
+        return `<article class="pos-product-card${outOfStock?" out-of-stock":""}" data-pos-add="${p.id}"
+          title="${outOfStock?"Sin stock — no se puede agregar":"Agregar al carrito"}">
+          <div style="font-weight:600;font-size:13px;margin-bottom:4px">${escapeHtml(p.name)}</div>
+          <div class="muted" style="font-size:11px;margin-bottom:6px">${escapeHtml(p.category)}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong style="color:var(--fz-primary)">${money.format(p.price)}</strong>
+            <span class="${stock<=0?"status urgent":stock<=(p.minStock||0)&&p.minStock>0?"low-stock":"status ready"}" style="font-size:10px">
+              ${stock<=0?"Agotado":stock+" pzs"}
+            </span>
+          </div>
+        </article>`;
+      }).join("") || emptyMessage("No hay productos disponibles en este catálogo.")}
+    </div>`;
+
+  const subtotal = posCart.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  const total    = Math.max(0, subtotal - posDiscount);
+
+  cartPanel.innerHTML = `
+    <div style="font-size:14px;font-weight:600">Carrito</div>
+    <div class="pos-cart-items">
+      ${posCart.length === 0
+        ? '<p class="muted" style="font-size:12px;text-align:center;padding:18px 0">Toca un producto para agregarlo</p>'
+        : posCart.map((item, idx) => `
+          <div class="pos-cart-item">
+            <div>
+              <div style="font-size:12px;font-weight:500">${escapeHtml(item.name)}</div>
+              <div class="muted" style="font-size:11px">${money.format(item.unitPrice)} c/u</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px">
+              <button class="mini-button" data-pos-qty-dec="${idx}" style="padding:2px 7px">−</button>
+              <span style="font-size:13px;min-width:22px;text-align:center">${item.qty}</span>
+              <button class="mini-button" data-pos-qty-inc="${idx}" style="padding:2px 7px">+</button>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:13px;font-weight:600">${money.format(item.qty * item.unitPrice)}</div>
+              <button class="mini-button danger-btn" data-pos-remove="${idx}" style="font-size:10px;padding:2px 5px;margin-top:2px">✕</button>
+            </div>
+          </div>`).join("")}
+    </div>
+    <div class="pos-cart-totals">
+      <div class="pos-total-row"><span class="muted">Subtotal</span><span>${money.format(subtotal)}</span></div>
+      <div class="pos-total-row">
+        <span class="muted">Descuento</span>
+        <input type="number" id="pos-discount-input" value="${posDiscount}" min="0" step="1"
+          oninput="posDiscount=Math.max(0,Number(this.value)||0);renderPos()"
+          style="width:80px;text-align:right;font-size:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:3px 6px;color:inherit">
+      </div>
+      <div class="pos-total-row grand"><span>Total</span><span>${money.format(total)}</span></div>
+    </div>
+    <select id="pos-payment-method" onchange="posPaymentMethod=this.value"
+      style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:6px 10px;color:inherit;font-size:13px">
+      ${POS_PAYMENT_METHODS.map(m => `<option value="${m}"${m===posPaymentMethod?" selected":""}>${m}</option>`).join("")}
+    </select>
+    <select id="pos-client-select" onchange="posCustomerId=this.value||null"
+      style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:6px 10px;color:inherit;font-size:13px">
+      <option value="">— Cliente (opcional) —</option>
+      ${branchClients().sort((a,b)=>a.name.localeCompare(b.name)).map(c =>
+        `<option value="${c.id}"${c.id===posCustomerId?" selected":""}>${escapeHtml(c.name)}${c.phone?" · "+escapeHtml(c.phone):""}</option>`
+      ).join("")}
+    </select>
+    <button class="primary-action" id="pos-checkout-btn" style="width:100%${posCart.length===0?";opacity:0.4;pointer-events:none":""}">
+      Cobrar ${money.format(total)}
+    </button>
+    ${posCart.length > 0 ? '<button class="ghost-button" id="pos-clear-cart" style="width:100%;font-size:12px;margin-top:-4px">Vaciar carrito</button>' : ""}
+  `;
+
+  renderPosHistory();
+}
+
+function renderPosHistory() {
+  const container = document.querySelector("#pos-history");
+  if (!container) return;
+  const sales = (state.posSales || []).filter(s => !s.branch || s.branch === activeBranchId).slice(0, 15);
+  if (!sales.length) { container.innerHTML = ""; return; }
+  container.innerHTML = `
+    <div class="section-heading" style="margin-bottom:10px"><h2>Ventas recientes</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Fecha</th><th>Método</th><th style="text-align:right">Total</th></tr></thead>
+        <tbody>
+          ${sales.map(s => `<tr>
+            <td>${s.createdAt}</td>
+            <td>${escapeHtml(s.paymentMethod)}</td>
+            <td style="text-align:right"><strong>${money.format(s.total)}</strong></td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function checkoutPos() {
+  if (!posCart.length) return;
+  if (dataMode !== "remote") { alert("Conecta a Supabase para registrar ventas."); return; }
+
+  const subtotal = posCart.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  const total    = Math.max(0, subtotal - posDiscount);
+  const method   = posPaymentMethod;
+
+  if (!confirm(`Confirmar venta por ${money.format(total)} (${method})?`)) return;
+
+  setLoading(true, "Procesando venta…");
+  try {
+    const branchId = await branchIdByName(activeBranchId);
+
+    const { data: sale, error: saleErr } = await supabaseClient
+      .from("pos_sales")
+      .insert({ branch_id:branchId, employee_id:currentEmployee?.id||null,
+        customer_id:posCustomerId||null,
+        payment_method:method, discount_amount:posDiscount, total })
+      .select("id").single();
+    if (saleErr) throw saleErr;
+
+    const { error: itemsErr } = await supabaseClient.from("pos_sale_items").insert(
+      posCart.map(item => ({
+        sale_id: sale.id, product_id: item.productId,
+        description: item.name, quantity: item.qty, unit_price: item.unitPrice,
+      }))
+    );
+    if (itemsErr) throw itemsErr;
+
+    const conceptStr = posCart.map(i => `${i.qty}× ${i.name}`).join(", ");
+    const clientName = posCustomerId
+      ? (state.clients.find(c => c.id === posCustomerId)?.name || "")
+      : "";
+    const { data: tx } = await supabaseClient.from("transactions").insert({
+      branch_id: branchId, transaction_date: dateStamp(),
+      type: "Ingreso", category: "Venta",
+      concept: `POS: ${conceptStr}${clientName ? " — "+clientName : ""}`,
+      amount: total, payment_method: method,
+      created_by: currentEmployee?.id || null,
+    }).select("id").single();
+
+    if (tx?.id) {
+      await supabaseClient.from("pos_sales").update({ transaction_id: tx.id }).eq("id", sale.id);
+      state.transactions.unshift({
+        id:tx.id, date:dateStamp(), type:"Ingreso", category:"Venta",
+        concept:`POS: ${conceptStr}`, amount:total, branch:activeBranchId,
+      });
+    }
+
+    // Decrement stock locally (DB trigger already handled it)
+    for (const item of posCart) {
+      const prod = state.products.find(p => p.id === item.productId);
+      if (prod) prod.stock = Math.max(0, Number(prod.stock) - item.qty);
+    }
+
+    state.posSales = state.posSales || [];
+    state.posSales.unshift({ id:sale.id, total, paymentMethod:method,
+      discount:posDiscount, createdAt:dateStamp(), branch:activeBranchId });
+
+    posCart = [];
+    posDiscount = 0;
+    posCustomerId = null;
+
+    showToast(`✓ Venta registrada: ${money.format(total)}`);
+    render();
+    reloadState().catch(e => console.warn("POS reload:", e));
+  } catch(err) {
+    alert(`Error al procesar venta: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+}
+
 let financePeriod = "month"; // "today" | "week" | "month" | "all"
 
 function financeFilteredTxs() {
@@ -1071,6 +1274,7 @@ const PERM_SECTIONS = [
   { key:"products",       label:"Productos" },
   { key:"tickets",        label:"Tickets" },
   { key:"supplies",       label:"Insumos" },
+  { key:"pos",            label:"Punto de Venta" },
   { key:"finance",        label:"Finanzas" },
   { key:"reports",        label:"Reportes" },
   { key:"users",          label:"Usuarios" },
@@ -2861,6 +3065,70 @@ document.querySelectorAll("[data-export-sheet]").forEach(btn => {
   btn.addEventListener("click", () => exportWorkbook(btn.dataset.exportSheet));
 });
 
+// ── POS delegated events ──────────────────────────────────────────────────────
+document.addEventListener("click", e => {
+  // Catalog filter
+  const posFilter = e.target.closest("[data-pos-filter]");
+  if (posFilter) { posCatalogFilter = posFilter.dataset.posFilter; renderPos(); return; }
+
+  // Add product to cart
+  const posAdd = e.target.closest("[data-pos-add]");
+  if (posAdd && !posAdd.classList.contains("out-of-stock")) {
+    const prod = state.products.find(p => p.id === posAdd.dataset.posAdd);
+    if (!prod) return;
+    const existing = posCart.find(i => i.productId === prod.id);
+    const currentQty = existing ? existing.qty : 0;
+    if (currentQty >= Number(prod.stock)) {
+      showToast(`Sin stock suficiente para ${prod.name}`); return;
+    }
+    if (existing) { existing.qty++; }
+    else { posCart.push({ productId:prod.id, name:prod.name, qty:1, unitPrice:Number(prod.price), maxStock:Number(prod.stock) }); }
+    renderPos();
+    return;
+  }
+
+  // Cart qty decrement
+  const qtyDec = e.target.closest("[data-pos-qty-dec]");
+  if (qtyDec) {
+    const idx = Number(qtyDec.dataset.posQtyDec);
+    if (posCart[idx]) {
+      posCart[idx].qty--;
+      if (posCart[idx].qty <= 0) posCart.splice(idx, 1);
+    }
+    renderPos(); return;
+  }
+
+  // Cart qty increment
+  const qtyInc = e.target.closest("[data-pos-qty-inc]");
+  if (qtyInc) {
+    const idx = Number(qtyInc.dataset.posQtyInc);
+    if (posCart[idx]) {
+      const prod = state.products.find(p => p.id === posCart[idx].productId);
+      if (prod && posCart[idx].qty >= Number(prod.stock)) {
+        showToast("No hay suficiente stock"); return;
+      }
+      posCart[idx].qty++;
+    }
+    renderPos(); return;
+  }
+
+  // Remove from cart
+  const posRemove = e.target.closest("[data-pos-remove]");
+  if (posRemove) {
+    posCart.splice(Number(posRemove.dataset.posRemove), 1);
+    renderPos(); return;
+  }
+
+  // Checkout
+  if (e.target.closest("#pos-checkout-btn")) { checkoutPos(); return; }
+
+  // Clear cart
+  if (e.target.closest("#pos-clear-cart")) {
+    posCart = []; posDiscount = 0; posCustomerId = null;
+    renderPos(); return;
+  }
+});
+
 // Delegated clicks
 document.addEventListener("click", async e => {
   // Edit ticket
@@ -3383,10 +3651,11 @@ function applyBranchBrand(branchName) {
 // ── Section tooltips ─────────────────────────────────────────────────────────
 const NAV_TOOLTIPS = {
   dashboard:      "Vista general: métricas del día, tickets activos y movimientos recientes.",
+  tickets:        "Kanban de reparaciones. Arrastra las cards para cambiar el stage.",
   cotizaciones:   "Presupuestos pendientes de aprobación. Aprueba para convertir en ticket.",
+  pos:            "Punto de Venta: vende productos directamente sin abrir un ticket. Descuenta stock y registra el ingreso automáticamente.",
   clients:        "Registro de clientes y sus equipos. Busca por nombre, teléfono o IMEI.",
   products:       "Inventario de refacciones, accesorios y productos vendibles.",
-  tickets:        "Kanban de reparaciones. Arrastra las cards para cambiar el stage.",
   supplies:       "Compras de insumos y materiales. Se registran como egreso automáticamente.",
   finance:        "Ingresos y egresos del negocio con filtro por período.",
   reports:        "Reportes de caja, tickets por etapa y productividad del equipo.",
@@ -3405,7 +3674,7 @@ function initNavTooltips() {
     btn.addEventListener("mouseenter", () => {
       tooltip = document.createElement("div");
       tooltip.textContent = tip;
-      tooltip.style.cssText = "position:fixed;left:260px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:8px 12px;font-size:11px;line-height:1.5;max-width:220px;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5)";
+      tooltip.style.cssText = "position:fixed;left:220px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:8px 12px;font-size:11px;line-height:1.5;max-width:220px;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5)";
       const rect = btn.getBoundingClientRect();
       tooltip.style.top = `${rect.top}px`;
       document.body.appendChild(tooltip);
