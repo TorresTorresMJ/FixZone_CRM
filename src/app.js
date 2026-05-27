@@ -626,7 +626,7 @@ function bySearch(items) {
 }
 
 function branchTickets()       { return state.tickets.filter(t => !t.branch || t.branch === activeBranchId); }
-function branchProducts()      { return state.products.filter(p => p.branch === activeBranchId); }
+function branchProducts()      { return state.products.filter(p => !p.branch || p.branch === activeBranchId); }
 function branchClients()       { return state.clients.filter(c => !c.branch || c.branch === activeBranchId); }
 function branchSupplies()      { return state.supplies.filter(s => !s.branch || s.branch === activeBranchId); }
 function branchTransactions()  { return state.transactions.filter(t => !t.branch || t.branch === activeBranchId); }
@@ -690,34 +690,63 @@ function renderClients() {
 }
 
 let productTypeFilter = "all";
+let productSortKey    = "name";
+let productSortDir    = "asc";
 const PTYPE_LABEL = { producto:"Vendible", refaccion:"Refacción", insumo:"Insumo" };
 
 function renderProducts() {
-  // Sync filter buttons
   document.querySelectorAll(".ptype-filter").forEach(b =>
     b.classList.toggle("is-active", b.dataset.ptype === productTypeFilter));
 
-  const filtered = bySearch(branchProducts())
+  let items = bySearch(branchProducts())
     .filter(p => productTypeFilter === "all" || p.productType === productTypeFilter);
 
-  document.querySelector("#products-grid").innerHTML = filtered.map(p=>{
-    const stock=Number(p.stock), min=Number(p.minStock);
-    const pct=Math.min(100,Math.round((stock/Math.max(min*2,1))*100));
-    const typeLabel = PTYPE_LABEL[p.productType] || p.productType || "Refacción";
-    return `<article class="product-card">
-      <div class="product-meta"><strong>${escapeHtml(p.name)}</strong><span class="${stock<=min&&min>0?"low-stock":"status ready"}">${stock<=min&&min>0?"Bajo":"OK"}</span></div>
-      <div style="display:flex;gap:6px;align-items:center;font-size:11px;margin-bottom:2px">
-        <span class="muted">${escapeHtml(p.sku||"")}${p.sku?" · ":""}${escapeHtml(p.category)}</span>
-        <span style="background:rgba(255,255,255,.08);border-radius:4px;padding:1px 6px">${typeLabel}</span>
-      </div>
-      <div class="product-meta"><strong>${stock} piezas</strong><strong>${money.format(p.price)}</strong></div>
-      <div class="stock-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
-      <div class="action-row" style="margin-top:8px;justify-content:flex-end">
-        <button class="mini-button danger-btn" data-delete-product="${p.id}">Eliminar</button>
-        <button class="mini-button" data-edit-product="${p.id}">Editar</button>
-      </div>
-    </article>`;
-  }).join("")||emptyMessage("No hay productos en esta categoría.");
+  items = [...items].sort((a, b) => {
+    let va = a[productSortKey], vb = b[productSortKey];
+    if (productSortKey === "stock" || productSortKey === "price") {
+      va = Number(va||0); vb = Number(vb||0);
+      return productSortDir === "asc" ? va - vb : vb - va;
+    }
+    va = String(va||"").toLowerCase(); vb = String(vb||"").toLowerCase();
+    return productSortDir === "asc" ? va.localeCompare(vb,"es") : vb.localeCompare(va,"es");
+  });
+
+  const icon = k => productSortKey === k ? (productSortDir === "asc" ? " ▲" : " ▼") : "";
+  const th = (k, label, right) =>
+    `<th data-sort-product="${k}" style="cursor:pointer${right?";text-align:right":""}">${label}${icon(k)}</th>`;
+
+  document.querySelector("#products-grid").innerHTML = items.length === 0
+    ? emptyMessage("No hay productos en esta categoría.")
+    : `<div class="table-wrap"><table>
+        <thead><tr>
+          ${th("name","Nombre")}
+          ${th("sku","SKU")}
+          ${th("category","Categoría")}
+          ${th("productType","Tipo")}
+          ${th("stock","Stock",true)}
+          ${th("price","Costo",true)}
+          <th></th>
+        </tr></thead>
+        <tbody>
+          ${items.map(p => {
+            const stock = Number(p.stock), min = Number(p.minStock);
+            const lowStock = min > 0 && stock <= min;
+            const typeLabel = PTYPE_LABEL[p.productType] || p.productType || "Refacción";
+            return `<tr>
+              <td><strong>${escapeHtml(p.name)}</strong></td>
+              <td class="muted">${escapeHtml(p.sku||"—")}</td>
+              <td>${escapeHtml(p.category)}</td>
+              <td><span style="background:rgba(255,255,255,.08);border-radius:4px;padding:1px 6px;font-size:12px">${typeLabel}</span></td>
+              <td style="text-align:right"><span ${lowStock?'class="status warn"':""}>${stock}</span></td>
+              <td style="text-align:right">${money.format(p.price)}</td>
+              <td style="text-align:right;white-space:nowrap">
+                <button class="mini-button danger-btn" data-delete-product="${p.id}">Eliminar</button>
+                <button class="mini-button" data-edit-product="${p.id}">Editar</button>
+              </td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table></div>`;
 }
 
 document.querySelector("#product-type-bar")?.addEventListener("click", e => {
@@ -3349,6 +3378,15 @@ document.addEventListener("click", async e => {
 
   const editProduct = e.target.closest("[data-edit-product]");
   if (editProduct) { openEditProduct(editProduct.dataset.editProduct); return; }
+
+  const sortProduct = e.target.closest("[data-sort-product]");
+  if (sortProduct) {
+    const key = sortProduct.dataset.sortProduct;
+    if (productSortKey === key) productSortDir = productSortDir === "asc" ? "desc" : "asc";
+    else { productSortKey = key; productSortDir = "asc"; }
+    renderProducts();
+    return;
+  }
 
   // Edit support task
   const editSupport = e.target.closest("[data-edit-support]");
