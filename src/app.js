@@ -3442,6 +3442,10 @@ function printPosRecibo() {
       <span>${money.format(i.qty * i.unitPrice)}</span>
     </div>`
   ).join("");
+  const hasRefaccion = items.some(i => {
+    const prod = state.products.find(p => p.id === i.productId);
+    return prod?.productType === "refaccion";
+  });
   document.querySelector("#print-receipt").innerHTML = `
     <div class="rct">
       <h2 style="font-size:14px;font-weight:700;text-align:center;margin:0 0 2px">${escapeHtml(brand.displayName || activeBranchId)}</h2>
@@ -3456,6 +3460,9 @@ function printPosRecibo() {
       </div>
       <div style="font-size:11px;text-align:center;margin-top:6px">Método: ${escapeHtml(method)}</div>
       ${clientName ? `<div style="font-size:11px;text-align:center">Cliente: ${escapeHtml(clientName)}</div>` : ""}
+      ${hasRefaccion ? `<p class="rct-dash">${D}</p>
+        <p style="font-size:10px;text-align:center;margin:4px 0">Garantía en refacciones: 3 días naturales para cambio.</p>
+        <p style="font-size:10px;text-align:center;margin:0">No aplica en daños por mal uso o instalación inadecuada.</p>` : ""}
       <p class="rct-thanks">★ Gracias por su compra ★</p>
       <p class="rct-dash">${D}</p>
     </div>`;
