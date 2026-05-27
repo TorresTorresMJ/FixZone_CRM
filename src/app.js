@@ -712,37 +712,51 @@ function renderProducts() {
     return productSortDir === "asc" ? va.localeCompare(vb,"es") : vb.localeCompare(va,"es");
   });
 
-  const icon = k => productSortKey === k ? (productSortDir === "asc" ? " ▲" : " ▼") : "";
+  const sortIcon = k => productSortKey === k ? (productSortDir === "asc" ? " ▲" : " ▼") : " ⇅";
+  const thCls    = k => productSortKey === k ? " col-active" : "";
+  const thAlign  = right => right ? ' style="text-align:right"' : "";
   const th = (k, label, right) =>
-    `<th data-sort-product="${k}" style="cursor:pointer${right?";text-align:right":""}">${label}${icon(k)}</th>`;
+    `<th data-sort-product="${k}" class="${thCls(k)}"${thAlign(right)}>${label}<span style="opacity:.55;font-size:9px">${sortIcon(k)}</span></th>`;
+
+  const legend = `<div class="inv-legend">
+    <span><span class="inv-legend-dot" style="background:rgba(245,158,11,0.55)"></span>Stock bajo</span>
+    <span><span class="inv-legend-dot" style="background:rgba(239,68,68,0.55)"></span>Agotado</span>
+  </div>`;
 
   document.querySelector("#products-grid").innerHTML = items.length === 0
     ? emptyMessage("No hay productos en esta categoría.")
-    : `<div class="table-wrap"><table>
+    : legend + `<div class="inventory-table-wrap"><table class="inventory-table">
         <thead><tr>
           ${th("name","Nombre")}
           ${th("sku","SKU")}
           ${th("category","Categoría")}
           ${th("productType","Tipo")}
           ${th("stock","Stock",true)}
+          ${th("minStock","Stk Mín",true)}
           ${th("price","Costo",true)}
-          <th></th>
+          <th style="cursor:default;text-align:right">Acciones</th>
         </tr></thead>
         <tbody>
           ${items.map(p => {
             const stock = Number(p.stock), min = Number(p.minStock);
-            const lowStock = min > 0 && stock <= min;
-            const typeLabel = PTYPE_LABEL[p.productType] || p.productType || "Refacción";
-            return `<tr>
-              <td><strong>${escapeHtml(p.name)}</strong></td>
-              <td class="muted">${escapeHtml(p.sku||"—")}</td>
-              <td>${escapeHtml(p.category)}</td>
-              <td><span style="background:rgba(255,255,255,.08);border-radius:4px;padding:1px 6px;font-size:12px">${typeLabel}</span></td>
-              <td style="text-align:right"><span ${lowStock?'class="status warn"':""}>${stock}</span></td>
-              <td style="text-align:right">${money.format(p.price)}</td>
+            const outOfStock = stock <= 0;
+            const lowStock   = !outOfStock && min > 0 && stock <= min;
+            const rowCls     = outOfStock ? " row-out-stock" : lowStock ? " row-low-stock" : "";
+            const stockCls   = outOfStock ? "sv-out" : lowStock ? "sv-low" : "sv-ok";
+            const pt         = p.productType || "refaccion";
+            const typeLabel  = PTYPE_LABEL[pt] || pt;
+            const badgeCls   = `tbadge tbadge-${pt}`;
+            return `<tr class="${rowCls}">
+              <td><strong style="font-size:12px">${escapeHtml(p.name)}</strong></td>
+              <td style="color:rgba(255,255,255,.45);font-size:11px;font-family:monospace">${escapeHtml(p.sku||"—")}</td>
+              <td style="font-size:12px">${escapeHtml(p.category)}</td>
+              <td><span class="${badgeCls}">${typeLabel}</span></td>
+              <td style="text-align:right"><span class="${stockCls}">${stock}</span></td>
+              <td style="text-align:right;color:rgba(255,255,255,.4);font-size:12px">${min > 0 ? min : "—"}</td>
+              <td style="text-align:right;font-weight:600">${money.format(p.price)}</td>
               <td style="text-align:right;white-space:nowrap">
-                <button class="mini-button danger-btn" data-delete-product="${p.id}">Eliminar</button>
-                <button class="mini-button" data-edit-product="${p.id}">Editar</button>
+                <button class="mini-button" data-edit-product="${p.id}" style="font-size:11px;padding:2px 8px">Editar</button>
+                <button class="mini-button danger-btn" data-delete-product="${p.id}" style="font-size:11px;padding:2px 8px">✕</button>
               </td>
             </tr>`;
           }).join("")}
