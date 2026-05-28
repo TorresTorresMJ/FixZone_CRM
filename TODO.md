@@ -36,7 +36,7 @@ _Última actualización: 2026-05-27_
 - [x] Conectar tickets a la base de datos.
 - [x] Conectar compras de insumos a la base de datos.
 - [x] Conectar ingresos y egresos a la base de datos.
-- [ ] Agregar estados de carga, errores y confirmaciones.
+- [x] Agregar estados de carga, errores y confirmaciones (toasts de éxito/error + confirm modal — Sprint A 2026-05-27).
 
 ## Fase 4: Tickets y recibos
 
@@ -78,6 +78,10 @@ _Última actualización: 2026-05-27_
 - [ ] Crear seccion de plantillas de email para clientes, editable.
 - [x] Plantillas de mensaje WhatsApp editables (renderWATemplates — tab Automatización).
 - [ ] Función para enviar recordatorios de garantia o promociones por WhatsApp / email.
+- [ ] Que los codigos de descuentos creados en esta sección , sean validos, y se puedan usar en el apartado de descuento al realizar : Cotizacion, ticket, o compra de POS. 
+- [ ] alcance de cada codigo de descuento o promocion. 
+- [ ] seccion de promociones para que la de marketing las pueda crear y encender y apagar,  con rango de fecha valido, y demas reglas. 
+- [ ] Mejorar UX de Marketing ya que siento que no se puede hacer mucho y los botones y cards estan gigantes para lasa tools, pero no son editables , osea la de marketing no puede editar sus propios hiperivnculos, y tiene que poder ser mas personalizable a su uso, ya que si no estaria teniendo que meter tickets a IT . 
 
 
 ## Fase 8: Deploy interno
@@ -136,6 +140,9 @@ _Última actualización: 2026-05-27_
 - [x] Nueva sección: Cotizaciones. Sección dedicada, cotización se convierte a ticket con un clic. Partes/refacciones se agregan directamente desde el modal de edición del ticket.
 - [ ] Acceso para enviar la cotizacion a Whatsapp directamente, en PDF.
 - [ ] Cambio de status de Cotizacion a venta concretada.
+- [ ] La plantilla de cotizacion. debe de poderse *añadir servicio* o *añadir producto* , una manera en la que nosotros  vamos por ejemplo a ponerle precio de mano de obra al servicio, en el caso de reparacion: servicio + pieza de repuesto . por ejemplo y que se úeda añadir mas cosas como mas servicios o mas productos. E igual , eliminar la fila por ejemplo, ya nos era de reparacion, mejor pura refacciones entonces que se puedan añadir y eliminar . Y la cotizacion calcule el precio. 
+- [ ] Seriar las cotizaciones, para darles numero de cotizacion y podamos tenerles seguimiento y cuantificaciones. 
+
 
 ## Fase 12: Punto de Venta (POS)
 - [x] Diseño y análisis de arquitectura POS vs Ticket (decisiones: sin IVA, cliente opcional, recibo en v2).
@@ -145,8 +152,8 @@ _Última actualización: 2026-05-27_
 - [x] Historial de ventas recientes en la sección POS.
 - [x] Permisos: POS disponible para admin, standard, sales, technician. No disponible para marketing ni viewer.
 - [x] Tooltip de sección POS al hacer hover en el nav.
-- [ ] **⚠️ Pendiente: aplicar `supabase/13_pos_tables.sql` en Supabase SQL Editor** (requerido para que funcione en producción).
-- [ ] Recibo imprimible de venta POS (folio, productos, total, método de pago) — v2.
+- [x] aplicar `supabase/13_pos_tables.sql` en Supabase SQL Editor** (requerido para que funcione en producción).
+- [x] Recibo imprimible de venta POS (folio, productos, total, método de pago) — printPosRecibo() implementado.
 - [x] Ligar venta POS a cliente del catálogo — select opcional en el carrito; sin selección = venta anónima.
 - [ ] Descuento por porcentaje además de monto fijo.
 - [ ] Constraint `CHECK (stock >= 0)` en DB para prevenir stock negativo en ventas simultáneas.
@@ -158,6 +165,6 @@ _Última actualización: 2026-05-27_
   - Inventario: Productos, Insumos
   - Finanzas: Finanzas, Reportes
   - Admin: Usuarios, Soporte, Diseño, Automatización
-- [ ] Agregar estados de carga, errores y confirmaciones (pendiente de Fase 3).
-- [ ] El abono en tickets debería auto-crear una transacción Ingreso en Finanzas (hoy es manual).
+- [x] Agregar estados de carga, errores y confirmaciones — Sprint A completado 2026-05-27.
+- [x] El abono en tickets auto-crea transacción Ingreso en Finanzas — ya implementado (líneas 3002-3008 app.js).
 - [x] Boton de Compra al lado del de Ticket, para generar la compra de POS igual de rapido que un ticket. Y entonces mas peuqeño el boton de tikcet, y que sea cuadrado, no redondeado. o circular estaria mejor para ambos botones porfavor. uno de un carrito para POS y el otro de la herramienta como la del icono para Ticket de reparacion. 

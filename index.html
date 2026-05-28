@@ -326,8 +326,8 @@
             <span id="diseno-brand-badge"></span>
           </div>
 
-          <!-- Herramientas — se rellena dinámicamente por renderDiseno() -->
-          <div class="marketing-grid" id="marketing-links-grid" style="margin-bottom:28px"></div>
+          <!-- Herramientas — se rellena dinámicamente por renderDiseno() (editable) -->
+          <div id="marketing-links-grid" style="margin-bottom:28px"></div>
 
           <!-- Brand tokens -->
           <div class="section-heading"><h2>Paleta de marca</h2></div>
@@ -390,39 +390,8 @@
             <span class="role-badge role-marketing">Marketing</span>
           </div>
 
-          <!-- Herramientas estáticas (aplican a ambas sucursales) -->
-          <div class="marketing-grid" style="margin-bottom:28px">
-            <a class="marketing-card" href="https://make.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">⚡</div>
-              <strong>Make</strong>
-              <p>Automatizaciones de flujo: notificaciones, respuestas automáticas y sincronización entre apps</p>
-            </a>
-            <a class="marketing-card" href="https://zapier.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">🔗</div>
-              <strong>Zapier</strong>
-              <p>Conecta Google Sheets, Gmail, WhatsApp y más sin código</p>
-            </a>
-            <a class="marketing-card" href="https://business.whatsapp.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">💬</div>
-              <strong>WhatsApp Business</strong>
-              <p>Seguimiento a clientes, notificaciones de tickets listos y mensajes masivos</p>
-            </a>
-            <a class="marketing-card" href="https://mailchimp.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">📧</div>
-              <strong>Mailchimp</strong>
-              <p>Email marketing, campañas y newsletters para clientes recurrentes</p>
-            </a>
-            <a class="marketing-card" href="https://ads.google.com" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">🎯</div>
-              <strong>Google Ads</strong>
-              <p>Campañas de búsqueda y display para captación de clientes nuevos</p>
-            </a>
-            <a class="marketing-card" href="https://www.google.com/business/" target="_blank" rel="noopener">
-              <div class="marketing-card-icon">📍</div>
-              <strong>Google Business</strong>
-              <p>Perfil de negocio, reseñas y visibilidad local en Google Maps</p>
-            </a>
-          </div>
+          <!-- Herramientas — se renderizan dinámicamente (editables por Marketing) -->
+          <div id="auto-tools-grid" style="margin-bottom:28px"></div>
 
           <!-- Flujos sugeridos — se renderizan dinámicamente por sucursal desde renderDiseno() -->
           <div class="section-heading"><h2>Flujos sugeridos</h2></div>
@@ -526,6 +495,18 @@
             <button type="submit" class="primary-action">Guardar abono</button>
           </div>
         </form>
+      </div>
+    </dialog>
+
+    <!-- ── Confirm modal ────────────────────────────────────────────────────── -->
+    <dialog class="modal" id="confirm-modal" style="max-width:380px">
+      <div class="modal-header" style="border-bottom:none;padding-bottom:0">
+        <h2 class="modal-title" id="confirm-modal-title">Confirmar acción</h2>
+      </div>
+      <p id="confirm-modal-message" style="margin:12px 0 24px;color:rgba(255,255,255,.72);font-size:14px;line-height:1.55"></p>
+      <div style="display:flex;justify-content:flex-end;gap:10px">
+        <form method="dialog"><button class="ghost-button" type="submit">Cancelar</button></form>
+        <button class="primary-action" id="confirm-modal-ok">Confirmar</button>
       </div>
     </dialog>
 

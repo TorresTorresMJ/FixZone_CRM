@@ -156,6 +156,9 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 9. `11_merge_owner_into_admin.sql` — merge `owner` → `admin`
 10. `12_discount_fields.sql` — discount fields on service_tickets
 11. `13_pos_tables.sql` — POS tables, RLS, and stock-decrement trigger
+12. `16_quote_items.sql` — `quote_items` JSONB column on service_tickets (required for line-items cotizaciones)
+13. `17_pos_stock_constraint.sql` — `CHECK (stock >= 0)` constraint on products
+14. `18_discount_codes.sql` — `discount_codes` table with scope, date range, usage tracking, RLS
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 

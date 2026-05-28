@@ -36,6 +36,7 @@ let posCart = []; // [{productId, name, qty, unitPrice, maxStock}]
 let posCatalogFilter  = "all";
 let posCatalogSearch  = "";
 let posDiscount = 0;
+let posDiscountCode = "";       // applied promo code in POS
 let posPaymentMethod = "Efectivo";
 let posCustomerId = null; // null = venta anónima
 let lastPosSale = null; // sale snapshot shown after checkout for print button
@@ -59,6 +60,7 @@ const seed = {
   transactions: [],
   supportTasks: [],
   posSales: [],
+  discounts: [],
 };
 
 let state = loadState();
@@ -151,9 +153,8 @@ const formSchemas = {
     title: "Nueva cotización", collection: "tickets",
     fields: [
       ["client","Cliente","text"],
-      ["productName","Producto / equipo","text"],
-      ["issue","Descripción del problema","text",null,true],
-      ["repairAmount","Precio estimado","number"],
+      ["productName","Dispositivo / equipo","text"],
+      ["issue","Descripción del problema","text",null,true,true],
       ["branch","Sucursal","select",BRANCHES],
       ["notes","Notas","text",null,true,true],
     ],
@@ -195,8 +196,16 @@ function normalizeState(data) {
 
 function nextTracking(seq) { return `[FZ] ${String(seq).padStart(4,"0")}`; }
 function nextTicketSequence() {
-  const seqs = state.tickets.map(t => Number(String(t.tracking||"").replace(/\D/g,""))).filter(Boolean);
+  const seqs = state.tickets
+    .filter(t => String(t.tracking||"").startsWith("[FZ]"))
+    .map(t => Number(String(t.tracking||"").replace(/\D/g,""))).filter(Boolean);
   return Math.max(0,...seqs)+1;
+}
+function nextCotTracking() {
+  const seqs = state.tickets
+    .filter(t => String(t.tracking||"").startsWith("[COT]"))
+    .map(t => Number(String(t.tracking||"").replace(/\D/g,""))).filter(Boolean);
+  return `[COT] ${String(Math.max(0,...seqs)+1).padStart(4,"0")}`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -244,6 +253,7 @@ async function reloadState() {
       supplies:     remote.supplies.length     ? remote.supplies     : structuredClone(seed.supplies),
       transactions: remote.transactions.length ? remote.transactions : structuredClone(seed.transactions),
       posSales:     remote.posSales            ? remote.posSales     : [],
+      discounts:    remote.discounts           || [],
     };
     return state;
   } finally {
@@ -480,7 +490,7 @@ function currentPerms() {
 // REMOTE DATA
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadSupabaseState() {
-  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes] = await Promise.all([
+  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("name"),
     supabaseClient.from("employees").select("*").order("full_name"),
     supabaseClient.from("customers").select("*").order("created_at",{ascending:false}),
@@ -491,6 +501,7 @@ async function loadSupabaseState() {
     supabaseClient.from("transactions").select("*").order("transaction_date",{ascending:false}),
     supabaseClient.from("support_tasks").select("*, employees!support_tasks_assigned_to_fkey(full_name)").order("created_at",{ascending:false}),
     supabaseClient.from("pos_sales").select("*").order("created_at",{ascending:false}).limit(50),
+    supabaseClient.from("discount_codes").select("*").order("created_at",{ascending:false}),
   ]);
 
   const branchRows   = bRes.data  || [];
@@ -560,6 +571,7 @@ async function loadSupabaseState() {
         physicalCondition:dev?.physical_condition||"",
         // Customer phone — enable search by phone number
         phone:cust?.phone||"",
+        quoteItems: Array.isArray(t.quote_items) ? t.quote_items : (t.quote_items ? JSON.parse(t.quote_items) : []),
       };
     }),
     supplies: (puRes.data||[]).map(p => ({
@@ -583,6 +595,14 @@ async function loadSupabaseState() {
       discount:Number(s.discount_amount||0),
       createdAt:(s.created_at||"").slice(0,10),
       branch:branchRows.find(b=>b.id===s.branch_id)?.name||BRANCHES[0],
+    })),
+    discounts: (dcRes.data||[]).map(d => ({
+      id:d.id, code:d.code, description:d.description||"",
+      type:d.type, value:Number(d.value),
+      maxUses:d.max_uses||null, usedCount:Number(d.used_count||0),
+      validFrom:d.valid_from||null, validUntil:d.valid_until||null,
+      scope:Array.isArray(d.scope)?d.scope:["pos","cotizacion","ticket"],
+      active:d.active, branchId:d.branch_id||null,
     })),
   };
 }
@@ -614,6 +634,7 @@ function render() {
   renderUsers();
   renderSupport();
   renderDiseno();
+  renderAutoToolsSection();
   document.querySelector("#record-count").textContent = `${totalRecords()} registros`;
 }
 
@@ -799,6 +820,7 @@ async function handleKanbanDrop(event, newStage) {
   if (idx !== -1) state.tickets[idx] = { ...ticket, status: newStage };
   render();
   if (dataMode === "remote" && isUUID) {
+    setLoading(true, "Guardando…");
     try {
       await updateRemoteTicket(ticketId, { ...ticket, status: newStage });
       try { await reloadState(); } catch(e) { console.warn(e); }
@@ -806,8 +828,10 @@ async function handleKanbanDrop(event, newStage) {
     } catch(err) {
       if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], status: oldStatus };
       render();
-      alert(`Error al mover ticket: ${err.message}`);
+      showErrorToast(`Error al mover ticket: ${err.message}`);
       return;
+    } finally {
+      setLoading(false);
     }
   }
   // WhatsApp notification when ticket is ready for pickup
@@ -832,12 +856,27 @@ function renderCotizaciones() {
 function quoteCard(ticket, perms) {
   perms = perms || currentPerms();
   const repair = Number(ticket.repairAmount || 0);
+  const items  = ticket.quoteItems || [];
+
+  const itemsHtml = items.length
+    ? `<div style="margin:8px 0 4px">
+        ${items.map(i => `
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:rgba(255,255,255,.72)">
+            <span>${escapeHtml(i.type)} — ${escapeHtml(i.description||"")}</span>
+            <span style="white-space:nowrap;margin-left:8px">${i.qty>1?i.qty+"× ":""}${money.format(i.qty*i.unitPrice)}</span>
+          </div>`).join("")}
+        <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,.1)">
+          <span>Total estimado</span><span style="color:var(--fz-secondary,#2678E8)">${money.format(repair)}</span>
+        </div>
+      </div>`
+    : (repair > 0 ? `<div class="ticket-detail-grid"><span>Costo estimado</span><strong>${money.format(repair)}</strong></div>` : "");
+
   return `<article class="ticket-card">
     <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span></div>
     <div class="ticket-topline"><strong>${escapeHtml(ticket.client)}</strong><span class="muted">${escapeHtml(ticket.createdAt)}</span></div>
     <span class="muted">${escapeHtml(ticket.productName)}</span>
-    <p>${escapeHtml(ticket.issue)}</p>
-    ${repair > 0 ? `<div class="ticket-detail-grid"><span>Costo estimado</span><strong>${money.format(repair)}</strong></div>` : ""}
+    ${ticket.issue ? `<p style="margin:4px 0">${escapeHtml(ticket.issue)}</p>` : ""}
+    ${itemsHtml}
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}">Recibo</button>
       <button class="primary-action" style="font-size:12px;padding:5px 12px;min-height:0" data-approve-quote="${ticket.id}">✓ Aprobar</button>
@@ -847,24 +886,28 @@ function quoteCard(ticket, perms) {
   </article>`;
 }
 
-async function approveQuoteToTicket(ticketId) {
-  if (!confirm("¿Convertir esta cotización a ticket activo (Recibido)?")) return;
-  const ticket = state.tickets.find(t => t.id === ticketId);
-  if (!ticket) return;
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
-  const idx = state.tickets.findIndex(t => t.id === ticketId);
-  if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Recibido" };
-  if (dataMode === "remote" && isUUID) {
-    try {
-      await updateRemoteTicket(ticketId, { ...ticket, status: "Recibido" });
-      try { await reloadState(); } catch(e) { console.warn(e); }
-    } catch(err) {
-      if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Cotizacion" };
-      alert(`Error: ${err.message}`); return;
+function approveQuoteToTicket(ticketId) {
+  showConfirmModal("¿Convertir esta cotización a ticket activo (Recibido)?", {
+    label: "Aprobar",
+    onConfirm: async () => {
+      const ticket = state.tickets.find(t => t.id === ticketId);
+      if (!ticket) return;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
+      const idx = state.tickets.findIndex(t => t.id === ticketId);
+      if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Recibido" };
+      if (dataMode === "remote" && isUUID) {
+        try {
+          await updateRemoteTicket(ticketId, { ...ticket, status: "Recibido" });
+          try { await reloadState(); } catch(e) { console.warn(e); }
+        } catch(err) {
+          if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Cotizacion" };
+          showErrorToast(`Error: ${err.message}`); return;
+        }
+      }
+      render();
+      showToast("✓ Cotización aprobada — ticket movido a Recibido");
     }
-  }
-  render();
-  showToast("✓ Cotización aprobada — ticket movido a Recibido");
+  });
 }
 
 function ticketCard(ticket, perms) {
@@ -992,11 +1035,20 @@ function renderPos() {
     </div>
     <div class="pos-cart-totals">
       <div class="pos-total-row"><span class="muted">Subtotal</span><span>${money.format(subtotal)}</span></div>
+      <div class="pos-total-row" style="flex-wrap:wrap;gap:4px">
+        <span class="muted" style="white-space:nowrap">Código descuento</span>
+        <div style="display:flex;gap:4px;margin-left:auto">
+          <input id="pos-code-input" type="text" value="${escapeHtml(posDiscountCode)}" placeholder="PROMO10"
+            style="width:90px;text-align:center;font-size:11px;font-family:monospace;text-transform:uppercase;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:3px 6px;color:inherit"
+            oninput="posDiscountCode=this.value.toUpperCase()">
+          <button type="button" class="mini-button" id="pos-apply-code" style="font-size:11px;padding:3px 8px">Aplicar</button>
+        </div>
+      </div>
       <div class="pos-total-row">
-        <span class="muted">Descuento</span>
-        <input type="number" id="pos-discount-input" value="${posDiscount}" min="0" step="1"
-          oninput="posDiscount=Math.max(0,Number(this.value)||0);renderPos()"
-          style="width:80px;text-align:right;font-size:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:3px 6px;color:inherit">
+        <span class="muted">Descuento${posDiscountCode?" ("+escapeHtml(posDiscountCode)+")":""}</span>
+        <input type="number" id="pos-discount-input" value="${posDiscount}" min="0" step="0.01"
+          oninput="posDiscount=Math.max(0,Number(this.value)||0);posDiscountCode='';document.querySelector('#pos-code-input')&&(document.querySelector('#pos-code-input').value='');renderPos()"
+          style="width:70px;text-align:right;font-size:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:3px 6px;color:inherit">
       </div>
       <div class="pos-total-row grand"><span>Total</span><span>${money.format(total)}</span></div>
     </div>
@@ -1041,16 +1093,17 @@ function renderPosHistory() {
     </div>`;
 }
 
-async function checkoutPos() {
+function checkoutPos() {
   if (!posCart.length) return;
-  if (dataMode !== "remote") { alert("Conecta a Supabase para registrar ventas."); return; }
+  if (dataMode !== "remote") { showErrorToast("Conecta a Supabase para registrar ventas."); return; }
 
   const subtotal = posCart.reduce((s, i) => s + i.qty * i.unitPrice, 0);
   const total    = Math.max(0, subtotal - posDiscount);
   const method   = posPaymentMethod;
 
-  if (!confirm(`Confirmar venta por ${money.format(total)} (${method})?`)) return;
-
+  showConfirmModal(`Confirmar venta por ${money.format(total)} (${method})`, {
+    label: "Confirmar venta",
+    onConfirm: async () => {
   setLoading(true, "Procesando venta…");
   try {
     const branchId = await branchIdByName(activeBranchId);
@@ -1097,6 +1150,12 @@ async function checkoutPos() {
       if (prod) prod.stock = Math.max(0, Number(prod.stock) - item.qty);
     }
 
+    // Mark discount code as used
+    if (posDiscountCode) {
+      const dcResult = applyDiscount(subtotal, posDiscountCode, "pos");
+      if (dcResult.valid && dcResult.id) markDiscountUsed(dcResult.id);
+    }
+
     state.posSales = state.posSales || [];
     state.posSales.unshift({ id:sale.id, total, paymentMethod:method,
       discount:posDiscount, createdAt:dateStamp(), branch:activeBranchId });
@@ -1104,21 +1163,24 @@ async function checkoutPos() {
     lastPosSale = {
       items: posCart.map(i => ({ ...i })),
       total, method, discount: posDiscount,
+      discountCode: posDiscountCode,
       clientName: clientName,
       date: dateStamp(),
     };
     posCart = [];
     posDiscount = 0;
+    posDiscountCode = "";
     posCustomerId = null;
 
     showToast(`✓ Venta registrada: ${money.format(total)}`);
     render();
     reloadState().catch(e => console.warn("POS reload:", e));
   } catch(err) {
-    alert(`Error al procesar venta: ${err.message}`);
+    showErrorToast(`Error al procesar venta: ${err.message}`);
   } finally {
     setLoading(false);
   }
+  } }); // end showConfirmModal onConfirm
 }
 
 let financePeriod = "month"; // "today" | "week" | "month" | "all"
@@ -1520,6 +1582,7 @@ async function handleSupportDrop(event, newStatus) {
   render();
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId);
   if (dataMode === "remote" && isUUID) {
+    setLoading(true, "Guardando…");
     try {
       await updateRemoteSupportTask(taskId, { ...task, status: newStatus });
       try { await reloadState(); } catch(e) { console.warn(e); }
@@ -1527,7 +1590,9 @@ async function handleSupportDrop(event, newStatus) {
     } catch(err) {
       if (idx !== -1) state.supportTasks[idx] = { ...task, status: oldStatus };
       render();
-      alert(`Error al mover tarea: ${err.message}`);
+      showErrorToast(`Error al mover tarea: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   }
 }
@@ -1571,15 +1636,21 @@ function renderDiseno() {
     badge.style.cssText = `background:rgba(var(--fz-primary-rgb),0.18);color:var(--fz-secondary);border:1px solid rgba(var(--fz-primary-rgb),0.3);display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:800`;
   }
 
-  // Grid de herramientas por sucursal
+  // Grid de herramientas por sucursal (editable con overrides en localStorage)
   const grid = document.querySelector("#marketing-links-grid");
-  if (grid && links.length) {
-    grid.innerHTML = links.map(l => `
-      <a class="marketing-card" href="${escapeHtml(l.url)}" target="_blank" rel="noopener">
-        <div class="marketing-card-icon">${l.icon}</div>
-        <strong>${escapeHtml(l.name)}</strong>
-        <p>${escapeHtml(l.desc)}</p>
-      </a>`).join("");
+  if (grid) {
+    const savedLinks = getMktLinks(activeBranchId);
+    const activeLinks = savedLinks || links;
+    renderMarketingLinksGrid(grid, activeLinks.map(l => ({ ...l })), saved => {
+      if (saved === null) {
+        const all = JSON.parse(localStorage.getItem(MKT_LINKS_KEY) || "{}");
+        delete all[activeBranchId];
+        localStorage.setItem(MKT_LINKS_KEY, JSON.stringify(all));
+        renderDiseno();
+      } else {
+        saveMktLinks(activeBranchId, saved);
+      }
+    });
   }
 
   // Flujos sugeridos por sucursal
@@ -1624,6 +1695,136 @@ function renderDiseno() {
   renderDiscountManager();
   renderWATemplates();
   renderBrandEditor();
+}
+
+// ── Marketing links — editable per branch, stored in localStorage ─────────────
+const MKT_LINKS_KEY = "fixzone-mkt-links-v1";
+const AUTO_TOOLS_KEY = "fixzone-auto-tools-v1";
+
+const DEFAULT_AUTO_TOOLS = [
+  { icon:"⚡", name:"Make",              url:"https://make.com",                    desc:"Automatizaciones de flujo: notificaciones y sincronización entre apps" },
+  { icon:"🔗", name:"Zapier",            url:"https://zapier.com",                  desc:"Conecta Google Sheets, Gmail, WhatsApp y más sin código" },
+  { icon:"💬", name:"WhatsApp Business", url:"https://business.whatsapp.com",       desc:"Seguimiento a clientes y mensajes masivos" },
+  { icon:"📧", name:"Mailchimp",         url:"https://mailchimp.com",               desc:"Email marketing, campañas y newsletters" },
+  { icon:"🎯", name:"Google Ads",        url:"https://ads.google.com",              desc:"Campañas de búsqueda y display para captación" },
+  { icon:"📍", name:"Google Business",   url:"https://www.google.com/business/",    desc:"Perfil de negocio, reseñas y visibilidad en Maps" },
+];
+
+function getMktLinks(branch) {
+  try {
+    const all = JSON.parse(localStorage.getItem(MKT_LINKS_KEY) || "{}");
+    return all[branch] || null;
+  } catch { return null; }
+}
+function saveMktLinks(branch, links) {
+  try {
+    const all = JSON.parse(localStorage.getItem(MKT_LINKS_KEY) || "{}");
+    all[branch] = links;
+    localStorage.setItem(MKT_LINKS_KEY, JSON.stringify(all));
+  } catch {}
+}
+function getAutoTools() {
+  try { return JSON.parse(localStorage.getItem(AUTO_TOOLS_KEY) || "null") || DEFAULT_AUTO_TOOLS; } catch { return DEFAULT_AUTO_TOOLS; }
+}
+function saveAutoTools(tools) { localStorage.setItem(AUTO_TOOLS_KEY, JSON.stringify(tools)); }
+
+function renderMarketingLinksGrid(container, links, onSave) {
+  if (!container) return;
+  let editMode = false;
+  let draft = links.map(l => ({ ...l }));
+
+  const render = () => {
+    container.innerHTML = `
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px">
+        ${editMode
+          ? `<button class="mini-button danger-btn" id="mkt-cancel-edit" style="font-size:11px;padding:3px 10px">Cancelar</button>
+             <button class="primary-action" id="mkt-save-links" style="font-size:11px;padding:4px 12px">Guardar</button>
+             <button class="mini-button" id="mkt-add-link" style="font-size:11px;padding:3px 10px">+ Agregar</button>`
+          : `<button class="mini-button" id="mkt-toggle-edit" style="font-size:11px;padding:3px 10px">✎ Editar enlaces</button>
+             <button class="mini-button danger-btn" id="mkt-reset-links" style="font-size:11px;padding:3px 10px">Restaurar</button>`
+        }
+      </div>
+      ${editMode
+        ? `<div style="display:flex;flex-direction:column;gap:8px" id="mkt-edit-rows">
+            ${draft.map((l, i) => `
+              <div style="display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.04);border-radius:6px;padding:8px 10px">
+                <input value="${escapeHtml(l.icon||"")}" data-mkt-icon="${i}" style="width:40px;text-align:center;font-size:16px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:3px 5px;color:inherit" placeholder="🔗">
+                <input value="${escapeHtml(l.name||"")}" data-mkt-name="${i}" style="flex:1;min-width:80px;font-size:12px;font-weight:600;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:3px 8px;color:inherit" placeholder="Nombre">
+                <input value="${escapeHtml(l.url||"")}" data-mkt-url="${i}" style="flex:2;min-width:140px;font-size:11px;font-family:monospace;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:3px 8px;color:inherit" placeholder="https://...">
+                <input value="${escapeHtml(l.desc||"")}" data-mkt-desc="${i}" style="flex:2;font-size:11px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:3px 8px;color:inherit" placeholder="Descripción">
+                <button type="button" data-mkt-del="${i}" class="mini-button danger-btn" style="padding:2px 8px;font-size:11px">✕</button>
+              </div>`).join("")}
+          </div>`
+        : `<div class="marketing-grid">
+            ${draft.map(l => `
+              <a class="marketing-card" href="${escapeHtml(l.url||"#")}" target="_blank" rel="noopener">
+                <div class="marketing-card-icon">${l.icon||"🔗"}</div>
+                <strong>${escapeHtml(l.name||"")}</strong>
+                <p>${escapeHtml(l.desc||"")}</p>
+              </a>`).join("")}
+          </div>`
+      }`;
+
+    container.querySelector("#mkt-toggle-edit")?.addEventListener("click", () => {
+      editMode = true; draft = links.map(l => ({ ...l })); render();
+    });
+    container.querySelector("#mkt-cancel-edit")?.addEventListener("click", () => {
+      editMode = false; draft = links.map(l => ({ ...l })); render();
+    });
+    container.querySelector("#mkt-reset-links")?.addEventListener("click", () => {
+      showConfirmModal("¿Restaurar los enlaces a los valores predeterminados?", {
+        label: "Restaurar",
+        onConfirm: () => { onSave(null); }
+      });
+    });
+    container.querySelector("#mkt-add-link")?.addEventListener("click", () => {
+      draft.push({ icon:"🔗", name:"", url:"", desc:"" }); render();
+    });
+    container.querySelector("#mkt-save-links")?.addEventListener("click", () => {
+      const rows = container.querySelectorAll("[data-mkt-url]");
+      rows.forEach((inp, i) => {
+        draft[i] = {
+          icon: container.querySelector(`[data-mkt-icon="${i}"]`)?.value.trim() || "🔗",
+          name: container.querySelector(`[data-mkt-name="${i}"]`)?.value.trim() || "",
+          url:  inp.value.trim(),
+          desc: container.querySelector(`[data-mkt-desc="${i}"]`)?.value.trim() || "",
+        };
+      });
+      const valid = draft.filter(l => l.name && l.url);
+      if (!valid.length) { showErrorToast("Agrega al menos un enlace con nombre y URL."); return; }
+      onSave(valid);
+      editMode = false;
+      links.splice(0, links.length, ...valid);
+      render();
+      showToast("✓ Enlaces guardados");
+    });
+  };
+
+  // Re-initialize the container so repeated calls don't accumulate listeners
+  const fresh = container.cloneNode(false);
+  container.replaceWith(fresh);
+  container = fresh;
+
+  container.addEventListener("click", e => {
+    const idx = e.target.closest("[data-mkt-del]")?.dataset.mktDel;
+    if (idx !== undefined && editMode) { draft.splice(Number(idx), 1); render(); }
+  });
+
+  render();
+}
+
+function renderAutoToolsSection() {
+  const container = document.querySelector("#auto-tools-grid");
+  if (!container) return;
+  const tools = getAutoTools();
+  renderMarketingLinksGrid(container, tools, saved => {
+    if (saved === null) {
+      localStorage.removeItem(AUTO_TOOLS_KEY);
+      renderAutoToolsSection();
+    } else {
+      saveAutoTools(saved);
+    }
+  });
 }
 
 // ── Brand palette editor ──────────────────────────────────────────────────────
@@ -1767,15 +1968,19 @@ function renderBrandEditor() {
   });
 
   el.querySelector("#brand-reset-btn")?.addEventListener("click", () => {
-    if (!confirm(`¿Restaurar la paleta default de ${activeBranchId}?`)) return;
-    const all = getBrandOverrides();
-    const logo = all[activeBranchId]?.["--fz-logo-src"];
-    delete all[activeBranchId];
-    if (logo) { all[activeBranchId] = { "--fz-logo-src": logo }; }
-    saveBrandOverrides(all);
-    applyBranchBrand(activeBranchId);
-    renderDiseno();
-    showToast("✓ Paleta restaurada");
+    showConfirmModal(`¿Restaurar la paleta default de ${activeBranchId}?`, {
+      label: "Restaurar",
+      onConfirm: () => {
+        const all = getBrandOverrides();
+        const logo = all[activeBranchId]?.["--fz-logo-src"];
+        delete all[activeBranchId];
+        if (logo) { all[activeBranchId] = { "--fz-logo-src": logo }; }
+        saveBrandOverrides(all);
+        applyBranchBrand(activeBranchId);
+        renderDiseno();
+        showToast("✓ Paleta restaurada");
+      }
+    });
   });
 
   // Logo: preview when file selected
@@ -1831,13 +2036,18 @@ function renderBrandEditor() {
   });
 
   el.querySelector("#brand-logo-reset-btn")?.addEventListener("click", () => {
-    if (!confirm(`¿Eliminar el logo guardado de ${activeBranchId}?`)) return;
-    const all = getBrandOverrides();
-    if (all[activeBranchId]) delete all[activeBranchId]["--fz-logo-src"];
-    saveBrandOverrides(all);
-    applyBranchBrand(activeBranchId);
-    renderBrandEditor();
-    showToast("✓ Logo eliminado, usando logo default");
+    showConfirmModal(`¿Eliminar el logo guardado de ${activeBranchId}?`, {
+      label: "Eliminar logo",
+      danger: true,
+      onConfirm: () => {
+        const all = getBrandOverrides();
+        if (all[activeBranchId]) delete all[activeBranchId]["--fz-logo-src"];
+        saveBrandOverrides(all);
+        applyBranchBrand(activeBranchId);
+        renderBrandEditor();
+        showToast("✓ Logo eliminado, usando logo default");
+      }
+    });
   });
 }
 
@@ -1878,8 +2088,7 @@ function renderWATemplates() {
   });
 }
 
-// ── Discount codes (managed by Marketing, stored in localStorage) ─────────────
-const DISCOUNTS_KEY  = "fixzone-discounts-v1";
+// ── Discount codes (managed via Supabase discount_codes table) ────────────────
 const WA_TEMPLATES_KEY = "fixzone-wa-templates-v1";
 const DEFAULT_WA_TEMPLATES = {
   listo:  "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!",
@@ -1903,24 +2112,40 @@ function fillWATemplate(key, vars) {
     .replace(/{saldo}/g,   vars.pending||"");
 }
 
-function getDiscounts() {
-  try { return JSON.parse(localStorage.getItem(DISCOUNTS_KEY) || "[]"); } catch { return []; }
+function applyDiscount(baseAmount, code, scope = "ticket") {
+  const today = new Date().toISOString().slice(0, 10);
+  const allCodes = [...(state.discounts || [])];
+  const d = allCodes.find(x =>
+    x.code.toLowerCase() === (code || "").toLowerCase() &&
+    x.active &&
+    (!x.validFrom  || today >= x.validFrom) &&
+    (!x.validUntil || today <= x.validUntil) &&
+    (!x.maxUses    || x.usedCount < x.maxUses) &&
+    (Array.isArray(x.scope) ? x.scope.includes(scope) : true)
+  );
+  if (!d) return { amount: 0, pct: 0, label: "", valid: false };
+  const pct    = d.type === "percent" ? Number(d.value) : 0;
+  const fixed  = d.type === "fixed"   ? Number(d.value) : 0;
+  const amount = fixed + (baseAmount * pct / 100);
+  return { amount: Math.min(amount, baseAmount), pct, label: d.description || d.code, valid: true, id: d.id };
 }
-function saveDiscounts(list) { localStorage.setItem(DISCOUNTS_KEY, JSON.stringify(list)); }
 
-function applyDiscount(repairAmount, code) {
-  const d = getDiscounts().find(x => x.code.toLowerCase() === (code||"").toLowerCase() && x.active);
-  if (!d) return { amount: 0, pct: 0, label: "" };
-  const pct = d.type === "pct" ? Number(d.value) : 0;
-  const fixed = d.type === "fixed" ? Number(d.value) : 0;
-  const amount = fixed + (repairAmount * pct / 100);
-  return { amount: Math.min(amount, repairAmount), pct, label: d.description || d.code };
+async function markDiscountUsed(discountId) {
+  if (!supabaseClient || !discountId) return;
+  const disc = (state.discounts || []).find(d => d.id === discountId);
+  if (!disc) return;
+  disc.usedCount = (disc.usedCount || 0) + 1;
+  await supabaseClient.from("discount_codes")
+    .update({ used_count: disc.usedCount })
+    .eq("id", discountId);
 }
 
 function renderDiscountManager() {
   const el = document.querySelector("#discount-manager");
   if (!el) return;
-  const discounts = getDiscounts();
+  const discounts = state.discounts || [];
+  const today = new Date().toISOString().slice(0, 10);
+
   el.innerHTML = `
     <div class="card" style="margin-top:24px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -1928,27 +2153,55 @@ function renderDiscountManager() {
         <button class="primary-action" style="font-size:12px;padding:6px 14px" id="add-discount-btn">+ Nuevo código</button>
       </div>
       <div id="discounts-list">
-        ${discounts.length ? discounts.map((d,i)=>`
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13px">
-            <span style="font-family:monospace;background:rgba(255,255,255,.08);padding:2px 8px;border-radius:4px;font-weight:700">${escapeHtml(d.code)}</span>
-            <span style="flex:1">${escapeHtml(d.description||"")}</span>
-            <span class="${d.type==="pct"?"type-income":"type-expense"}">${d.type==="pct"?d.value+"%":"$"+d.value}</span>
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px">
-              <input type="checkbox" ${d.active?"checked":""} data-toggle-discount="${i}"> Activo
+        ${discounts.length ? discounts.map(d => {
+          const expired = d.validUntil && today > d.validUntil;
+          const future  = d.validFrom  && today < d.validFrom;
+          const scopeLabel = (d.scope||[]).map(s=>({pos:"POS",cotizacion:"Cotización",ticket:"Ticket"}[s]||s)).join(", ");
+          const dateRange = d.validFrom||d.validUntil ? `${d.validFrom||""}${d.validFrom&&d.validUntil?" → ":""}${d.validUntil||""}` : "Sin límite";
+          return `
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13px;flex-wrap:wrap">
+            <span style="font-family:monospace;background:rgba(255,255,255,.08);padding:2px 8px;border-radius:4px;font-weight:700;min-width:80px">${escapeHtml(d.code)}</span>
+            <span style="flex:1;min-width:100px">${escapeHtml(d.description||"")}</span>
+            <span class="${d.type==="percent"?"type-income":"type-expense"}" style="white-space:nowrap">${d.type==="percent"?d.value+"%":"$"+d.value}</span>
+            <span class="muted" style="font-size:11px;white-space:nowrap">${escapeHtml(dateRange)}</span>
+            <span class="muted" style="font-size:11px;white-space:nowrap">${escapeHtml(scopeLabel)}</span>
+            ${d.maxUses ? `<span class="muted" style="font-size:11px">${d.usedCount}/${d.maxUses} usos</span>` : ""}
+            <span class="status ${expired?"urgent":future?"warning":d.active?"done":""}" style="font-size:10px">
+              ${expired?"Expirado":future?"Pendiente":d.active?"Activo":"Inactivo"}
+            </span>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+              <input type="checkbox" ${d.active?"checked":""} data-toggle-discount="${d.id}">
             </label>
-            <button class="mini-button danger-btn" style="padding:2px 8px" data-delete-discount="${i}">✕</button>
-          </div>`).join("") : `<p class="muted" style="font-size:13px">No hay códigos creados.</p>`}
+            <button class="mini-button danger-btn" style="padding:2px 8px" data-delete-discount="${d.id}">✕</button>
+          </div>`;
+        }).join("") : `<p class="muted" style="font-size:13px">No hay códigos creados.</p>`}
       </div>
       <div id="new-discount-form" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)">
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-          <div class="field" style="margin:0;flex:1;min-width:120px"><label style="font-size:11px">Código</label>
+          <div class="field" style="margin:0;flex:1;min-width:120px"><label style="font-size:11px">Código *</label>
             <input id="dc-code" type="text" placeholder="PROMO10" style="text-transform:uppercase;font-family:monospace" /></div>
-          <div class="field" style="margin:0;width:110px"><label style="font-size:11px">Tipo</label>
-            <select id="dc-type"><option value="pct">Porcentaje (%)</option><option value="fixed">Fijo ($)</option></select></div>
-          <div class="field" style="margin:0;width:90px"><label style="font-size:11px">Valor</label>
-            <input id="dc-value" type="number" min="1" placeholder="10" /></div>
+          <div class="field" style="margin:0;width:120px"><label style="font-size:11px">Tipo</label>
+            <select id="dc-type"><option value="percent">Porcentaje (%)</option><option value="fixed">Fijo ($)</option></select></div>
+          <div class="field" style="margin:0;width:90px"><label style="font-size:11px">Valor *</label>
+            <input id="dc-value" type="number" min="0.01" step="0.01" placeholder="10" /></div>
           <div class="field" style="margin:0;flex:2;min-width:140px"><label style="font-size:11px">Descripción</label>
             <input id="dc-desc" type="text" placeholder="Descuento de temporada" /></div>
+          <div class="field" style="margin:0;width:120px"><label style="font-size:11px">Válido desde</label>
+            <input id="dc-from" type="date" /></div>
+          <div class="field" style="margin:0;width:120px"><label style="font-size:11px">Válido hasta</label>
+            <input id="dc-until" type="date" /></div>
+          <div class="field" style="margin:0;width:90px"><label style="font-size:11px">Máx. usos</label>
+            <input id="dc-maxuses" type="number" min="1" placeholder="∞" /></div>
+          <div class="field is-wide" style="margin:0">
+            <label style="font-size:11px">Aplica en</label>
+            <div style="display:flex;gap:14px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="dc-scope-pos" checked> POS</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="dc-scope-cot" checked> Cotización</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="dc-scope-tkt" checked> Ticket</label>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
           <button class="primary-action" id="save-discount-btn" style="font-size:12px;padding:6px 14px">Guardar</button>
           <button class="ghost-button" id="cancel-discount-btn" style="font-size:12px;padding:6px 14px">Cancelar</button>
         </div>
@@ -1963,33 +2216,61 @@ function renderDiscountManager() {
     el.querySelector("#new-discount-form").style.display = "none";
     el.querySelector("#add-discount-btn").style.display = "";
   });
-  el.querySelector("#save-discount-btn")?.addEventListener("click", () => {
+  el.querySelector("#save-discount-btn")?.addEventListener("click", async () => {
     const code  = (el.querySelector("#dc-code").value||"").trim().toUpperCase();
     const type  = el.querySelector("#dc-type").value;
     const value = Number(el.querySelector("#dc-value").value||0);
-    const desc  = el.querySelector("#dc-desc").value.trim();
-    if (!code || value <= 0) { alert("Código y valor son requeridos."); return; }
-    const list = getDiscounts();
-    if (list.find(d=>d.code===code)) { alert("Ese código ya existe."); return; }
-    list.push({ code, type, value, description: desc, active: true });
-    saveDiscounts(list);
+    const desc  = (el.querySelector("#dc-desc").value||"").trim();
+    const from  = el.querySelector("#dc-from").value || null;
+    const until = el.querySelector("#dc-until").value || null;
+    const maxUses = Number(el.querySelector("#dc-maxuses").value||0) || null;
+    const scope = [];
+    if (el.querySelector("#dc-scope-pos").checked)  scope.push("pos");
+    if (el.querySelector("#dc-scope-cot").checked)  scope.push("cotizacion");
+    if (el.querySelector("#dc-scope-tkt").checked)  scope.push("ticket");
+    if (!code || value <= 0) { showErrorToast("Código y valor son requeridos."); return; }
+    if (scope.length === 0)  { showErrorToast("Selecciona al menos un alcance."); return; }
+    if (from && until && from > until) { showErrorToast("La fecha de inicio no puede ser posterior a la fecha de fin."); return; }
+    if ((state.discounts||[]).find(d=>d.code===code)) { showErrorToast("Ese código ya existe."); return; }
+    if (!supabaseClient) { showErrorToast("Se requiere conexión a Supabase para guardar códigos."); return; }
+    const { data, error } = await supabaseClient.from("discount_codes").insert({
+      code, type, value, description: desc||null,
+      valid_from: from, valid_until: until, max_uses: maxUses,
+      scope, active: true,
+      branch_id: activeBranchId || null,
+    }).select().single();
+    if (error) { showErrorToast("Error al guardar: " + error.message); return; }
+    state.discounts = state.discounts || [];
+    state.discounts.unshift({ id:data.id, code:data.code, description:data.description||"",
+      type:data.type, value:Number(data.value), maxUses:data.max_uses||null, usedCount:0,
+      validFrom:data.valid_from||null, validUntil:data.valid_until||null,
+      scope:data.scope||["pos","cotizacion","ticket"], active:true, branchId:data.branch_id||null });
+    showToast("✓ Código guardado");
     renderDiscountManager();
   });
-  el.querySelector("#discounts-list")?.addEventListener("change", e => {
-    const idx = e.target.dataset.toggleDiscount;
-    if (idx === undefined) return;
-    const list = getDiscounts();
-    list[idx].active = e.target.checked;
-    saveDiscounts(list);
+  el.querySelector("#discounts-list")?.addEventListener("change", async e => {
+    const id = e.target.dataset.toggleDiscount;
+    if (!id) return;
+    const disc = (state.discounts||[]).find(d=>d.id===id);
+    if (!disc) return;
+    disc.active = e.target.checked;
+    if (supabaseClient) await supabaseClient.from("discount_codes").update({ active: disc.active }).eq("id", id);
   });
   el.querySelector("#discounts-list")?.addEventListener("click", e => {
-    const idx = e.target.dataset.deleteDiscount;
-    if (idx === undefined) return;
-    if (!confirm("¿Eliminar este código?")) return;
-    const list = getDiscounts();
-    list.splice(Number(idx), 1);
-    saveDiscounts(list);
-    renderDiscountManager();
+    const id = e.target.dataset.deleteDiscount;
+    if (!id) return;
+    showConfirmModal("¿Eliminar este código de descuento?", {
+      label: "Eliminar",
+      danger: true,
+      onConfirm: async () => {
+        if (supabaseClient) {
+          const { error } = await supabaseClient.from("discount_codes").delete().eq("id", id);
+          if (error) { showErrorToast("Error al eliminar: " + error.message); return; }
+        }
+        state.discounts = (state.discounts||[]).filter(d=>d.id!==id);
+        renderDiscountManager();
+      }
+    });
   });
 }
 
@@ -2097,17 +2378,22 @@ async function updateRemoteProduct(productId, data) {
   if (error) throw error;
 }
 
-async function deleteRemoteProduct(productId) {
+function deleteRemoteProduct(productId) {
   const product = state.products.find(p => p.id === productId);
   const name = product?.name || "este producto";
-  if (!confirm(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`)) return;
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId);
-  if (isUUID) {
-    const { error } = await supabaseClient.from("products").delete().eq("id", productId);
-    if (error) { alert(`Error al eliminar: ${error.message}`); return; }
-  }
-  state.products = state.products.filter(p => p.id !== productId);
-  render();
+  showConfirmModal(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`, {
+    label: "Eliminar",
+    danger: true,
+    onConfirm: async () => {
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId);
+      if (isUUID) {
+        const { error } = await supabaseClient.from("products").delete().eq("id", productId);
+        if (error) { showErrorToast(`Error al eliminar: ${error.message}`); return; }
+      }
+      state.products = state.products.filter(p => p.id !== productId);
+      render();
+    }
+  });
 }
 
 // ── Edit: Supply ──────────────────────────────────────────────────────────────
@@ -2171,6 +2457,142 @@ async function updateRemoteTransaction(txId, data) {
 // ──────────────────────────────────────────────────────────────────────────────
 // FORMS
 // ──────────────────────────────────────────────────────────────────────────────
+// ── Quote items builder ───────────────────────────────────────────────────────
+let quoteItemsDraft = [];
+
+function renderQuoteItemsDraft() {
+  const rowsEl  = document.querySelector("#qi-rows");
+  const emptyEl = document.querySelector("#qi-empty");
+  if (!rowsEl) return;
+  emptyEl && (emptyEl.style.display = quoteItemsDraft.length ? "none" : "");
+  rowsEl.innerHTML = quoteItemsDraft.map((item, idx) => `
+    <div class="qi-row" style="display:grid;grid-template-columns:100px 1fr 52px 88px 26px;gap:6px;align-items:center;margin-bottom:4px">
+      <select class="qi-type" data-idx="${idx}" style="font-size:12px;padding:5px 6px">
+        ${["Servicio","Refacción","Producto"].map(t=>`<option ${item.type===t?"selected":""}>${t}</option>`).join("")}
+      </select>
+      <input class="qi-desc" data-idx="${idx}" type="text" placeholder="Descripción…" value="${escapeHtml(item.description||"")}" style="font-size:13px">
+      <input class="qi-qty" data-idx="${idx}" type="number" value="${item.qty}" min="1" style="font-size:13px;text-align:center">
+      <input class="qi-price" data-idx="${idx}" type="number" value="${item.unitPrice||""}" placeholder="Precio" min="0" step="1" style="font-size:13px">
+      <button type="button" class="qi-del" data-idx="${idx}" title="Eliminar fila" style="padding:2px 5px;font-size:13px;opacity:.5;cursor:pointer;background:none;border:none;color:inherit">✕</button>
+    </div>`).join("");
+  updateQuoteItemsHiddenInputs();
+}
+
+function updateQuoteItemsHiddenInputs() {
+  const subtotal     = quoteItemsDraft.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  const code         = (document.querySelector("#qi-discount-code")?.value || "").trim().toUpperCase();
+  const discAmt      = Number(document.querySelector("#qi-discount-amount")?.value || 0);
+  const total        = Math.max(0, subtotal - discAmt);
+  const totalEl      = document.querySelector("#qi-total");
+  const amountInput  = document.querySelector("#qi-repair-amount");
+  const jsonInput    = document.querySelector("#qi-items-json");
+  const discLabel    = document.querySelector("#qi-discount-label");
+  if (totalEl)     totalEl.textContent = money.format(total);
+  if (amountInput) amountInput.value   = total.toFixed(2);
+  if (jsonInput)   jsonInput.value     = JSON.stringify(quoteItemsDraft);
+  if (discLabel) {
+    if (discAmt > 0) {
+      discLabel.textContent = `Descuento${code?" ("+code+")":""}: -${money.format(discAmt)}`;
+      discLabel.style.display = "";
+    } else {
+      discLabel.style.display = "none";
+    }
+  }
+}
+
+function initQuoteItemsBuilder(existingItems = []) {
+  quoteItemsDraft = existingItems.map(i => ({ ...i }));
+  renderQuoteItemsDraft();
+
+  document.querySelector("#qi-add-service")?.addEventListener("click", () => {
+    quoteItemsDraft.push({ type: "Servicio", description: "", qty: 1, unitPrice: 0 });
+    renderQuoteItemsDraft();
+    document.querySelectorAll(".qi-desc")[quoteItemsDraft.length - 1]?.focus();
+  });
+  document.querySelector("#qi-add-product")?.addEventListener("click", () => {
+    quoteItemsDraft.push({ type: "Producto", description: "", qty: 1, unitPrice: 0 });
+    renderQuoteItemsDraft();
+    document.querySelectorAll(".qi-desc")[quoteItemsDraft.length - 1]?.focus();
+  });
+
+  // Delegate input/change/click on the rows container to avoid losing focus on each keystroke
+  document.querySelector("#qi-rows")?.addEventListener("input", e => {
+    const idx = Number(e.target.dataset.idx);
+    if (isNaN(idx) || !quoteItemsDraft[idx]) return;
+    if (e.target.classList.contains("qi-desc"))  quoteItemsDraft[idx].description = e.target.value;
+    else if (e.target.classList.contains("qi-qty"))   quoteItemsDraft[idx].qty = Math.max(1, Number(e.target.value)||1);
+    else if (e.target.classList.contains("qi-price")) quoteItemsDraft[idx].unitPrice = Number(e.target.value)||0;
+    updateQuoteItemsHiddenInputs();
+  });
+  document.querySelector("#qi-rows")?.addEventListener("change", e => {
+    const idx = Number(e.target.dataset.idx);
+    if (isNaN(idx) || !quoteItemsDraft[idx]) return;
+    if (e.target.classList.contains("qi-type")) { quoteItemsDraft[idx].type = e.target.value; updateQuoteItemsHiddenInputs(); }
+  });
+  document.querySelector("#qi-rows")?.addEventListener("click", e => {
+    const del = e.target.closest(".qi-del");
+    if (!del) return;
+    quoteItemsDraft.splice(Number(del.dataset.idx), 1);
+    renderQuoteItemsDraft();
+  });
+
+  document.querySelector("#qi-apply-code")?.addEventListener("click", () => {
+    const code = (document.querySelector("#qi-code-input")?.value || "").trim().toUpperCase();
+    const statusEl = document.querySelector("#qi-code-status");
+    if (!code) { if (statusEl) statusEl.textContent = ""; return; }
+    const subtotal = quoteItemsDraft.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+    const result = applyDiscount(subtotal, code, "cotizacion");
+    if (!result.valid) {
+      if (statusEl) { statusEl.textContent = "Código no válido"; statusEl.style.color = "#ff6b6b"; }
+      const dcAmt = document.querySelector("#qi-discount-amount");
+      const dcCode = document.querySelector("#qi-discount-code");
+      if (dcAmt) dcAmt.value = "0";
+      if (dcCode) dcCode.value = "";
+      updateQuoteItemsHiddenInputs();
+      return;
+    }
+    const dcAmt  = document.querySelector("#qi-discount-amount");
+    const dcCode = document.querySelector("#qi-discount-code");
+    if (dcAmt)  dcAmt.value  = result.amount.toFixed(2);
+    if (dcCode) dcCode.value = code;
+    if (statusEl) { statusEl.textContent = `✓ -${money.format(result.amount)}`; statusEl.style.color = "#2ed573"; }
+    updateQuoteItemsHiddenInputs();
+  });
+}
+
+function buildQuoteItemsSection() {
+  return `
+    <div class="field is-wide" id="quote-items-section" style="margin-top:4px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;opacity:.65">Partidas del servicio</label>
+        <div style="display:flex;gap:6px">
+          <button type="button" class="mini-button" id="qi-add-service" style="font-size:11px;padding:3px 10px">+ Servicio</button>
+          <button type="button" class="mini-button" id="qi-add-product" style="font-size:11px;padding:3px 10px">+ Producto</button>
+        </div>
+      </div>
+      <p id="qi-empty" class="muted" style="font-size:12px;text-align:center;padding:10px 0;margin:0">Agrega servicios o productos con los botones de arriba.</p>
+      <div id="qi-rows"></div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span class="muted" style="font-size:12px;white-space:nowrap">Código descuento</span>
+          <input id="qi-code-input" type="text" placeholder="PROMO10"
+            style="width:110px;font-family:monospace;font-size:12px;text-transform:uppercase;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);border-radius:4px;padding:4px 8px;color:inherit">
+          <button type="button" id="qi-apply-code" class="mini-button" style="font-size:11px;padding:3px 10px">Aplicar</button>
+          <span id="qi-code-status" style="font-size:11px;color:#2ed573"></span>
+        </div>
+        <div style="display:flex;justify-content:flex-end;align-items:baseline;gap:10px">
+          <span id="qi-discount-label" class="muted" style="font-size:12px;display:none"></span>
+          <span class="muted" style="font-size:13px">Total estimado</span>
+          <strong id="qi-total" style="font-size:18px;color:var(--fz-secondary,#2678E8)">$0.00</strong>
+        </div>
+      </div>
+      <input type="hidden" name="repairAmount" id="qi-repair-amount" value="0">
+      <input type="hidden" name="quoteItemsJson" id="qi-items-json" value="[]">
+      <input type="hidden" name="discountCode" id="qi-discount-code" value="">
+      <input type="hidden" name="discountAmount" id="qi-discount-amount" value="0">
+    </div>`;
+}
+
 function openForm(type, prefill = {}) {
   activeForm      = type;
   editingTicketId = null;
@@ -2197,6 +2619,10 @@ function openForm(type, prefill = {}) {
   if (type === "supply") {
     formFields.innerHTML += buildReceiptUploadSection();
     initProductAutoFill();
+  }
+  if (type === "cotizacion") {
+    formFields.innerHTML += buildQuoteItemsSection();
+    initQuoteItemsBuilder(prefill.quoteItems || []);
   }
   modal.showModal();
 }
@@ -2240,6 +2666,32 @@ function openEditTransaction(txId) {
 function openEditTicket(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
+
+  // Cotizaciones use the quote form (line-items builder) instead of the ticket form
+  if (ticket.status === "Cotizacion") {
+    activeForm      = "cotizacion";
+    editingTicketId = ticketId;
+    modalTitle.textContent = `Editar ${ticket.tracking}`;
+    document.querySelector("#modal-eyebrow").textContent = "Editar cotización";
+    const schema = formSchemas["cotizacion"];
+    formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide,optional]) =>
+      fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "", optional)
+    ).join("") + buildQuoteItemsSection();
+    // Pre-set branch
+    const branchSel = formFields.querySelector("#branch");
+    if (branchSel) branchSel.value = ticket.branch || activeBranchId;
+    // Pre-set existing discount code in builder hidden inputs
+    const dcCode = formFields.querySelector("#qi-discount-code");
+    const dcAmt  = formFields.querySelector("#qi-discount-amount");
+    const dcInp  = formFields.querySelector("#qi-code-input");
+    if (dcCode && ticket.discountCode) dcCode.value = ticket.discountCode;
+    if (dcAmt  && ticket.discountAmount) dcAmt.value = ticket.discountAmount;
+    if (dcInp  && ticket.discountCode)  dcInp.value  = ticket.discountCode;
+    initQuoteItemsBuilder(ticket.quoteItems || []);
+    modal.showModal();
+    return;
+  }
+
   activeForm      = "ticket";
   editingTicketId = ticketId;
   modalTitle.textContent = `Editar ${ticket.tracking}`;
@@ -2300,7 +2752,7 @@ async function loadTicketParts(ticketId) {
       ticket_id: ticketId, product_id: prod.id,
       description: prod.name, quantity: qty, unit_price: prod.price,
     });
-    if (error) { alert(`Error: ${error.message}`); return; }
+    if (error) { showErrorToast(`Error: ${error.message}`); return; }
     loadTicketParts(ticketId);
   });
 
@@ -2462,7 +2914,7 @@ recordForm.addEventListener("submit", async e => {
   const data   = Object.fromEntries(new FormData(recordForm).entries());
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
 
-  // ── EDIT: generic (client, supply, transaction) ────────────────
+  // ── EDIT: generic (client, supply, transaction, cotizacion) ──────
   if (editingTicketId && activeForm !== "ticket") {
     try {
       if (activeForm === "client") {
@@ -2473,6 +2925,14 @@ recordForm.addEventListener("submit", async e => {
         await updateRemoteSupply(editingTicketId, data);
       } else if (activeForm === "transaction") {
         await updateRemoteTransaction(editingTicketId, data);
+      } else if (activeForm === "cotizacion") {
+        data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
+        delete data.quoteItemsJson;
+        if (!data.issue && data.quoteItems.length) {
+          data.issue = data.quoteItems.map(i => i.description).filter(Boolean).join(" + ");
+        }
+        data.repairAmount = Number(data.repairAmount || 0);
+        await updateRemoteTicket(editingTicketId, data);
       }
       if (dataMode === "remote") await reloadState();
       else { /* local: already mutated in update functions */ saveState(); }
@@ -2480,7 +2940,7 @@ recordForm.addEventListener("submit", async e => {
       modal.close();
     } catch(err) {
       console.error(err);
-      alert(`No se pudo guardar: ${err.message}`);
+      showErrorToast(`No se pudo guardar: ${err.message}`);
     }
     return;
   }
@@ -2494,7 +2954,7 @@ recordForm.addEventListener("submit", async e => {
       modal.close();
     } catch(err) {
       console.error(err);
-      alert(`No se pudo guardar: ${err.message}`);
+      showErrorToast(`No se pudo guardar: ${err.message}`);
     }
     return;
   }
@@ -2517,7 +2977,7 @@ recordForm.addEventListener("submit", async e => {
       }
     } catch(err) {
       console.error(err);
-      alert(`No se pudo guardar: ${err.message}`);
+      showErrorToast(`No se pudo guardar: ${err.message}`);
     }
     return;
   }
@@ -2541,7 +3001,7 @@ recordForm.addEventListener("submit", async e => {
       modal.close();
     } catch(err) {
       console.error(err);
-      alert(`No se pudo guardar: ${err.message}`);
+      showErrorToast(`No se pudo guardar: ${err.message}`);
     }
     return;
   }
@@ -2550,9 +3010,15 @@ recordForm.addEventListener("submit", async e => {
   data.id = `${activeForm}-${Date.now()}`;
 
   if (activeForm==="ticket" || activeForm==="cotizacion") {
-    data.tracking      = nextTracking(nextTicketSequence());
+    data.tracking      = activeForm==="cotizacion" ? nextCotTracking() : nextTracking(nextTicketSequence());
     data.repairAmount  = Number(data.repairAmount||0);
     if (activeForm==="cotizacion") {
+      data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
+      delete data.quoteItemsJson;
+      // Derive issue from line-item descriptions if not filled manually
+      if (!data.issue && data.quoteItems.length) {
+        data.issue = data.quoteItems.map(i => i.description).filter(Boolean).join(" + ");
+      }
       data.status        = "Cotizacion";
       data.paymentStatus = "Pendiente";
       data.paidAmount    = 0;
@@ -2597,7 +3063,7 @@ recordForm.addEventListener("submit", async e => {
     modal.close();
   } catch(err) {
     console.error(err);
-    alert(`No se pudo guardar: ${err.message}`);
+    showErrorToast(`No se pudo guardar: ${err.message}`);
   } finally {
     setLoading(false);
   }
@@ -2613,30 +3079,40 @@ async function callEdgeFunction(action, payload) {
   return data;
 }
 
-async function deleteEmployee(employeeId) {
-  if (!confirm("¿Dar de baja a este usuario? Se desactivará su acceso.")) return;
-  try {
-    if (dataMode==="remote") {
-      await callEdgeFunction("delete", { employee_id: employeeId });
-      await reloadState();
-    } else {
-      state.employees = state.employees.filter(e=>e.id!==employeeId);
-      saveState();
+function deleteEmployee(employeeId) {
+  showConfirmModal("¿Dar de baja a este usuario? Se desactivará su acceso.", {
+    label: "Dar de baja",
+    danger: true,
+    onConfirm: async () => {
+      try {
+        if (dataMode==="remote") {
+          await callEdgeFunction("delete", { employee_id: employeeId });
+          await reloadState();
+        } else {
+          state.employees = state.employees.filter(e=>e.id!==employeeId);
+          saveState();
+        }
+        render();
+      } catch(err) { showErrorToast(`Error: ${err.message}`); }
     }
-    render();
-  } catch(err) { alert(`Error: ${err.message}`); }
+  });
 }
 
-async function resetEmployeePassword(employeeId) {
-  if (!confirm("¿Resetear contraseña a 'miwaysillos05'? El usuario deberá cambiarla al iniciar sesión.")) return;
-  try {
-    if (dataMode==="remote") {
-      await callEdgeFunction("reset_password", { employee_id: employeeId });
-      alert("Contraseña reseteada correctamente.");
-    } else {
-      alert("Reset de contraseña solo disponible en modo Supabase.");
+function resetEmployeePassword(employeeId) {
+  showConfirmModal("¿Resetear contraseña a 'miwaysillos05'? El usuario deberá cambiarla al iniciar sesión.", {
+    label: "Resetear contraseña",
+    danger: true,
+    onConfirm: async () => {
+      try {
+        if (dataMode==="remote") {
+          await callEdgeFunction("reset_password", { employee_id: employeeId });
+          showToast("✓ Contraseña reseteada correctamente.");
+        } else {
+          showErrorToast("Reset de contraseña solo disponible en modo Supabase.");
+        }
+      } catch(err) { showErrorToast(`Error: ${err.message}`); }
     }
-  } catch(err) { alert(`Error: ${err.message}`); }
+  });
 }
 
 async function saveRemoteSupportTask(data) {
@@ -2705,7 +3181,8 @@ async function createRemoteTicket(r) {
     repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
     discount_code:r.discountCode||null, discount_amount:disc.amount, discount_pct:disc.pct,
     branch_id:branchId, notes:r.notes||null,
-    assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId()
+    assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId(),
+    quote_items: r.quoteItems?.length ? r.quoteItems : null,
   }).select().single();
   if (error) throw error;
 
@@ -2739,6 +3216,7 @@ async function createRemoteTicket(r) {
     discountCode:r.discountCode||"", discountAmount:disc.amount, discountPct:disc.pct,
     imei:r.imei||"", color:r.color||"",
     accessories:r.accessories||"", physicalCondition:r.physicalCondition||"",
+    quoteItems: r.quoteItems||[],
   };
   state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
 }
@@ -2761,6 +3239,7 @@ async function updateRemoteTicket(ticketId, r) {
     discount_code:        r.discountCode||null,
     discount_amount:      Number(r.discountAmount||0),
     discount_pct:         Number(r.discountPct||0),
+    ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
   }).eq("id", ticketId);
   if (error) throw error;
 
@@ -2981,7 +3460,7 @@ helpForm.addEventListener("submit", async e => {
     helpModal.close();
     showToast(`✓ Solicitud enviada a IT, 5 peso y le agilizamos su proceso · ${type}`);
   } catch(err) {
-    alert(`No se pudo enviar, ni modillo: ${err.message}`);
+    showErrorToast(`No se pudo enviar: ${err.message}`);
   } finally {
     btn.textContent = "Enviar a IT";
     btn.disabled    = false;
@@ -3007,6 +3486,28 @@ function showToast(message, html = "") {
     toast.appendChild(close);
     setTimeout(() => toast.remove(), 12000);
   }
+}
+
+function showErrorToast(msg) {
+  const existing = document.querySelector(".help-toast");
+  if (existing) existing.remove();
+  const toast = document.createElement("div");
+  toast.className = "help-toast error-toast";
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4500);
+}
+
+const _confirmModal = document.querySelector("#confirm-modal");
+function showConfirmModal(message, { label = "Confirmar", danger = false, onConfirm } = {}) {
+  _confirmModal.querySelector("#confirm-modal-message").textContent = message;
+  const oldOk = _confirmModal.querySelector("#confirm-modal-ok");
+  const newOk = oldOk.cloneNode(true);
+  newOk.textContent = label;
+  newOk.className = danger ? "primary-action danger-btn" : "primary-action";
+  newOk.addEventListener("click", () => { _confirmModal.close(); onConfirm?.(); });
+  oldOk.replaceWith(newOk);
+  _confirmModal.showModal();
 }
 
 function waLink(phone, message) {
@@ -3097,7 +3598,7 @@ document.querySelector("#movimiento-form")?.addEventListener("submit", async e =
     render();
     showToast(`✓ ${movType.charAt(0).toUpperCase()+movType.slice(1)} de ${qty} unidades registrada — nuevo stock: ${newStock}`);
   } catch(err) {
-    alert(`Error: ${err.message}`);
+    showErrorToast(`Error: ${err.message}`);
   }
 });
 
@@ -3174,7 +3675,7 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
       showWhatsAppToast(updatedTicket, waMsg);
     }
   } catch(err) {
-    alert(`No se pudo registrar el abono: ${err.message}`);
+    showErrorToast(`No se pudo registrar el abono: ${err.message}`);
   }
 });
 
@@ -3303,12 +3804,25 @@ document.addEventListener("click", e => {
     renderPos(); return;
   }
 
+  // Apply discount code in POS
+  if (e.target.closest("#pos-apply-code")) {
+    const code = (document.querySelector("#pos-code-input")?.value||"").trim().toUpperCase();
+    if (!code) { showErrorToast("Ingresa un código de descuento."); return; }
+    const subtotal = posCart.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+    const result = applyDiscount(subtotal, code, "pos");
+    if (!result.valid) { showErrorToast("Código no válido, expirado o no aplica en POS."); return; }
+    posDiscount = result.amount;
+    posDiscountCode = code;
+    showToast(`✓ Descuento aplicado: -${money.format(result.amount)}`);
+    renderPos(); return;
+  }
+
   // Checkout
   if (e.target.closest("#pos-checkout-btn")) { checkoutPos(); return; }
 
   // Clear cart
   if (e.target.closest("#pos-clear-cart")) {
-    posCart = []; posDiscount = 0; posCustomerId = null;
+    posCart = []; posDiscount = 0; posDiscountCode = ""; posCustomerId = null;
     renderPos(); return;
   }
 });
@@ -3374,20 +3888,24 @@ document.addEventListener("click", async e => {
   // Delete photo
   const delPhoto = e.target.closest("[data-delete-photo]");
   if (delPhoto) {
-    if (!confirm("¿Eliminar esta foto?")) return;
     const attachId = delPhoto.dataset.deletePhoto;
     const photoUrl = delPhoto.dataset.photoUrl;
-    try {
-      await supabaseClient.from("attachments").delete().eq("id", attachId);
-      // Extract storage path from URL to delete from bucket
-      const urlPath = new URL(photoUrl).pathname;
-      const bucketIdx = urlPath.indexOf("/ticket-photos/");
-      if (bucketIdx !== -1) {
-        const storagePath = urlPath.slice(bucketIdx + "/ticket-photos/".length);
-        await supabaseClient.storage.from("ticket-photos").remove([storagePath]);
+    showConfirmModal("¿Eliminar esta foto?", {
+      label: "Eliminar",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await supabaseClient.from("attachments").delete().eq("id", attachId);
+          const urlPath = new URL(photoUrl).pathname;
+          const bucketIdx = urlPath.indexOf("/ticket-photos/");
+          if (bucketIdx !== -1) {
+            const storagePath = urlPath.slice(bucketIdx + "/ticket-photos/".length);
+            await supabaseClient.storage.from("ticket-photos").remove([storagePath]);
+          }
+          delPhoto.closest("div").remove();
+        } catch(err) { showErrorToast(`Error al eliminar foto: ${err.message}`); }
       }
-      delPhoto.closest("div").remove();
-    } catch(err) { alert(`Error al eliminar foto: ${err.message}`); }
+    });
     return;
   }
 
@@ -3427,53 +3945,68 @@ document.addEventListener("click", async e => {
   if (viewBtn) { setView(viewBtn.dataset.viewTarget); return; }
 });
 
-async function handleDeleteTicket(id) {
-  if (!confirm("¿Eliminar este ticket?")) return;
-  try {
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    if (dataMode==="remote" && isUUID) {
-      const {error} = await supabaseClient.from("service_tickets").delete().eq("id", id);
-      if (error) throw error;
-      await reloadState();
-    } else {
-      state.tickets = state.tickets.filter(t => t.id !== id);
-      if (dataMode !== "remote") saveState();
+function handleDeleteTicket(id) {
+  showConfirmModal("¿Eliminar este ticket?", {
+    label: "Eliminar",
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        if (dataMode==="remote" && isUUID) {
+          const {error} = await supabaseClient.from("service_tickets").delete().eq("id", id);
+          if (error) throw error;
+          await reloadState();
+        } else {
+          state.tickets = state.tickets.filter(t => t.id !== id);
+          if (dataMode !== "remote") saveState();
+        }
+        render();
+      } catch(err) { showErrorToast(`Error: ${err.message}`); }
     }
-    render();
-  } catch(err) { alert(`Error: ${err.message}`); }
+  });
 }
 
-async function handleDeleteClient(id) {
-  if (!confirm("¿Eliminar este cliente y sus datos?")) return;
-  try {
-    if (dataMode==="remote") { const {error}=await supabaseClient.from("customers").delete().eq("id",id); if(error)throw error; await reloadState(); }
-    else { state.clients=state.clients.filter(c=>c.id!==id); saveState(); }
-    render();
-  } catch(err) { alert(`Error: ${err.message}`); }
+function handleDeleteClient(id) {
+  showConfirmModal("¿Eliminar este cliente y sus datos?", {
+    label: "Eliminar",
+    danger: true,
+    onConfirm: async () => {
+      try {
+        if (dataMode==="remote") { const {error}=await supabaseClient.from("customers").delete().eq("id",id); if(error)throw error; await reloadState(); }
+        else { state.clients=state.clients.filter(c=>c.id!==id); saveState(); }
+        render();
+      } catch(err) { showErrorToast(`Error: ${err.message}`); }
+    }
+  });
 }
 
-async function handleDeleteTransaction(id) {
-  if (!confirm("¿Eliminar este movimiento financiero? Esta acción no se puede deshacer.")) return;
-  try {
-    if (dataMode==="remote") { const {error}=await supabaseClient.from("transactions").delete().eq("id",id); if(error)throw error; await reloadState(); }
-    else { state.transactions=state.transactions.filter(t=>t.id!==id); saveState(); }
-    render();
-  } catch(err) { alert(`Error: ${err.message}`); }
+function handleDeleteTransaction(id) {
+  showConfirmModal("¿Eliminar este movimiento financiero? Esta acción no se puede deshacer.", {
+    label: "Eliminar",
+    danger: true,
+    onConfirm: async () => {
+      try {
+        if (dataMode==="remote") { const {error}=await supabaseClient.from("transactions").delete().eq("id",id); if(error)throw error; await reloadState(); }
+        else { state.transactions=state.transactions.filter(t=>t.id!==id); saveState(); }
+        render();
+      } catch(err) { showErrorToast(`Error: ${err.message}`); }
+    }
+  });
 }
 
-async function handleDeleteTask(id) {
-  if (!confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer.")) return;
-  try {
-    if (dataMode==="remote") { const {error}=await supabaseClient.from("tasks").delete().eq("id",id); if(error)throw error; await reloadState(); }
-    else { state.tasks=state.tasks.filter(t=>t.id!==id); saveState(); }
-    render();
-  } catch(err) { alert(`Error: ${err.message}`); }
+function handleDeleteTask(id) {
+  showConfirmModal("¿Eliminar esta tarea? Esta acción no se puede deshacer.", {
+    label: "Eliminar",
+    danger: true,
+    onConfirm: async () => {
+      try {
+        if (dataMode==="remote") { const {error}=await supabaseClient.from("tasks").delete().eq("id",id); if(error)throw error; await reloadState(); }
+        else { state.tasks=state.tasks.filter(t=>t.id!==id); saveState(); }
+        render();
+      } catch(err) { showErrorToast(`Error: ${err.message}`); }
+    }
+  });
 }
-
-document.querySelector("#seed-data")?.addEventListener("click", () => {
-  if (dataMode==="remote") { alert("La demo solo se restaura en modo local."); return; }
-  state=structuredClone(seed); saveState(); render();
-});
 
 searchInput.addEventListener("input", render);
 
@@ -3624,7 +4157,7 @@ function printPosRecibo() {
   if (!lastPosSale) return;
   const brand    = window.getBranchBrand(activeBranchId);
   const D        = "─".repeat(32);
-  const { items, total, method, discount, clientName, date } = lastPosSale;
+  const { items, total, method, discount, discountCode, clientName, date } = lastPosSale;
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
   const rows     = items.map(i =>
     `<div style="display:flex;justify-content:space-between;font-size:11px;margin:2px 0">
@@ -3644,7 +4177,7 @@ function printPosRecibo() {
       ${rows}
       <p class="rct-dash">${D}</p>
       ${discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:11px"><span>Subtotal</span><span>${money.format(subtotal)}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:11px"><span>Descuento</span><span>-${money.format(discount)}</span></div>` : ""}
+        <div style="display:flex;justify-content:space-between;font-size:11px"><span>Descuento${discountCode?" ("+escapeHtml(discountCode)+")":""}</span><span>-${money.format(discount)}</span></div>` : ""}
       <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:4px">
         <span>TOTAL</span><span>${money.format(total)}</span>
       </div>
