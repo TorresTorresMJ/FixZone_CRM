@@ -78,10 +78,10 @@ _Última actualización: 2026-05-27_
 - [ ] Crear seccion de plantillas de email para clientes, editable.
 - [x] Plantillas de mensaje WhatsApp editables (renderWATemplates — tab Automatización).
 - [ ] Función para enviar recordatorios de garantia o promociones por WhatsApp / email.
-- [ ] Que los codigos de descuentos creados en esta sección , sean validos, y se puedan usar en el apartado de descuento al realizar : Cotizacion, ticket, o compra de POS. 
-- [ ] alcance de cada codigo de descuento o promocion. 
-- [ ] seccion de promociones para que la de marketing las pueda crear y encender y apagar,  con rango de fecha valido, y demas reglas. 
-- [ ] Mejorar UX de Marketing ya que siento que no se puede hacer mucho y los botones y cards estan gigantes para lasa tools, pero no son editables , osea la de marketing no puede editar sus propios hiperivnculos, y tiene que poder ser mas personalizable a su uso, ya que si no estaria teniendo que meter tickets a IT . 
+- [x] Que los codigos de descuentos creados en esta sección sean válidos y se puedan usar en Cotización, Ticket y POS — discount_codes en Supabase con validación de scope.
+- [x] Alcance de cada codigo de descuento o promocion — campo scope[] por código (pos/cotizacion/ticket).
+- [x] Sección de promociones con rango de fecha válido, max_uses, activo/inactivo, toggle desde UI.
+- [x] Mejorar UX de Marketing — cards compactas, links editables por Marketing sin ticket a IT (add/edit/delete URL, nombre, icono, descripción desde UI).
 
 
 ## Fase 8: Deploy interno
@@ -138,10 +138,10 @@ _Última actualización: 2026-05-27_
 
 ## Fase 11: Cotizaciones
 - [x] Nueva sección: Cotizaciones. Sección dedicada, cotización se convierte a ticket con un clic. Partes/refacciones se agregan directamente desde el modal de edición del ticket.
-- [ ] Acceso para enviar la cotizacion a Whatsapp directamente, en PDF.
+- [x] Acceso para enviar la cotizacion a WhatsApp — botón 💬 WhatsApp en la card genera mensaje con partidas y total; botón 🖨 Imprimir genera PDF imprimible de cotización formal.
 - [ ] Cambio de status de Cotizacion a venta concretada.
-- [ ] La plantilla de cotizacion. debe de poderse *añadir servicio* o *añadir producto* , una manera en la que nosotros  vamos por ejemplo a ponerle precio de mano de obra al servicio, en el caso de reparacion: servicio + pieza de repuesto . por ejemplo y que se úeda añadir mas cosas como mas servicios o mas productos. E igual , eliminar la fila por ejemplo, ya nos era de reparacion, mejor pura refacciones entonces que se puedan añadir y eliminar . Y la cotizacion calcule el precio. 
-- [ ] Seriar las cotizaciones, para darles numero de cotizacion y podamos tenerles seguimiento y cuantificaciones. 
+- [x] La plantilla de cotizacion. debe de poderse *añadir servicio* o *añadir producto* — builder de partidas con qty, precio, tipo y eliminar fila; cotización calcula total automáticamente.
+- [x] Seriar las cotizaciones — numeración [COT] 0001 separada de [FZ] tickets. 
 
 
 ## Fase 12: Punto de Venta (POS)
@@ -155,8 +155,8 @@ _Última actualización: 2026-05-27_
 - [x] aplicar `supabase/13_pos_tables.sql` en Supabase SQL Editor** (requerido para que funcione en producción).
 - [x] Recibo imprimible de venta POS (folio, productos, total, método de pago) — printPosRecibo() implementado.
 - [x] Ligar venta POS a cliente del catálogo — select opcional en el carrito; sin selección = venta anónima.
-- [ ] Descuento por porcentaje además de monto fijo.
-- [ ] Constraint `CHECK (stock >= 0)` en DB para prevenir stock negativo en ventas simultáneas.
+- [x] Descuento por porcentaje además de monto fijo (tipo "percent" en discount_codes).
+- [x] Constraint `CHECK (stock >= 0)` en DB para prevenir stock negativo — `supabase/17_pos_stock_constraint.sql` aplicado.
 
 ## Fase 13: UX / Navegación
 - [x] Sidebar compacto: 280px → 220px. Nav items 42px → 34px. Entra completo en 100% de zoom.

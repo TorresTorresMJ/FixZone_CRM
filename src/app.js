@@ -878,7 +878,8 @@ function quoteCard(ticket, perms) {
     ${ticket.issue ? `<p style="margin:4px 0">${escapeHtml(ticket.issue)}</p>` : ""}
     ${itemsHtml}
     <div class="ticket-actions">
-      <button class="mini-button" data-print-ticket="${ticket.id}">Recibo</button>
+      <button class="mini-button" data-print-cotizacion="${ticket.id}">🖨 Imprimir</button>
+      <button class="mini-button" style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);color:#25d366" data-wa-quote="${ticket.id}">💬 WhatsApp</button>
       <button class="primary-action" style="font-size:12px;padding:5px 12px;min-height:0" data-approve-quote="${ticket.id}">✓ Aprobar</button>
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
@@ -2056,8 +2057,8 @@ function renderWATemplates() {
   const el = document.querySelector("#wa-templates-manager");
   if (!el) return;
   const tpls = getWATemplates();
-  const LABELS = { listo:"✅ Equipo Listo", abono:"💳 Abono recibido", pagado:"✅ Pago completo", garantia:"🛡 Garantía" };
-  const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo}";
+  const LABELS = { cotizacion:"📋 Cotización", listo:"✅ Equipo Listo", abono:"💳 Abono recibido", pagado:"✅ Pago completo", garantia:"🛡 Garantía" };
+  const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo} {total} {items}";
   el.innerHTML = `
     <div class="card" style="margin-top:16px">
       <div style="margin-bottom:16px">
@@ -2091,10 +2092,11 @@ function renderWATemplates() {
 // ── Discount codes (managed via Supabase discount_codes table) ────────────────
 const WA_TEMPLATES_KEY = "fixzone-wa-templates-v1";
 const DEFAULT_WA_TEMPLATES = {
-  listo:  "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!",
-  abono:  "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.",
-  pagado: "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!",
-  garantia: "Hola {cliente} 👋, tu equipo {equipo} está en garantía. Folio: {folio}. Contáctanos para coordinar.",
+  listo:      "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!",
+  abono:      "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.",
+  pagado:     "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!",
+  garantia:   "Hola {cliente} 👋, tu equipo {equipo} está en garantía. Folio: {folio}. Contáctanos para coordinar.",
+  cotizacion: "",
 };
 
 function getWATemplates() {
@@ -2104,12 +2106,14 @@ function saveWATemplates(t) { localStorage.setItem(WA_TEMPLATES_KEY, JSON.string
 function fillWATemplate(key, vars) {
   const tpl = getWATemplates()[key] || DEFAULT_WA_TEMPLATES[key] || "";
   return tpl
-    .replace(/{cliente}/g, vars.client||"")
-    .replace(/{equipo}/g,  vars.productName||"")
-    .replace(/{sucursal}/g,vars.branch||"")
-    .replace(/{folio}/g,   vars.tracking||"")
-    .replace(/{monto}/g,   vars.amount||"")
-    .replace(/{saldo}/g,   vars.pending||"");
+    .replace(/{cliente}/g,  vars.client||"")
+    .replace(/{equipo}/g,   vars.productName||"")
+    .replace(/{sucursal}/g, vars.branch||"")
+    .replace(/{folio}/g,    vars.tracking||"")
+    .replace(/{monto}/g,    vars.amount||"")
+    .replace(/{saldo}/g,    vars.pending||"")
+    .replace(/{total}/g,    vars.amount||"")
+    .replace(/{items}/g,    vars.items||"");
 }
 
 function applyDiscount(baseAmount, code, scope = "ticket") {
@@ -3860,6 +3864,18 @@ document.addEventListener("click", async e => {
   const abonoBtn = e.target.closest("[data-abono-ticket]");
   if (abonoBtn) { openAbonoModal(abonoBtn.dataset.abonoTicket); return; }
 
+  // Print cotización
+  const printCot = e.target.closest("[data-print-cotizacion]");
+  if (printCot) {
+    const t = state.tickets.find(i => i.id === printCot.dataset.printCotizacion);
+    if (t) printCotizacion(t);
+    return;
+  }
+
+  // Share cotización via WhatsApp
+  const waCot = e.target.closest("[data-wa-quote]");
+  if (waCot) { shareQuoteWhatsApp(waCot.dataset.waQuote); return; }
+
   const approveBtn = e.target.closest("[data-approve-quote]");
   if (approveBtn) { approveQuoteToTicket(approveBtn.dataset.approveQuote); return; }
 
@@ -4313,6 +4329,111 @@ window.setReceiptWidth = function(w) {
   document.documentElement.style.setProperty("--receipt-width", w);
   showToast(`✓ Tamaño de recibo: ${w}`);
 };
+
+function printCotizacion(ticket) {
+  const brand   = window.getBranchBrand(ticket.branch || activeBranchId);
+  const items   = ticket.quoteItems || [];
+  const subtotal= Number(ticket.repairAmount || 0);
+  const discAmt = Number(ticket.discountAmount || 0);
+  const total   = Math.max(0, subtotal - discAmt);
+  const D       = "─".repeat(40);
+  const now     = new Date();
+  const timeStr = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
+  const client  = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "80mm";
+  document.documentElement.style.setProperty("--receipt-width", receiptWidth);
+
+  document.querySelector("#print-receipt").innerHTML = `
+<div class="rct">
+  <div class="rct-logo"><img src="${brand.logoMonoSrc||brand.logoSrc}" alt="${brand.displayName}" onerror="this.src='${brand.logoSrc}';this.onerror=null"/></div>
+  <p class="rct-dash">${D}</p>
+  <p class="rct-center rct-title">COTIZACIÓN</p>
+  <p class="rct-dash">${D}</p>
+  <p class="rct-row"><strong>NO. COTIZACIÓN:</strong> <span>${escapeHtml(ticket.tracking)}</span></p>
+  <p class="rct-row"><strong>FECHA:</strong> <span>${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</span></p>
+  <p class="rct-row"><strong>SUCURSAL:</strong> <span>${escapeHtml(brand.displayName)}</span></p>
+  <p class="rct-dash">${D}</p>
+  <p class="rct-label">CLIENTE:</p>
+  <p class="rct-value">${escapeHtml(ticket.client)}</p>
+  ${client?.phone ? `<p class="rct-value">Tel: ${escapeHtml(client.phone)}</p>` : ""}
+  <p class="rct-dash">${D}</p>
+  <p class="rct-label">EQUIPO / PRODUCTO:</p>
+  <p class="rct-value">${escapeHtml(ticket.productName)}</p>
+  ${ticket.issue ? `<p class="rct-value" style="margin-top:4px"><strong>Descripción:</strong> ${escapeHtml(ticket.issue)}</p>` : ""}
+  <p class="rct-dash">${D}</p>
+  <table class="rct-table">
+    <thead><tr><th>Descripción</th><th>Cant.</th><th>Precio</th><th>Importe</th></tr></thead>
+    <tbody>
+      ${items.length
+        ? items.map(i => `<tr>
+            <td>${escapeHtml(i.description||"")} <span style="font-size:9px;opacity:.55">(${escapeHtml(i.type||"")})</span></td>
+            <td style="text-align:center">${i.qty}</td>
+            <td style="text-align:right">${money.format(i.unitPrice)}</td>
+            <td style="text-align:right">${money.format(i.qty*i.unitPrice)}</td>
+          </tr>`).join("")
+        : `<tr><td colspan="4">${escapeHtml(ticket.issue||"Servicio de reparación")}</td></tr>`
+      }
+    </tbody>
+  </table>
+  <p class="rct-dash">${D}</p>
+  <div class="rct-totals">
+    ${items.length ? `<div class="rct-total-row"><span>Subtotal</span><span>${money.format(subtotal)}</span></div>` : ""}
+    ${discAmt > 0 ? `<div class="rct-total-row"><span>Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</span><span>-${money.format(discAmt)}</span></div>` : ""}
+    <div class="rct-total-row rct-total-main"><span>TOTAL ESTIMADO</span><strong>${money.format(total)}</strong></div>
+  </div>
+  <p class="rct-dash">${D}</p>
+  <p class="rct-value" style="font-size:9pt;opacity:.65;text-align:center">Esta cotización tiene una vigencia de 15 días naturales a partir de la fecha de emisión. Los precios pueden variar según el diagnóstico definitivo.</p>
+  <p class="rct-dash">${D}</p>
+  <p class="rct-thanks">★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★</p>
+  <p class="rct-dash">${D}</p>
+  <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE AUTORIZACIÓN DEL CLIENTE</p></div>
+</div>`;
+  window.print();
+}
+
+function shareQuoteWhatsApp(ticketId) {
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+  const brand   = window.getBranchBrand(ticket.branch || activeBranchId);
+  const items   = ticket.quoteItems || [];
+  const subtotal= Number(ticket.repairAmount || 0);
+  const discAmt = Number(ticket.discountAmount || 0);
+  const total   = Math.max(0, subtotal - discAmt);
+
+  const linesText = items.length
+    ? items.map(i => `  • ${i.description||i.type} — ${i.qty>1?i.qty+"×":""}${money.format(i.qty*i.unitPrice)}`).join("\n")
+    : `  • ${ticket.issue||"Servicio"} — ${money.format(subtotal)}`;
+
+  const waTemplate = getWATemplates()["cotizacion"] || null;
+  let msg;
+
+  if (waTemplate) {
+    msg = fillWATemplate("cotizacion", {
+      client:      ticket.client,
+      productName: ticket.productName,
+      branch:      brand.displayName,
+      folio:       ticket.tracking,
+      amount:      money.format(total),
+      pending:     "",
+      total:       money.format(total),
+      items:       linesText,
+    });
+  } else {
+    msg = `Hola ${ticket.client} 👋, aquí tu cotización de *${brand.displayName}*:\n\n` +
+          `📋 No. ${ticket.tracking}\n` +
+          `📱 Equipo: ${ticket.productName}\n\n` +
+          `*Detalle:*\n${linesText}\n\n` +
+          (discAmt > 0 ? `💸 Descuento: -${money.format(discAmt)}\n` : "") +
+          `*Total estimado: ${money.format(total)}*\n\n` +
+          `⏳ Vigencia: 15 días. Contáctanos para agendar tu reparación. ¡Gracias!`;
+  }
+
+  const clientPhone = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase())?.phone || "";
+  const phone = clientPhone.replace(/\D/g, "").replace(/^52/, "");
+  const url = `https://wa.me/${phone ? "52"+phone : ""}?text=${encodeURIComponent(msg)}`;
+  window.open(url, "_blank", "noopener");
+}
+window.shareQuoteWhatsApp = shareQuoteWhatsApp;
 
 function receiptQrTarget() {
   try {
