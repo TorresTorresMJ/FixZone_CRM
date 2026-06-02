@@ -4527,7 +4527,10 @@ function printRecibo(ticket, type) {
         <div class="rct-total-row"><span>ESTADO</span><span>${escapeHtml(ticket.paymentStatus)}</span></div>
       </div>
       <p class="rct-dash">${D}</p>
-      <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA — PAGO RECIBIDO CONFORME</p></div>`;
+      <p class="rct-label">GARANTÍA:</p>
+      <p class="rct-policy">• 30 días en mano de obra desde la fecha de entrega.</p>
+      <p class="rct-policy">• No aplica por daños físicos, humedad, mal uso o intervención de terceros.</p>
+      <p class="rct-policy">• Solo cubre la falla reparada. Conserve este documento.</p>`;
   } else { // garantia
     const warrantyDate = ticket.warrantyUntil || (() => {
       const d = new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10);

@@ -991,8 +991,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   }
 
   .rct-logo img {
-    width: 44mm;
-    max-height: 14mm;
+    width: 50mm;
+    max-height: 22mm;
     height: auto;
     object-fit: contain;
     display: block;
