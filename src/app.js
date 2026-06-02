@@ -1942,6 +1942,7 @@ function renderDiseno() {
     copysEl.innerHTML = copys.join("<br>");
   }
 
+  renderQuickMessages();
   renderDiscountManager();
   renderWATemplates();
   renderBrandEditor();
@@ -2311,12 +2312,15 @@ function renderWATemplates() {
   el.innerHTML = `
     <div class="card" style="margin-top:16px">
       <div style="margin-bottom:16px">
-        <h3 style="margin:0 0 4px;font-size:14px">Plantillas de WhatsApp</h3>
-        <small class="muted">Variables disponibles: <code>${HINTS}</code></small>
+        <h3 style="margin:0 0 4px;font-size:14px">Plantillas de WhatsApp — tickets</h3>
+        <small class="muted">Se envían automáticamente al cambiar estado del ticket. Variables: <code>${HINTS}</code></small>
       </div>
       ${Object.keys(LABELS).map(k=>`
         <div style="margin-bottom:14px">
-          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px">${LABELS[k]}</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <label style="font-size:12px;font-weight:700">${LABELS[k]}</label>
+            <button class="mini-button wt-copy-btn" data-key="${k}" style="font-size:11px;padding:2px 8px">📋 Copiar</button>
+          </div>
           <textarea id="wt-${k}" rows="3" style="width:100%;resize:vertical;font-size:12px;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;font-family:inherit">${escapeHtml(tpls[k]||"")}</textarea>
         </div>`).join("")}
       <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -2336,6 +2340,142 @@ function renderWATemplates() {
     renderWATemplates();
     showToast("✓ Plantillas restauradas");
   });
+  el.querySelectorAll(".wt-copy-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const txt = el.querySelector(`#wt-${btn.dataset.key}`)?.value || "";
+      navigator.clipboard.writeText(txt).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = "✓ Copiado";
+        setTimeout(() => { btn.textContent = orig; }, 1800);
+      });
+    });
+  });
+}
+
+// ── Mensajes rápidos (repertorio copiable) ────────────────────────────────────
+const QUICK_MESSAGES_KEY = "fixzone-quick-messages-v1";
+const DEFAULT_QUICK_MESSAGES = [
+  { name: "Saludo inicial",        text: "¡Hola! 👋 Bienvenido a FixZone. ¿En qué podemos ayudarte hoy?" },
+  { name: "Horarios",              text: "Nuestro horario de atención es de lunes a sábado de 10:00 a 20:00 hrs. ¡Te esperamos!" },
+  { name: "Tiempo de reparación",  text: "El tiempo estimado de reparación es de 1 a 3 días hábiles dependiendo del diagnóstico. Te avisamos en cuanto esté listo 🔧" },
+  { name: "Solicitud de garantía", text: "Con gusto revisamos tu equipo en garantía. Por favor trae el ticket de reparación y el equipo al local. Recuerda que la garantía cubre únicamente la falla original reparada." },
+  { name: "Equipo listo",          text: "¡Tu equipo está listo para recoger! 🎉 Puedes pasar en nuestro horario de atención. Recuerda traer tu ticket o comprobante." },
+  { name: "Despedida",             text: "¡Fue un placer atenderte! 😊 Si tienes alguna duda no dudes en escribirnos. ¡Hasta pronto!" },
+  { name: "No tenemos el modelo",  text: "Lo sentimos, por el momento no contamos con refacciones para ese modelo. Podemos conseguirla bajo pedido, ¿te interesa que te cotizemos?" },
+];
+
+function loadQuickMessages() {
+  try { return JSON.parse(localStorage.getItem(QUICK_MESSAGES_KEY)) || [...DEFAULT_QUICK_MESSAGES]; }
+  catch { return [...DEFAULT_QUICK_MESSAGES]; }
+}
+function saveQuickMessages(msgs) { localStorage.setItem(QUICK_MESSAGES_KEY, JSON.stringify(msgs)); }
+
+function renderQuickMessages() {
+  const el = document.querySelector("#quick-messages-manager");
+  if (!el) return;
+  const msgs = loadQuickMessages();
+  let editMode = false;
+
+  const render = () => {
+    const fresh = el.cloneNode(false);
+    el.replaceWith(fresh);
+    const container = document.querySelector("#quick-messages-manager");
+
+    if (!editMode) {
+      container.innerHTML = `
+        <div class="card" style="margin-top:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div>
+              <h3 style="margin:0 0 3px;font-size:14px">Mensajes rápidos</h3>
+              <small class="muted">Copia y pega directamente en tus conversaciones de WhatsApp</small>
+            </div>
+            <button class="ghost-button" id="qm-edit-btn" style="font-size:12px">✎ Editar</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            ${msgs.map((m, i) => `
+              <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:12px 14px">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:12px;font-weight:700;color:var(--fz-primary);margin-bottom:4px">${escapeHtml(m.name)}</div>
+                    <div style="font-size:12px;color:rgba(255,255,255,.75);line-height:1.5;white-space:pre-wrap">${escapeHtml(m.text)}</div>
+                  </div>
+                  <button class="mini-button qm-copy" data-idx="${i}" style="flex-shrink:0;font-size:11px;padding:3px 10px">📋 Copiar</button>
+                </div>
+              </div>`).join("")}
+          </div>
+        </div>`;
+      container.querySelector("#qm-edit-btn")?.addEventListener("click", () => { editMode = true; render(); });
+      container.querySelectorAll(".qm-copy").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const txt = msgs[Number(btn.dataset.idx)]?.text || "";
+          navigator.clipboard.writeText(txt).then(() => {
+            const orig = btn.textContent;
+            btn.textContent = "✓ Copiado";
+            setTimeout(() => { btn.textContent = orig; }, 1800);
+          });
+        });
+      });
+    } else {
+      container.innerHTML = `
+        <div class="card" style="margin-top:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <h3 style="margin:0;font-size:14px">Editar mensajes rápidos</h3>
+            <div style="display:flex;gap:8px">
+              <button class="ghost-button" id="qm-cancel-btn" style="font-size:12px">Cancelar</button>
+              <button class="ghost-button" id="qm-restore-btn" style="font-size:12px">Restaurar</button>
+              <button class="mini-button" id="qm-add-btn" style="font-size:12px">+ Agregar</button>
+              <button class="primary-action" id="qm-save-btn" style="font-size:12px">Guardar</button>
+            </div>
+          </div>
+          <div id="qm-rows" style="display:flex;flex-direction:column;gap:10px">
+            ${msgs.map((m, i) => `
+              <div class="qm-row" data-idx="${i}" style="display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:start">
+                <input class="qm-name" type="text" value="${escapeHtml(m.name)}" placeholder="Nombre" style="padding:7px 10px;font-size:12px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit" />
+                <textarea class="qm-text" rows="2" placeholder="Texto del mensaje" style="padding:7px 10px;font-size:12px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;resize:vertical;font-family:inherit">${escapeHtml(m.text)}</textarea>
+                <button class="mini-button danger-btn qm-delete" data-idx="${i}" style="font-size:11px;padding:3px 8px">✕</button>
+              </div>`).join("")}
+          </div>
+        </div>`;
+
+      container.querySelector("#qm-cancel-btn")?.addEventListener("click", () => { editMode = false; render(); });
+      container.querySelector("#qm-restore-btn")?.addEventListener("click", () => {
+        saveQuickMessages([...DEFAULT_QUICK_MESSAGES]);
+        editMode = false;
+        render();
+        showToast("✓ Mensajes restaurados");
+      });
+      container.querySelector("#qm-add-btn")?.addEventListener("click", () => {
+        const rows = container.querySelector("#qm-rows");
+        const i = rows.querySelectorAll(".qm-row").length;
+        const div = document.createElement("div");
+        div.className = "qm-row";
+        div.dataset.idx = i;
+        div.style.cssText = "display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:start";
+        div.innerHTML = `
+          <input class="qm-name" type="text" placeholder="Nombre" style="padding:7px 10px;font-size:12px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit" />
+          <textarea class="qm-text" rows="2" placeholder="Texto del mensaje" style="padding:7px 10px;font-size:12px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;resize:vertical;font-family:inherit"></textarea>
+          <button class="mini-button danger-btn qm-delete" style="font-size:11px;padding:3px 8px">✕</button>`;
+        div.querySelector(".qm-delete")?.addEventListener("click", () => div.remove());
+        rows.appendChild(div);
+      });
+      container.querySelector("#qm-save-btn")?.addEventListener("click", () => {
+        const updated = [];
+        container.querySelectorAll(".qm-row").forEach(row => {
+          const name = row.querySelector(".qm-name")?.value.trim();
+          const text = row.querySelector(".qm-text")?.value.trim();
+          if (name || text) updated.push({ name: name||"Sin nombre", text: text||"" });
+        });
+        saveQuickMessages(updated);
+        editMode = false;
+        render();
+        showToast("✓ Mensajes rápidos guardados");
+      });
+      container.querySelectorAll(".qm-delete").forEach(btn => {
+        btn.addEventListener("click", () => btn.closest(".qm-row").remove());
+      });
+    }
+  };
+  render();
 }
 
 // ── Discount codes (managed via Supabase discount_codes table) ────────────────

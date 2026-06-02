@@ -85,8 +85,8 @@ _Última actualización: 2026-06-01_
 - [ ] Función para enviar recordatorios de garantía o promociones por WhatsApp / email.
 - [ ] Crear sección de plantillas de email para clientes, editable.
 - [ ] Permitir subir/gestionar imágenes y documentos desde la UI.
-- [ ] icono de copiar para que tengamos la funcion rapida de copiar el texto plantilla y pegarlo en las conversaciones. 
-- [ ] Algun repertorio de plantillas: Saludo incicial, despedida, repsuesta a horarios, respuesta a pedido de garantia, otros. 
+- [x] Botón 📋 Copiar en cada plantilla de WhatsApp vinculada a tickets.
+- [x] Repertorio de mensajes rápidos — saludo, horarios, tiempo de reparación, garantía, equipo listo, despedida, etc. Editable, con botón copiar en cada uno.
 
 ## Fase 8: Deploy interno
 
