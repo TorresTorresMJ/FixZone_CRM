@@ -12,7 +12,7 @@ window.BRANCH_BRANDS = {
     tagline:          "WE FIX FAST. YOU RELAX.",
     crmLabel:         "CRM OPERATIVO",
     logoSrc:          "./assets/brand/LOGO-FIXZONE.png",
-    logoMonoSrc:      "./assets/brand/logos-mono/fixzone-mono.png",
+    logoMonoSrc:      "./src/styles/fixzone-monocromatico.png",
     pageTitle:        "FixZone CRM",
     receiptHeader:    "FixZone — Puerto Vallarta",
     brandClass:       "brand-fixzone",

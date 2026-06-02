@@ -97,9 +97,9 @@ const formSchemas = {
   ticket: {
     title: "Ticket", collection: "tickets",
     fields: [
-      ["client","Cliente","text"],["productName","Producto / equipo","text"],
+      ["client","Cliente","text",null,false,true],["productName","Producto / equipo","text"],
       // Device detail fields
-      ["imei","IMEI / No. Serie","text"],
+      ["imei","IMEI / No. Serie","text",null,false,true],
       ["color","Color","text"],
       ["accessories","Accesorios recibidos","text",null,true],
       ["physicalCondition","Condición física","select",["Bueno","Regular","Con daños","Muy dañado"]],
@@ -935,11 +935,12 @@ function ticketCard(ticket, perms) {
     </div>
     <div class="ticket-actions">
       <div style="position:relative;display:inline-block">
-        <button class="mini-button" data-print-ticket="${ticket.id}" title="Recibo de servicio">Recibo ▾</button>
-        <div class="print-menu" style="display:none;position:absolute;bottom:110%;left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:160px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
-          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-recepcion="${ticket.id}">📋 Recepción</button>
-          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-pago="${ticket.id}">💳 Pago / Entrega</button>
-          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-garantia="${ticket.id}">🛡 Garantía</button>
+        <button class="mini-button" data-print-ticket="${ticket.id}" title="Imprimir ticket">🖨 Imprimir ▾</button>
+        <div class="print-menu" style="display:none;position:absolute;bottom:110%;left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:190px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:2px" data-print-auto="${ticket.id}">⚡ Auto (según estado)</button>
+          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-recepcion="${ticket.id}">📋 Recibo de recepción</button>
+          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-pago="${ticket.id}">💳 Comprobante de pago</button>
+          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-garantia="${ticket.id}">🛡 Certificado de garantía</button>
         </div>
       </div>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
@@ -2735,11 +2736,11 @@ async function loadTicketParts(ticketId) {
       <label style="font-size:12px;text-transform:uppercase;letter-spacing:.06em">Refacciones / Partes usadas</label>
       <div id="parts-list" style="margin:10px 0 12px">${renderPartsList(items)}</div>
       ${total>0?`<div style="text-align:right;font-size:13px;margin-bottom:12px">Total partes: <strong>${money.format(total)}</strong></div>`:""}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-        <div class="field" style="flex:2;margin:0"><label style="font-size:11px">Producto</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;border-top:1px dashed rgba(255,255,255,.1);padding-top:10px;margin-top:4px">
+        <div class="field" style="flex:2;margin:0"><label style="font-size:11px;color:rgba(255,255,255,.5)">Agregar refacción / parte</label>
           <select id="part-product-sel" style="font-size:13px">${productOpts}</select>
         </div>
-        <div class="field" style="width:80px;margin:0"><label style="font-size:11px">Cantidad</label>
+        <div class="field" style="width:80px;margin:0"><label style="font-size:11px;color:rgba(255,255,255,.5)">Cant.</label>
           <input id="part-qty" type="number" min="1" step="1" value="1" style="font-size:13px" />
         </div>
         <button class="mini-button" id="add-part-btn" type="button">+ Agregar</button>
@@ -2995,6 +2996,9 @@ recordForm.addEventListener("submit", async e => {
       const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTicketId);
       if (dataMode==="remote" && isRealUUID) {
         await updateRemoteTicket(editingTicketId, data);
+        // Patch local state immediately so device fields aren't blanked before reloadState resolves
+        const idx = state.tickets.findIndex(t => t.id === editingTicketId);
+        if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], ...data };
         await reloadState();
       } else {
         const idx = state.tickets.findIndex(t => t.id === editingTicketId);
@@ -3190,11 +3194,11 @@ async function createRemoteTicket(r) {
   }).select().single();
   if (error) throw error;
 
-  // Create device record if any device fields were filled
+  // Create device record if any device fields were filled (customer_id is nullable)
   let deviceId = null;
-  if (customer?.id && (r.imei||r.color||r.accessories||r.physicalCondition)) {
+  if (r.imei||r.color||r.accessories||r.physicalCondition) {
     const { data: dev } = await supabaseClient.from("customer_devices").insert({
-      customer_id:          customer.id,
+      customer_id:          customer?.id||null,
       product_name:         r.productName||"Sin nombre",
       imei:                 r.imei||null,
       color:                r.color||null,
@@ -3287,18 +3291,16 @@ async function updateRemoteTicket(ticketId, r) {
     }).eq("id", oldTicket.deviceId);
   } else if (r.imei || r.color || r.accessories || r.physicalCondition) {
     const customer = lookups.customersByName.get(r.client);
-    if (customer?.id) {
-      const { data: dev } = await supabaseClient.from("customer_devices").insert({
-        customer_id:          customer.id,
-        product_name:         r.productName||"Sin nombre",
-        imei:                 r.imei||null,
-        color:                r.color||null,
-        accessories_received: r.accessories||null,
-        physical_condition:   r.physicalCondition||null,
-      }).select("id").single();
-      if (dev?.id) {
-        await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", ticketId);
-      }
+    const { data: dev } = await supabaseClient.from("customer_devices").insert({
+      customer_id:          customer?.id||null,
+      product_name:         r.productName||"Sin nombre",
+      imei:                 r.imei||null,
+      color:                r.color||null,
+      accessories_received: r.accessories||null,
+      physical_condition:   r.physicalCondition||null,
+    }).select("id").single();
+    if (dev?.id) {
+      await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", ticketId);
     }
   }
 }
@@ -3853,6 +3855,18 @@ document.addEventListener("click", async e => {
     }
     return;
   }
+  const printAuto = e.target.closest("[data-print-auto]");
+  if (printAuto) {
+    document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none");
+    const t = state.tickets.find(i=>i.id===printAuto.dataset.printAuto);
+    if (t) {
+      let type = "recepcion";
+      if (t.status === "Garantia") type = "garantia";
+      else if (t.paymentStatus === "Pagado" || t.status === "Entregado" || t.paymentStatus === "Abonado") type = "pago";
+      printRecibo(t, type);
+    }
+    return;
+  }
   const printRec = e.target.closest("[data-print-recepcion]");
   if (printRec) { document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none"); const t=state.tickets.find(i=>i.id===printRec.dataset.printRecepcion); if(t) printRecibo(t,"recepcion"); return; }
   const printPago = e.target.closest("[data-print-pago]");
@@ -4086,7 +4100,7 @@ function printRecibo(ticket, type) {
   const D         = "────────────────────────────────────────";
   const now       = new Date();
   const timeStr   = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
-  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "80mm";
+  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "58mm";
   document.documentElement.style.setProperty("--receipt-width", receiptWidth);
 
   const header = `
@@ -4096,7 +4110,6 @@ function printRecibo(ticket, type) {
     <p class="rct-dash">${D}</p>
     <p class="rct-row"><strong>FOLIO:</strong> <span>${escapeHtml(ticket.tracking)}</span></p>
     <p class="rct-row"><strong>FECHA:</strong> <span>${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</span></p>
-    <p class="rct-row"><strong>SUCURSAL:</strong> <span>${escapeHtml(brand.displayName)}</span></p>
     <p class="rct-dash">${D}</p>
     <p class="rct-label">CLIENTE:</p>
     <p class="rct-value">${escapeHtml(ticket.client)}</p>
@@ -4317,7 +4330,7 @@ function printTicket(ticket) {
 </div>`;
 
   // Set paper width via CSS variable before printing
-  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "80mm";
+  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "58mm";
   document.documentElement.style.setProperty("--receipt-width", receiptWidth);
   window.print();
   // Show size toggle in a small floating bar before print dialog
@@ -4340,7 +4353,7 @@ function printCotizacion(ticket) {
   const now     = new Date();
   const timeStr = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
   const client  = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
-  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "80mm";
+  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "58mm";
   document.documentElement.style.setProperty("--receipt-width", receiptWidth);
 
   document.querySelector("#print-receipt").innerHTML = `

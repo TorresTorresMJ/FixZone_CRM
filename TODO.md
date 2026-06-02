@@ -135,7 +135,16 @@ _Última actualización: 2026-05-27_
 - [x] Mostrar categorías filtradas por tipo en Finanzas (Ingreso/Egreso)
 - [x] Botón de perfil de usuario para cambiar contraseña (dropdown en header)
 - [x] Cards del KANBAN arrastrables entre columnas (tickets + soporte IT)
-
+- [x] Permitir tickets para clientes sin registrar — Cliente e IMEI ahora son opcionales en el form.
+- [x] IMEI/color/accesorios se borran al editar — Fix: device record persiste aunque el cliente no esté registrado (SQL 19 aplicado).
+- [x] Botón "Recibo ▾" → "🖨 Imprimir ▾" con opciones claras: Recibo de recepción / Comprobante de pago / Certificado de garantía.
+- [x] Letra muy chica para la impresora — Fuentes subidas a 9–9.5pt base.
+- [x] Tamaño del ticket: 58mm — Cambiado CSS y JS default de 80mm a 58mm.
+- [x] SUCURSAL removida del ticket impreso.
+- [x] Logo del ticket actualizado — logoMonoSrc apunta a src/styles/fixzone-monocromatico.png.
+- [x] Impresión automática según estado — opción "⚡ Auto" en dropdown: Garantia→garantía, Pagado/Entregado/Abonado→pago, resto→recepción.
+- [x] Confusión visual en refacciones del modal corregida — el selector de "agregar" ahora tiene separador y label "Agregar refacción / parte" en lugar de "Producto".
+ 
 ## Fase 11: Cotizaciones
 - [x] Nueva sección: Cotizaciones. Sección dedicada, cotización se convierte a ticket con un clic. Partes/refacciones se agregan directamente desde el modal de edición del ticket.
 - [x] Acceso para enviar la cotizacion a WhatsApp — botón 💬 WhatsApp en la card genera mensaje con partidas y total; botón 🖨 Imprimir genera PDF imprimible de cotización formal.
