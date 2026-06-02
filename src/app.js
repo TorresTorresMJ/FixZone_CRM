@@ -1187,12 +1187,17 @@ function checkoutPos() {
 
 let financePeriod = "month"; // "today" | "week" | "month" | "all"
 
+function localDateMinus(days) {
+  const d = new Date(); d.setDate(d.getDate() - days);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
 function financeFilteredTxs() {
   const all   = branchTransactions();
   const today = dateStamp();
   if (financePeriod === "today") return all.filter(t => t.date === today);
-  if (financePeriod === "week")  { const d=new Date(); d.setDate(d.getDate()-6); const s=d.toISOString().slice(0,10); return all.filter(t=>t.date>=s); }
-  if (financePeriod === "month") { const s=today.slice(0,7)+"-01"; return all.filter(t=>t.date>=s); }
+  if (financePeriod === "week")  return all.filter(t => t.date >= localDateMinus(6));
+  if (financePeriod === "month") return all.filter(t => t.date >= today.slice(0,7)+"-01");
   return all;
 }
 
@@ -1253,17 +1258,19 @@ function renderFinance() {
     </tr>`).join("")||tableEmpty(6);
 }
 
-let reportsPeriod = "today"; // "today" | "week" | "month" | "all"
+let reportsPeriod = "month"; // "today" | "week" | "month" | "all"
 
 function reportDateRange() {
   const today = dateStamp();
   if (reportsPeriod === "today")  return [today, today];
-  if (reportsPeriod === "week")   { const d=new Date(); d.setDate(d.getDate()-6); return [d.toISOString().slice(0,10), today]; }
-  if (reportsPeriod === "month")  { return [today.slice(0,7)+"-01", today]; }
+  if (reportsPeriod === "week")   return [localDateMinus(6), today];
+  if (reportsPeriod === "month")  return [today.slice(0,7)+"-01", today];
   return ["2000-01-01", today];
 }
 
 function renderReports() {
+  document.querySelectorAll(".rpt-filter").forEach(b =>
+    b.classList.toggle("is-active", b.dataset.rpt === reportsPeriod));
   const [from, to] = reportDateRange();
   const bTxs       = branchTransactions().filter(t => t.date >= from && t.date <= to);
   const bTickets   = branchTickets();
@@ -1385,6 +1392,67 @@ function renderReports() {
         </tr></thead>
         <tbody>${empRows}</tbody>
       </table>
+    </div>` : "";
+
+  // Monthly balance — always built from ALL branch transactions (ignores period filter)
+  // Useful for SAT declarations and monthly accounting
+  const allTxs  = branchTransactions();
+  const byMonth = {};
+  for (const t of allTxs) {
+    const ym = (t.date||"").slice(0,7); if (!ym) continue;
+    if (!byMonth[ym]) byMonth[ym] = { income:0, expense:0, tickets:0 };
+    if (t.type==="Ingreso") byMonth[ym].income  += Number(t.amount||0);
+    else                    byMonth[ym].expense += Number(t.amount||0);
+  }
+  for (const t of branchTickets()) {
+    const ym = (t.createdAt||"").slice(0,7); if (!ym) continue;
+    if (!byMonth[ym]) byMonth[ym] = { income:0, expense:0, tickets:0 };
+    byMonth[ym].tickets++;
+  }
+  const monthNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const monthRows  = Object.keys(byMonth).sort().reverse().map(ym => {
+    const { income, expense, tickets } = byMonth[ym];
+    const bal  = income - expense;
+    const [y,m] = ym.split("-");
+    const label = `${monthNames[Number(m)-1]} ${y}`;
+    return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
+      <td style="padding:7px 10px;font-weight:600">${label}</td>
+      <td style="padding:7px 10px;text-align:right;color:#2ecc71">${income>0?money.format(income):"—"}</td>
+      <td style="padding:7px 10px;text-align:right;color:#ff6b6b">${expense>0?money.format(expense):"—"}</td>
+      <td style="padding:7px 10px;text-align:right;font-weight:700;color:${bal>=0?"#2ecc71":"#ff6b6b"}">${money.format(bal)}</td>
+      <td style="padding:7px 10px;text-align:center;color:rgba(255,255,255,.5)">${tickets}</td>
+    </tr>`;
+  }).join("");
+
+  const monthTotIncome  = Object.values(byMonth).reduce((s,v)=>s+v.income,0);
+  const monthTotExpense = Object.values(byMonth).reduce((s,v)=>s+v.expense,0);
+  const monthTotBal     = monthTotIncome - monthTotExpense;
+
+  document.querySelector("#reports-monthly").innerHTML = Object.keys(byMonth).length ? `
+    <div class="card" style="margin-top:16px;border-left:3px solid var(--fz-primary,#085ACB)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:14px">Balance mensual — todas las fechas</h3>
+        <span style="font-size:11px;color:rgba(255,255,255,.4)">Para declaraciones SAT / contabilidad</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="border-bottom:2px solid rgba(255,255,255,.15)">
+            <th style="text-align:left;padding:7px 10px">Mes</th>
+            <th style="text-align:right;padding:7px 10px;color:#2ecc71">Ingresos</th>
+            <th style="text-align:right;padding:7px 10px;color:#ff6b6b">Egresos</th>
+            <th style="text-align:right;padding:7px 10px">Balance</th>
+            <th style="text-align:center;padding:7px 10px;color:rgba(255,255,255,.5)">Tickets</th>
+          </tr></thead>
+          <tbody>${monthRows}</tbody>
+          <tfoot><tr style="border-top:2px solid rgba(255,255,255,.15);font-weight:700">
+            <td style="padding:8px 10px">TOTAL</td>
+            <td style="padding:8px 10px;text-align:right;color:#2ecc71">${money.format(monthTotIncome)}</td>
+            <td style="padding:8px 10px;text-align:right;color:#ff6b6b">${money.format(monthTotExpense)}</td>
+            <td style="padding:8px 10px;text-align:right;color:${monthTotBal>=0?"#2ecc71":"#ff6b6b"}">${money.format(monthTotBal)}</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>
     </div>` : "";
 }
 
@@ -4513,7 +4581,10 @@ function downloadFile(content, filename, type) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function emptyMessage(text) { return `<p class="muted">${text}</p>`; }
 function tableEmpty(cols)   { return `<tr><td colspan="${cols}" class="muted">Sin registros.</td></tr>`; }
-function dateStamp()        { return new Date().toISOString().slice(0,10); }
+function dateStamp() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
 function escapeHtml(v)      { return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
 
 // ──────────────────────────────────────────────────────────────────────────────
