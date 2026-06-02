@@ -26,6 +26,7 @@ const DEFAULT_DEVICE_MODELS = [
   "iPhone 14","iPhone 14 Plus","iPhone 14 Pro","iPhone 14 Pro Max",
   "iPhone 15","iPhone 15 Plus","iPhone 15 Pro","iPhone 15 Pro Max",
   "iPhone 16","iPhone 16 Plus","iPhone 16 Pro","iPhone 16 Pro Max",
+  "iPhone 17","iPhone 17 Air","iPhone 17 Pro","iPhone 17 Pro Max",
   "iPhone SE (1ª gen)","iPhone SE (2ª gen)","iPhone SE (3ª gen)",
   // Samsung Galaxy S
   "Samsung Galaxy S10","Samsung Galaxy S10+","Samsung Galaxy S20","Samsung Galaxy S20+","Samsung Galaxy S20 Ultra",
@@ -33,6 +34,7 @@ const DEFAULT_DEVICE_MODELS = [
   "Samsung Galaxy S22","Samsung Galaxy S22+","Samsung Galaxy S22 Ultra",
   "Samsung Galaxy S23","Samsung Galaxy S23+","Samsung Galaxy S23 Ultra",
   "Samsung Galaxy S24","Samsung Galaxy S24+","Samsung Galaxy S24 Ultra",
+  "Samsung Galaxy S25","Samsung Galaxy S25+","Samsung Galaxy S25 Edge","Samsung Galaxy S25 Ultra",
   // Samsung Galaxy A
   "Samsung Galaxy A12","Samsung Galaxy A13","Samsung Galaxy A14","Samsung Galaxy A15",
   "Samsung Galaxy A32","Samsung Galaxy A33","Samsung Galaxy A34",
