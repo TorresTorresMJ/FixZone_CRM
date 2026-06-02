@@ -218,7 +218,18 @@ Templates stored in `localStorage` key `fixzone-wa-templates-v1`. Default keys:
 - `cotizacion` — empty by default (falls back to auto-formatted message with line items)
 - `listo`, `abono`, `pagado`, `garantia` — status-based message templates
 
-Available variables: `{cliente}`, `{equipo}`, `{sucursal}`, `{folio}`, `{monto}`, `{saldo}`, `{total}`, `{items}`. `fillWATemplate()` handles substitution. Templates are editable in the Automatización tab.
+Available variables: `{cliente}`, `{equipo}`, `{sucursal}`, `{folio}`, `{monto}`, `{saldo}`, `{total}`, `{items}`. `fillWATemplate()` handles substitution. Templates are editable in the Automatización tab. Each template has a 📋 **Copiar** button to copy the raw text (with variables) to clipboard.
+
+### Mensajes rápidos
+
+Repertorio de mensajes de atención al cliente, copiables con un clic. Stored in `localStorage` key `fixzone-quick-messages-v1`. Default messages: saludo inicial, horarios, tiempo de reparación, garantía, equipo listo, despedida, no tenemos el modelo.
+
+- `loadQuickMessages()` / `saveQuickMessages(msgs)` — read/write localStorage
+- `renderQuickMessages()` — renders the section in `#quick-messages-manager` (Automatización tab). View mode shows cards with 📋 Copiar; edit mode allows add/delete/rename/reorder + Restaurar defaults.
+
+### Print helpers
+
+- `doPrint()` — must be used instead of `window.print()` in all print functions. Injects `<style id="fz-print-size">` with a hardcoded `@page { size: Xmm auto; margin:0 }` before printing. Chrome/Chromium does not evaluate `var()` inside `@page { size }`, so the CSS custom property `--receipt-width` is ignored without this fix — resulting in Letter/A4 paper and blank space at the bottom of every receipt.
 
 ### Supabase SQL files (apply in order)
 SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
