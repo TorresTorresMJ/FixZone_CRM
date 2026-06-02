@@ -3227,6 +3227,17 @@ async function createRemoteTicket(r) {
     quoteItems: r.quoteItems||[],
   };
   state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
+
+  // Auto-create income transaction if an upfront payment was recorded at creation
+  if (Number(r.paidAmount || 0) > 0) {
+    await createRemoteTransaction({
+      date:     dateStamp(),
+      type:     "Ingreso",
+      concept:  `Anticipo ${data.tracking_number}`,
+      category: "Servicio",
+      amount:   Number(r.paidAmount),
+    });
+  }
 }
 
 async function updateRemoteTicket(ticketId, r) {
@@ -3250,6 +3261,19 @@ async function updateRemoteTicket(ticketId, r) {
     ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
   }).eq("id", ticketId);
   if (error) throw error;
+
+  // Auto-create income transaction when paidAmount increases via edit form
+  const oldPaid = Number(oldTicket?.paidAmount || 0);
+  const newPaid = Number(r.paidAmount || 0);
+  if (newPaid > oldPaid) {
+    await createRemoteTransaction({
+      date:     dateStamp(),
+      type:     "Ingreso",
+      concept:  `Pago ${oldTicket?.tracking || ticketId}`,
+      category: "Servicio",
+      amount:   newPaid - oldPaid,
+    });
+  }
 
   // Log stage change event
   const stageChanged = oldTicket?.status && r.status && oldTicket.status !== r.status;
