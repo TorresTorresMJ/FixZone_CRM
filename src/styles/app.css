@@ -1452,3 +1452,32 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   .pos-layout { grid-template-columns: 1fr; }
   .pos-cart-panel { position: static; }
 }
+/* ── Device autocomplete dropdown ─────────────────────────────────────────── */
+.device-ac-wrapper { position: relative; }
+.device-ac-dropdown {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0; right: 0;
+  z-index: 9999;
+  background: #1a1a2e;
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  box-shadow: 0 8px 28px rgba(0,0,0,.55);
+}
+.device-ac-opt {
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.device-ac-opt:last-child { border-bottom: none; }
+.device-ac-opt:hover,
+.device-ac-opt.is-hi { background: rgba(var(--fz-primary-rgb,8,90,203), .2); }
+.device-ac-add { color: var(--fz-primary, #085ACB); font-style: italic; }
+.device-ac-add:hover,
+.device-ac-add.is-hi { background: rgba(var(--fz-primary-rgb,8,90,203), .15); }

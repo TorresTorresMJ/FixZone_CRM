@@ -13,6 +13,54 @@ const TX_CATEGORIES_EXPENSE = ["Inventario","Insumos","Renta","Nomina","Servicio
 const TX_CATEGORIES_ALL     = [...new Set([...TX_CATEGORIES_INCOME, ...TX_CATEGORIES_EXPENSE])];
 const PRODUCT_CATEGORIES    = ["Refaccion","Bateria","Pantalla","Accesorio","Microsoldadura","Cable","Cargador","Otro"];
 const POS_PAYMENT_METHODS   = ["Efectivo","Tarjeta","Transferencia","Otro"];
+const DEVICE_MODELS_KEY = "fixzone-device-models-v1";
+const DEFAULT_DEVICE_MODELS = [
+  // iPhone
+  "iPhone 6","iPhone 6 Plus","iPhone 6s","iPhone 6s Plus",
+  "iPhone 7","iPhone 7 Plus",
+  "iPhone 8","iPhone 8 Plus",
+  "iPhone X","iPhone XR","iPhone XS","iPhone XS Max",
+  "iPhone 11","iPhone 11 Pro","iPhone 11 Pro Max",
+  "iPhone 12","iPhone 12 Mini","iPhone 12 Pro","iPhone 12 Pro Max",
+  "iPhone 13","iPhone 13 Mini","iPhone 13 Pro","iPhone 13 Pro Max",
+  "iPhone 14","iPhone 14 Plus","iPhone 14 Pro","iPhone 14 Pro Max",
+  "iPhone 15","iPhone 15 Plus","iPhone 15 Pro","iPhone 15 Pro Max",
+  "iPhone 16","iPhone 16 Plus","iPhone 16 Pro","iPhone 16 Pro Max",
+  "iPhone SE (1ª gen)","iPhone SE (2ª gen)","iPhone SE (3ª gen)",
+  // Samsung Galaxy S
+  "Samsung Galaxy S10","Samsung Galaxy S10+","Samsung Galaxy S20","Samsung Galaxy S20+","Samsung Galaxy S20 Ultra",
+  "Samsung Galaxy S21","Samsung Galaxy S21+","Samsung Galaxy S21 Ultra",
+  "Samsung Galaxy S22","Samsung Galaxy S22+","Samsung Galaxy S22 Ultra",
+  "Samsung Galaxy S23","Samsung Galaxy S23+","Samsung Galaxy S23 Ultra",
+  "Samsung Galaxy S24","Samsung Galaxy S24+","Samsung Galaxy S24 Ultra",
+  // Samsung Galaxy A
+  "Samsung Galaxy A12","Samsung Galaxy A13","Samsung Galaxy A14","Samsung Galaxy A15",
+  "Samsung Galaxy A32","Samsung Galaxy A33","Samsung Galaxy A34",
+  "Samsung Galaxy A50","Samsung Galaxy A51","Samsung Galaxy A52","Samsung Galaxy A52s",
+  "Samsung Galaxy A53","Samsung Galaxy A54","Samsung Galaxy A55",
+  "Samsung Galaxy A71","Samsung Galaxy A72","Samsung Galaxy A73",
+  // Samsung Note / Fold
+  "Samsung Galaxy Note 10","Samsung Galaxy Note 10+","Samsung Galaxy Note 20","Samsung Galaxy Note 20 Ultra",
+  "Samsung Galaxy Z Fold 4","Samsung Galaxy Z Fold 5","Samsung Galaxy Z Flip 4","Samsung Galaxy Z Flip 5",
+  // Motorola
+  "Motorola Moto G","Motorola Moto G Play","Motorola Moto G Power","Motorola Moto G Stylus",
+  "Motorola Moto G32","Motorola Moto G42","Motorola Moto G52","Motorola Moto G53","Motorola Moto G54",
+  "Motorola Moto G62","Motorola Moto G73","Motorola Moto G84",
+  "Motorola Edge 20","Motorola Edge 30","Motorola Edge 40","Motorola Edge 50",
+  // Xiaomi / Redmi
+  "Xiaomi Redmi 9","Xiaomi Redmi 9A","Xiaomi Redmi 10","Xiaomi Redmi 12","Xiaomi Redmi 13",
+  "Xiaomi Redmi Note 10","Xiaomi Redmi Note 10 Pro","Xiaomi Redmi Note 11","Xiaomi Redmi Note 11 Pro",
+  "Xiaomi Redmi Note 12","Xiaomi Redmi Note 12 Pro","Xiaomi Redmi Note 13","Xiaomi Redmi Note 13 Pro",
+  "Xiaomi 12","Xiaomi 12 Pro","Xiaomi 13","Xiaomi 13 Pro","Xiaomi 14",
+  // Huawei
+  "Huawei Y7","Huawei Y9","Huawei P30","Huawei P30 Pro","Huawei P40","Huawei P40 Pro",
+  "Huawei P50","Huawei P50 Pro","Huawei Mate 20","Huawei Mate 30","Huawei Mate 40",
+  // LG
+  "LG G8","LG V60","LG Velvet","LG K52",
+  // iPad / Tablets
+  "iPad","iPad Air","iPad Pro","iPad Mini","Samsung Galaxy Tab A","Samsung Galaxy Tab S",
+];
+
 const ROLE_LABELS  = { it: "Admin", owner: "Admin", admin: "Admin", standard: "Estándar", technician: "Estándar", marketing: "Marketing", viewer: "Solo lectura", sales: "Ventas" };
 
 // ── Role permission map ───────────────────────────────────────────────────────
@@ -2827,6 +2875,7 @@ function openForm(type, prefill = {}) {
     formFields.innerHTML += buildQuoteItemsSection();
     initQuoteItemsBuilder(prefill.quoteItems || []);
   }
+  initDeviceAutocomplete();
   modal.showModal();
 }
 
@@ -2891,6 +2940,7 @@ function openEditTicket(ticketId) {
     if (dcAmt  && ticket.discountAmount) dcAmt.value = ticket.discountAmount;
     if (dcInp  && ticket.discountCode)  dcInp.value  = ticket.discountCode;
     initQuoteItemsBuilder(ticket.quoteItems || []);
+    initDeviceAutocomplete();
     modal.showModal();
     return;
   }
@@ -2902,6 +2952,7 @@ function openEditTicket(ticketId) {
   formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "", optional)
   ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
+  initDeviceAutocomplete();
   modal.showModal();
   initPhotoUpload(ticketId);
   loadTicketParts(ticketId);
@@ -3082,6 +3133,96 @@ async function loadTicketPhotos(ticketId) {
     </div>`).join("");
 }
 
+// ── Device models autocomplete ────────────────────────────────────────────────
+function loadDeviceModels() {
+  try { return JSON.parse(localStorage.getItem(DEVICE_MODELS_KEY)) || [...DEFAULT_DEVICE_MODELS]; }
+  catch { return [...DEFAULT_DEVICE_MODELS]; }
+}
+
+function saveDeviceModel(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const models = loadDeviceModels();
+  if (models.some(m => m.toLowerCase() === trimmed.toLowerCase())) return;
+  models.push(trimmed);
+  models.sort((a, b) => a.localeCompare(b, "es"));
+  localStorage.setItem(DEVICE_MODELS_KEY, JSON.stringify(models));
+}
+
+function getAllDeviceNames() {
+  const seen = new Set();
+  const result = [];
+  const add = (n) => { const k = n.trim().toLowerCase(); if (k && !seen.has(k)) { seen.add(k); result.push(n.trim()); } };
+  loadDeviceModels().forEach(add);
+  (state.tickets || []).forEach(t => { if (t.productName) add(t.productName); });
+  return result.sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function initDeviceAutocomplete() {
+  formFields.querySelectorAll("input[data-device-ac]").forEach(input => {
+    const wrapper = input.closest(".device-ac-wrapper");
+    if (!wrapper) return;
+    let ddEl = null;
+    let hiIdx = -1;
+
+    const close = () => { ddEl?.remove(); ddEl = null; hiIdx = -1; };
+
+    const getOpts = (q) => {
+      const all = getAllDeviceNames();
+      const qLow = (q || "").toLowerCase();
+      return qLow ? all.filter(n => n.toLowerCase().includes(qLow)) : all;
+    };
+
+    const open = (q) => {
+      close();
+      const opts = getOpts(q).slice(0, 60);
+      const showAdd = q.trim() && !opts.some(o => o.toLowerCase() === q.trim().toLowerCase());
+      if (!opts.length && !showAdd) return;
+      ddEl = document.createElement("div");
+      ddEl.className = "device-ac-dropdown";
+      ddEl.innerHTML =
+        opts.map((o, i) => `<div class="device-ac-opt" data-idx="${i}" data-val="${escapeHtml(o)}">${escapeHtml(o)}</div>`).join("") +
+        (showAdd ? `<div class="device-ac-opt device-ac-add" data-add="${escapeHtml(q.trim())}">+ Agregar "<strong>${escapeHtml(q.trim())}</strong>"</div>` : "");
+      wrapper.appendChild(ddEl);
+      ddEl.addEventListener("mousedown", e => {
+        e.preventDefault();
+        const opt = e.target.closest(".device-ac-opt");
+        if (!opt) return;
+        const val = opt.dataset.add ? opt.dataset.add : opt.dataset.val;
+        if (opt.dataset.add) saveDeviceModel(val);
+        input.value = val;
+        close();
+      });
+    };
+
+    const highlight = (dir) => {
+      if (!ddEl) { open(input.value); return; }
+      const items = ddEl.querySelectorAll(".device-ac-opt");
+      hiIdx = Math.max(0, Math.min(hiIdx + dir, items.length - 1));
+      items.forEach((el, i) => el.classList.toggle("is-hi", i === hiIdx));
+      items[hiIdx]?.scrollIntoView({ block: "nearest" });
+    };
+
+    input.addEventListener("focus", () => open(input.value));
+    input.addEventListener("input", () => { hiIdx = -1; open(input.value); });
+    input.addEventListener("blur",  () => setTimeout(close, 160));
+    input.addEventListener("keydown", e => {
+      if (e.key === "ArrowDown") { e.preventDefault(); highlight(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); highlight(-1); }
+      else if (e.key === "Enter" && ddEl) {
+        const hi = ddEl.querySelector(".is-hi");
+        if (hi) {
+          e.preventDefault();
+          const val = hi.dataset.add ? hi.dataset.add : hi.dataset.val;
+          if (hi.dataset.add) saveDeviceModel(val);
+          input.value = val;
+          close();
+        }
+      } else if (e.key === "Escape") close();
+    });
+  });
+}
+
 function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=false) {
   const labelHtml = optional
     ? `${label} <span style="font-size:11px;font-weight:400;opacity:0.45;text-transform:none;letter-spacing:0">(opcional)</span>`
@@ -3104,19 +3245,11 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
       </select></div>`;
   }
   if (ftype==="device-autocomplete") {
-    const seen = new Set();
-    const suggestions = (state.tickets||[])
-      .map(t => (t.productName||"").trim())
-      .filter(n => n && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()))
-      .sort((a,b) => a.localeCompare(b));
     const val = defaultValue ?? "";
-    return `<div class="field ${wide?"is-wide":""}">
+    return `<div class="field ${wide?"is-wide":""} device-ac-wrapper">
       <label for="${name}">${labelHtml}</label>
       <input id="${name}" name="${name}" type="text" value="${escapeHtml(String(val))}"
-        list="device-datalist-${name}" autocomplete="off" ${optional?"":"required"} />
-      <datalist id="device-datalist-${name}">
-        ${suggestions.map(s=>`<option value="${escapeHtml(s)}">`).join("")}
-      </datalist>
+        data-device-ac autocomplete="off" placeholder="Escribe para buscar…" ${optional?"":"required"} />
     </div>`;
   }
   const val = defaultValue ?? (ftype==="date" ? new Date().toISOString().slice(0,10) : "");
