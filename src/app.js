@@ -97,7 +97,7 @@ const formSchemas = {
   ticket: {
     title: "Ticket", collection: "tickets",
     fields: [
-      ["client","Cliente","text",null,false,true],["productName","Producto / equipo","text"],
+      ["client","Cliente","text",null,false,true],["productName","Producto / equipo","device-autocomplete"],
       // Device detail fields
       ["imei","IMEI / No. Serie","text",null,false,true],
       ["color","Color","text"],
@@ -153,7 +153,7 @@ const formSchemas = {
     title: "Nueva cotización", collection: "tickets",
     fields: [
       ["client","Cliente","text"],
-      ["productName","Dispositivo / equipo","text"],
+      ["productName","Dispositivo / equipo","device-autocomplete"],
       ["issue","Descripción del problema","text",null,true,true],
       ["branch","Sucursal","select",BRANCHES],
       ["notes","Notas","text",null,true,true],
@@ -1410,6 +1410,61 @@ function renderReports() {
         <tbody>${stageRows}</tbody>
       </table>
     </div>`;
+
+  // Device ranking — uses ALL branch tickets (ignores period filter, we want lifetime counts)
+  {
+    const allBranchTickets = branchTickets();
+    const deviceMap = {};
+    for (const t of allBranchTickets) {
+      const name = (t.productName||"").trim();
+      if (!name) continue;
+      if (!deviceMap[name]) deviceMap[name] = { count:0, revenue:0, completed:0 };
+      deviceMap[name].count++;
+      deviceMap[name].revenue += Number(t.repairAmount||0);
+      if (["Listo","Entregado"].includes(t.status)) deviceMap[name].completed++;
+    }
+    const deviceRanking = Object.entries(deviceMap)
+      .sort((a,b) => b[1].count - a[1].count)
+      .slice(0, 20);
+    const maxCount = deviceRanking[0]?.[1]?.count || 1;
+
+    const deviceRows = deviceRanking.map(([name, s], i) => {
+      const barPct = Math.round((s.count / maxCount) * 100);
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:6px 10px;color:rgba(255,255,255,.4);width:28px;text-align:right">${i+1}</td>
+        <td style="padding:6px 10px;font-weight:500">${escapeHtml(name)}</td>
+        <td style="padding:6px 10px;text-align:center;font-weight:700">${s.count}</td>
+        <td style="padding:6px 10px;min-width:80px">
+          <div style="background:rgba(255,255,255,.08);border-radius:3px;height:5px">
+            <div style="width:${barPct}%;background:var(--fz-primary,#2F6FFF);height:5px;border-radius:3px"></div>
+          </div>
+        </td>
+        <td style="padding:6px 10px;text-align:center;color:rgba(255,255,255,.5)">${s.completed}</td>
+        <td style="padding:6px 10px;text-align:right;color:#2ecc71">${s.revenue>0?money.format(s.revenue):"—"}</td>
+      </tr>`;
+    }).join("");
+
+    document.querySelector("#reports-devices").innerHTML = deviceRanking.length ? `
+      <div class="card" style="margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h3 style="margin:0;font-size:14px">Equipos más frecuentes</h3>
+          <span style="font-size:11px;color:rgba(255,255,255,.4)">Historial completo de la sucursal · Top 20</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+              <th style="padding:6px 10px;width:28px"></th>
+              <th style="text-align:left;padding:6px 10px">Equipo</th>
+              <th style="text-align:center;padding:6px 10px">Tickets</th>
+              <th style="padding:6px 10px">Frecuencia</th>
+              <th style="text-align:center;padding:6px 10px">Cerrados</th>
+              <th style="text-align:right;padding:6px 10px">Ingresos</th>
+            </tr></thead>
+            <tbody>${deviceRows}</tbody>
+          </table>
+        </div>
+      </div>` : "";
+  }
 
   // Low stock list
   document.querySelector("#reports-stock").innerHTML = lowStock.length ? `
@@ -3047,6 +3102,22 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
         <option value="">— Ninguno —</option>
         ${products.map(p=>`<option value="${p.id}" ${p.id===defaultValue?"selected":""}>${escapeHtml((p.sku?`[${p.sku}] `:'')+p.name)}</option>`).join("")}
       </select></div>`;
+  }
+  if (ftype==="device-autocomplete") {
+    const seen = new Set();
+    const suggestions = (state.tickets||[])
+      .map(t => (t.productName||"").trim())
+      .filter(n => n && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()))
+      .sort((a,b) => a.localeCompare(b));
+    const val = defaultValue ?? "";
+    return `<div class="field ${wide?"is-wide":""}">
+      <label for="${name}">${labelHtml}</label>
+      <input id="${name}" name="${name}" type="text" value="${escapeHtml(String(val))}"
+        list="device-datalist-${name}" autocomplete="off" ${optional?"":"required"} />
+      <datalist id="device-datalist-${name}">
+        ${suggestions.map(s=>`<option value="${escapeHtml(s)}">`).join("")}
+      </datalist>
+    </div>`;
   }
   const val = defaultValue ?? (ftype==="date" ? new Date().toISOString().slice(0,10) : "");
   return `<div class="field ${wide?"is-wide":""}">
