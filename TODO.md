@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-05-27_
+_Última actualización: 2026-06-01_
 
 ## Fase 1: Definir operacion interna
 
@@ -10,8 +10,8 @@ _Última actualización: 2026-05-27_
 - [x] Registrar empleados iniciales: Kevin Mijangos, Carlos Mijangos, Gigi Vargas, Monica Torres, Diego Mijangos y Daniel Mijangos.
 - [x] Decidir si se usaran correos Gmail existentes o dominio propio mas adelante.
 - [x] Definir flujo real de reparacion: Cotizacion, Recibido, En reparacion, Listo, Entregado, Garantia.
-- [ ] Definir datos obligatorios de cliente: nombre, telefono, email, direccion, notas.
-- [x] Definir datos obligatorios de equipo: IMEI/serie, color, accesorios recibidos, estado fisico (campos en form de ticket, guardado en customer_devices). 
+- [x] Definir datos obligatorios de cliente: nombre, telefono — cliente e IMEI opcionales en tickets walk-in.
+- [x] Definir datos obligatorios de equipo: IMEI/serie, color, accesorios recibidos, estado fisico (campos en form de ticket, guardado en customer_devices).
 - [x] Cambiar a RefaxZone los nombres de FixZone cuando la sucursal sea puebla
 
 ## Fase 2: Base de datos y seguridad
@@ -29,27 +29,27 @@ _Última actualización: 2026-05-27_
 ## Fase 3: Migrar app actual a Supabase
 
 - [x] Reemplazar `localStorage` por Supabase (modo remoto activo en producción).
-- [x] $Agregar pantalla de login con Google.$ Log in será con creación de usuarios y contraseña.  Usuarios internos de base de datos. 
+- [x] Log in con usuario y contraseña. Usuarios internos de base de datos.
 - [x] Bloquear la app si el correo no existe en `employees`.
 - [x] Conectar clientes a la base de datos.
 - [x] Conectar productos e inventario a la base de datos.
 - [x] Conectar tickets a la base de datos.
 - [x] Conectar compras de insumos a la base de datos.
 - [x] Conectar ingresos y egresos a la base de datos.
-- [x] Agregar estados de carga, errores y confirmaciones (toasts de éxito/error + confirm modal — Sprint A 2026-05-27).
+- [x] Agregar estados de carga, errores y confirmaciones (toasts de éxito/error + confirm modal).
 
 ## Fase 4: Tickets y recibos
 
-- [x] Mejorar folio de ticket con formato fijo.
-- [x] Agregar folio visible de seguimiento con formato `[FZ] 0001`.
-- [x] Agregar impresion de recibo de recepcion.
-- [x] Agregar impresion de recibo de pago.
-- [x] Agregar impresion de garantia.
+- [x] Mejorar folio de ticket con formato fijo `[FZ] 0001`.
+- [x] Agregar impresion de recibo de recepcion, pago y garantia.
 - [ ] Agregar plantilla con terminos y condiciones.
 - [x] Permitir abonos, saldo pendiente y pagos parciales.
+- [x] Pagos de tickets se registran automáticamente como Ingresos en Finanzas (backfill migration 20).
 - [x] Agregar historial de eventos por ticket (detecta cambio de stage, timeline en modal de edición).
-- [ ] Agregar fotos de evidencia antes y despues.
+- [ ] Agregar fotos de evidencia antes y despues del dispositivo.
 - [x] Modificar el tamaño del recibo — botones 58mm/80mm en el header, persiste en localStorage.
+- [x] Impresión automática según estado del ticket (⚡ Auto en dropdown).
+- [x] Clientes e IMEI opcionales en tickets walk-in — `supabase/19_nullable_customer_device.sql` aplicado.
 
 ## Fase 5: Inventario e insumos
 
@@ -57,123 +57,94 @@ _Última actualización: 2026-05-27_
 - [x] Registrar entradas, salidas, ajustes y mermas (± Movimiento en sección Productos).
 - [x] Descontar refacciones automaticamente cuando se usan en un ticket (al mover a Entregado).
 - [x] Alertar stock bajo (banner en dashboard + tabla en reportes con cantidad faltante).
-- [ ] Registrar proveedores.
-- [ ] Asociar compras de insumos con proveedor y comprobante [Permitir adjuntar foto de comprobante].
+- [x] Importar inventario inicial Puerto Vallarta — `supabase/14_inventory_vallarta.sql` aplicado.
+- [x] Compras de insumos vinculadas a producto del catálogo con incremento automático de stock — `supabase/15_supply_stock_link.sql`.
+- [ ] Registrar proveedores (sección dedicada con nombre, contacto y RLS).
+- [ ] Asociar compras de insumos con proveedor y comprobante — permitir adjuntar foto de comprobante.
 - [ ] Exportar inventario a Excel.
 
 ## Fase 6: Finanzas y reportes
 
-- [x] Separar ingresos por servicios, ventas y anticipos (categorías TX_CATEGORIES_INCOME ya definidas y filtradas).
-- [x] Separar egresos por inventario, renta, nómina, etc. (categorías TX_CATEGORIES_EXPENSE ya definidas y filtradas).
+- [x] Separar ingresos por servicios, ventas y anticipos.
+- [x] Separar egresos por inventario, renta, nómina, etc.
 - [x] Crear reporte de caja (hoy / 7 días / mes / todo con filtro de período).
 - [x] Crear reporte mensual de ingresos y egresos (con desglose por categoría).
-- [ ] Crear reporte de utilidad estimada.
 - [x] Crear reporte de tickets por estado (distribución con barra visual).
-- [x] Crear reporte de empleados y productividad (tabla por empleado: tickets, cerrados, efectividad %, valor generado).
+- [x] Crear reporte de empleados y productividad.
+- [x] Crear reporte de utilidad estimada (ingresos − egresos por período, margen %, desglose por categoría).
 - [ ] Exportar reportes a Excel.
+- [ ] Ver y descargar reportes de períodos anteriores o rangos personalizados.
 
 ## Fase 7: Marketing
-- [x] Carpetas de assets de marca creadas: `assets/brand/fixzone/` y `assets/brand/refaxzone/` con README de guía.
-- [ ] Permitir subir/gestionar imagenes, documentos, pdf desde la UI (por ahora solo upload de logo en Editor de marca).
-- [ ] Crear seccion de plantillas de email para clientes, editable.
-- [x] Plantillas de mensaje WhatsApp editables (renderWATemplates — tab Automatización).
-- [ ] Función para enviar recordatorios de garantia o promociones por WhatsApp / email.
-- [x] Que los codigos de descuentos creados en esta sección sean válidos y se puedan usar en Cotización, Ticket y POS — discount_codes en Supabase con validación de scope.
-- [x] Alcance de cada codigo de descuento o promocion — campo scope[] por código (pos/cotizacion/ticket).
-- [x] Sección de promociones con rango de fecha válido, max_uses, activo/inactivo, toggle desde UI.
-- [x] Mejorar UX de Marketing — cards compactas, links editables por Marketing sin ticket a IT (add/edit/delete URL, nombre, icono, descripción desde UI).
 
+- [x] Carpetas de assets de marca creadas: `assets/brand/fixzone/` y `assets/brand/refaxzone/`.
+- [x] Plantillas de mensaje WhatsApp editables — tab Automatización (ahora incluye plantilla de Cotización).
+- [x] Códigos de descuento en Supabase (`discount_codes`) — válidos en Cotización, Ticket y POS, con scope, fecha de vigencia, máx. usos, activo/inactivo, tipo fijo o porcentaje.
+- [x] Marketing UI — cards compactas, links editables inline sin ticket a IT (add/edit/delete, con icono, nombre, URL y descripción).
+- [ ] Función para enviar recordatorios de garantía o promociones por WhatsApp / email.
+- [ ] Crear sección de plantillas de email para clientes, editable.
+- [ ] Permitir subir/gestionar imágenes y documentos desde la UI.
 
 ## Fase 8: Deploy interno
 
-- [x] Elegir hosting inicial para la app.
-- [ ] Configurar variables de entorno.
-- [ ] Configurar respaldos de Supabase.
+- [x] Elegir hosting: Cloudflare Pages (`fixzone-crm.pages.dev`).
 - [x] Probar acceso desde celulares y computadoras del equipo.
-- [ ] Definir proceso para dar de alta y baja empleados.
-- [x] Preparar version privada para produccion.
+- [x] Preparar versión privada para producción.
+- [ ] Configurar respaldos automáticos de Supabase.
+- [ ] Definir proceso formal para dar de alta y baja empleados.
+- [ ] Configurar dominio propio (si se decide usar).
 
 ## Fase 9: Mejoras futuras
 
-- [ ] Agregar notificaciones por WhatsApp o email.
-- [x] Agregar cotizaciones antes de autorizar reparaciones (sección Cotizaciones, botón Aprobar convierte a ticket).
-- [x] Agregar firma de cliente.
-- [ ] Agregar lector de codigos QR para tickets.
-- [x] Búsqueda avanzada por teléfono, IMEI, folio o cliente (Sprint 2 — campos incluidos en ticket object).
-- [x] Filtrar dashboard por sucursal FixZone: Puerto Vallarta | Puebla. Faltan: insumos, clientes, finanzas, resportes.
-- [ ] Agregar integracion contable si se requiere facturacion formal.
-- [ ] Agregar función para añadir imagenes a los tickets, para registrar como viene el dispositivo antes y después. 
-- [x] Poder Editar los campos de datos de los clientes,
-- [x] Agregar boton para añadir ingresos y egresos en Finanzas
-- [x] Editar ingresos y egresos en Finanzas (botón Editar en tabla)
-- [x] Categorías filtradas por tipo en form de Finanzas (Ingreso/Egreso)
-- [x] Botón de usuario en header para cambiar contraseña (dropdown perfil)
-- [x] Cards en los KANBAN se pueden mover arrastrándolas entre columnas (drag & drop, actualiza stage en Supabase).
-- [x] Mini explicacion de que hace cada seccion o para que es, con un pequeño boton de ayuda donde al pasarle el cursor se despliegue el texto explicativo 
+- [ ] Agregar notificaciones por WhatsApp o email automáticas (ticket listo, garantía por vencer).
+- [ ] Agregar lector de códigos QR para consulta de tickets.
+- [ ] Agregar integración contable si se requiere facturación formal.
+- [ ] Actualizar logos en `assets/brand/` — los actuales son versiones antiguas.
+- [x] Búsqueda avanzada por teléfono, IMEI, folio o cliente.
+- [x] Filtrar dashboard por sucursal.
+- [x] Editar datos de clientes.
+- [x] Botón de perfil de usuario para cambiar contraseña.
+- [x] Drag & drop en KANBANs (tickets + soporte IT).
+- [x] Tooltips de sección al hacer hover en el nav.
 
-## Fase 10: Fixes
-- [x] Arreglar error de Finanzas: RLS en tabla "transactions" — rol `it` no reconocido
-- [x] Arreglar error de Finanzas: nueva transacción no aparecía en dashboard/finanzas
-- [x] Editar Tasks (IT) — función duplicada/rota, schema incorrecto, handler inexistente
-- [x] Nuevo registro Soporte — "Tipo no soportado" por mismatch en activeForm key
-- [x] Botón Eliminar en Soporte no aparecía — `canDeleteTask` faltaba en PERMISSIONS
-- [x] Eliminar botón "restaurar demo"
-- [x] Tickets — se guardaba en Supabase pero no aparecía en KANBAN (reloadState fallback + branch vacío)
-- [x] RLS bloqueaba escritura en service_tickets, products, suppliers, attachments para rol `it`
-- [x] Fotos en tickets — Storage bucket `ticket-photos` sin políticas RLS
-- [x] Roles normalizados: `it`→`admin`, `standard`→`technician`, `marketing`→`technician` en DB
-- [x] Editor de permisos por rol en sección Usuarios (checkboxes, persistido en localStorage)
-- [x] ROLE_LABELS actualizado: `technician` muestra "Estándar", `owner`/`admin`/`it` muestran "Admin"
-- [ ] Tickets - Funcion para cargar imagenes existe solo al editar, no al crear (diseño intencional por ahora)
-- [x] Brand RefaxZone — franja de color en topbar + CSS variables por sucursal
-- [x] Brand RefaxZone — paleta naranja correcta en TODOS los elementos: nav, tabs, kanban, marketing cards, login, mini-buttons, drag-over (tokens CSS dinámicos, 13 reglas corregidas)
-- [x] Editor de paleta de marca movido al tab Diseño (estaba en Automatización)
-- [x] Editor de marca ampliado: upload de logo por sucursal (archivo PNG/SVG/WEBP o URL), guardado en localStorage, se aplica en sidebar y favicon
-- [x] Campos "Notas internas", "Código de descuento" y "Descuento ($)" marcados como opcionales en formulario de ticket (sin required, con etiqueta "(opcional)")
-- [x] Insumos y productos — hacer editables desde la UI
-- [x] Editar ingresos y egresos en Finanzas
-- [x] Mostrar categorías filtradas por tipo en Finanzas (Ingreso/Egreso)
-- [x] Botón de perfil de usuario para cambiar contraseña (dropdown en header)
-- [x] Cards del KANBAN arrastrables entre columnas (tickets + soporte IT)
-- [x] Permitir tickets para clientes sin registrar — Cliente e IMEI ahora son opcionales en el form.
-- [x] IMEI/color/accesorios se borran al editar — Fix: device record persiste aunque el cliente no esté registrado (SQL 19 aplicado).
-- [x] Botón "Recibo ▾" → "🖨 Imprimir ▾" con opciones claras: Recibo de recepción / Comprobante de pago / Certificado de garantía.
-- [x] Letra muy chica para la impresora — Fuentes subidas a 9–9.5pt base.
-- [x] Tamaño del ticket: 58mm — Cambiado CSS y JS default de 80mm a 58mm.
-- [x] SUCURSAL removida del ticket impreso.
-- [x] Logo del ticket actualizado — logoMonoSrc apunta a src/styles/fixzone-monocromatico.png.
-- [x] Impresión automática según estado — opción "⚡ Auto" en dropdown: Garantia→garantía, Pagado/Entregado/Abonado→pago, resto→recepción.
-- [x] Confusión visual en refacciones del modal corregida — el selector de "agregar" ahora tiene separador y label "Agregar refacción / parte" en lugar de "Producto".
- 
+## Fase 10: Fixes completados
+
+- [x] Finanzas: RLS y aparición en dashboard de nuevas transacciones.
+- [x] Soporte IT: formulario, permisos y botón eliminar.
+- [x] Tickets: RLS, fotos (Storage bucket), roles normalizados, campos opcionales.
+- [x] Brand RefaxZone: paleta naranja correcta en todos los elementos y editor de marca.
+- [x] Impresión: fuentes subidas, default 58mm, SUCURSAL removida, logo mono, auto-impresión por estado.
+- [x] IMEI/color/accesorios se borran al editar — Fix: device record persiste con `customer_id` nullable.
+- [x] Pagos de tickets crean transacción en Finanzas — backfill migration 20 aplicado.
+- [x] dateStamp usa hora local (no UTC) — corrige "Ingresos hoy" después de las 7pm.
+- [ ] Tickets — carga de fotos existe solo al editar, no al crear (diseño intencional por ahora).
+
 ## Fase 11: Cotizaciones
-- [x] Nueva sección: Cotizaciones. Sección dedicada, cotización se convierte a ticket con un clic. Partes/refacciones se agregan directamente desde el modal de edición del ticket.
-- [x] Acceso para enviar la cotizacion a WhatsApp — botón 💬 WhatsApp en la card genera mensaje con partidas y total; botón 🖨 Imprimir genera PDF imprimible de cotización formal.
-- [ ] Cambio de status de Cotizacion a venta concretada.
-- [x] La plantilla de cotizacion. debe de poderse *añadir servicio* o *añadir producto* — builder de partidas con qty, precio, tipo y eliminar fila; cotización calcula total automáticamente.
-- [x] Seriar las cotizaciones — numeración [COT] 0001 separada de [FZ] tickets. 
 
+- [x] Sección dedicada, cotización se convierte a ticket con un clic (Aprobar → Recibido).
+- [x] Builder de partidas: + Servicio / + Producto, con qty, precio, tipo y eliminar fila; calcula total automáticamente.
+- [x] Numeración `[COT] 0001` separada de `[FZ]` tickets.
+- [x] Botón 💬 WhatsApp — genera mensaje con desglose de partidas y total (usa plantilla editable o mensaje automático).
+- [x] Botón 🖨 Imprimir — PDF formal de cotización con tabla de partidas, subtotal, descuento, vigencia y firma.
+- [x] Código de descuento aplicable desde el builder de cotización.
+- [ ] Cambio de status de Cotización a "Venta concretada" (diferente de aprobar como reparación).
 
 ## Fase 12: Punto de Venta (POS)
-- [x] Diseño y análisis de arquitectura POS vs Ticket (decisiones: sin IVA, cliente opcional, recibo en v2).
-- [x] Tablas DB: `pos_sales`, `pos_sale_items`, trigger de decremento de stock, RLS (`supabase/13_pos_tables.sql`).
-- [x] Sección POS en la app: catálogo de productos filtrable, carrito con controles de cantidad, campo de descuento, selector de método de pago.
-- [x] Checkout: INSERT pos_sales → pos_sale_items → transaction Ingreso/Venta automático. Stock decrementado por trigger en DB.
-- [x] Historial de ventas recientes en la sección POS.
-- [x] Permisos: POS disponible para admin, standard, sales, technician. No disponible para marketing ni viewer.
-- [x] Tooltip de sección POS al hacer hover en el nav.
-- [x] aplicar `supabase/13_pos_tables.sql` en Supabase SQL Editor** (requerido para que funcione en producción).
-- [x] Recibo imprimible de venta POS (folio, productos, total, método de pago) — printPosRecibo() implementado.
-- [x] Ligar venta POS a cliente del catálogo — select opcional en el carrito; sin selección = venta anónima.
-- [x] Descuento por porcentaje además de monto fijo (tipo "percent" en discount_codes).
-- [x] Constraint `CHECK (stock >= 0)` en DB para prevenir stock negativo — `supabase/17_pos_stock_constraint.sql` aplicado.
+
+- [x] Arquitectura POS separada de Ticket (sin IVA, cliente opcional, stock por trigger).
+- [x] Catálogo filtrable, carrito con qty, descuento fijo o por código, método de pago.
+- [x] Checkout: INSERT pos_sales → pos_sale_items → transaction Ingreso/Venta automático.
+- [x] Historial de ventas recientes.
+- [x] Recibo imprimible con folio, productos, total, método de pago y código de descuento si aplica.
+- [x] Ligar venta POS a cliente del catálogo (opcional).
+- [x] Campo de código de descuento con botón Aplicar — valida scope, fecha, usos.
+- [x] Constraint `CHECK (stock >= 0)` en DB — `supabase/17_pos_stock_constraint.sql` aplicado.
+- [ ] Reporte de ventas POS por período (separado del reporte general de Finanzas).
 
 ## Fase 13: UX / Navegación
-- [x] Sidebar compacto: 280px → 220px. Nav items 42px → 34px. Entra completo en 100% de zoom.
-- [x] Navegación reordenada por grupo de workflow con divisores visuales:
-  - Operaciones: Home, Tickets, Cotizaciones, POS, Clientes
-  - Inventario: Productos, Insumos
-  - Finanzas: Finanzas, Reportes
-  - Admin: Usuarios, Soporte, Diseño, Automatización
-- [x] Agregar estados de carga, errores y confirmaciones — Sprint A completado 2026-05-27.
-- [x] El abono en tickets auto-crea transacción Ingreso en Finanzas — ya implementado (líneas 3002-3008 app.js).
-- [x] Boton de Compra al lado del de Ticket, para generar la compra de POS igual de rapido que un ticket. Y entonces mas peuqeño el boton de tikcet, y que sea cuadrado, no redondeado. o circular estaria mejor para ambos botones porfavor. uno de un carrito para POS y el otro de la herramienta como la del icono para Ticket de reparacion. 
+
+- [x] Sidebar compacto 220px, nav items 34px, entra completo en 100% de zoom.
+- [x] Navegación por grupos con divisores: Operaciones / Inventario / Finanzas / Admin.
+- [x] Botones circulares 🔧 Ticket y 🛒 POS en el header para acceso rápido.
+- [x] Cards de marketing compactas (padding reducido, fuente más pequeña).
+- [x] Toasts de éxito/error y confirm modal reemplazando alert/confirm nativos.

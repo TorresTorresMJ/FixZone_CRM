@@ -1315,6 +1315,81 @@ function renderReports() {
       </div>
     </div>` : "";
 
+  // ── Utilidad estimada ────────────────────────────────────────────────────────
+  {
+    const margin = income > 0 ? Math.round((balance / income) * 100) : 0;
+    const barPct = income > 0 ? Math.min(100, Math.round((Math.abs(balance) / income) * 100)) : 0;
+    const barColor = balance >= 0 ? "#2ecc71" : "#ff6b6b";
+
+    // Profit contribution per category (income - expense within category)
+    const profitByCat = Object.entries(byCat)
+      .map(([cat, vals]) => ({ cat, net: vals.income - vals.expense, income: vals.income, expense: vals.expense }))
+      .sort((a, b) => b.net - a.net);
+
+    const profitCatRows = profitByCat.map(({ cat, net, income: ci, expense: ce }) => {
+      const netColor = net >= 0 ? "#2ecc71" : "#ff6b6b";
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:6px 10px">${escapeHtml(cat)}</td>
+        <td style="padding:6px 10px;text-align:right;color:#2ecc71">${ci > 0 ? money.format(ci) : "—"}</td>
+        <td style="padding:6px 10px;text-align:right;color:#ff6b6b">${ce > 0 ? money.format(ce) : "—"}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:600;color:${netColor}">${money.format(net)}</td>
+      </tr>`;
+    }).join("");
+
+    document.querySelector("#reports-profit").innerHTML = bTxs.length ? `
+      <div class="card" style="margin-top:16px;border-left:3px solid ${barColor}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+          <div>
+            <h3 style="margin:0 0 4px;font-size:14px">Utilidad estimada — ${periodLabel}</h3>
+            <p class="muted" style="margin:0;font-size:11px">Ingresos menos egresos del período seleccionado</p>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:24px;font-weight:700;color:${barColor}">${money.format(balance)}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.45)">Margen ${margin}%</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+          <div style="flex:1;min-width:120px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.2);border-radius:8px;padding:10px 14px">
+            <div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px">Ingresos</div>
+            <div style="font-size:18px;font-weight:600;color:#2ecc71">${money.format(income)}</div>
+          </div>
+          <div style="flex:1;min-width:120px;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.2);border-radius:8px;padding:10px 14px">
+            <div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px">Egresos</div>
+            <div style="font-size:18px;font-weight:600;color:#ff6b6b">${money.format(expenses)}</div>
+          </div>
+          <div style="flex:1;min-width:120px;background:rgba(${balance>=0?"46,204,113":"255,107,107"},.08);border:1px solid rgba(${balance>=0?"46,204,113":"255,107,107"},.2);border-radius:8px;padding:10px 14px">
+            <div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px">Utilidad neta</div>
+            <div style="font-size:18px;font-weight:600;color:${barColor}">${money.format(balance)}</div>
+          </div>
+        </div>
+        <div style="margin-bottom:20px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.4);margin-bottom:5px">
+            <span>${balance >= 0 ? "Rentabilidad" : "Déficit"}</span>
+            <span>${Math.abs(margin)}% de los ingresos</span>
+          </div>
+          <div style="background:rgba(255,255,255,.08);border-radius:4px;height:8px;overflow:hidden">
+            <div style="width:${barPct}%;background:${barColor};height:8px;border-radius:4px;transition:width .4s"></div>
+          </div>
+        </div>
+        ${profitCatRows ? `
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+            <th style="text-align:left;padding:6px 10px">Categoría</th>
+            <th style="text-align:right;padding:6px 10px;color:#2ecc71">Ingreso</th>
+            <th style="text-align:right;padding:6px 10px;color:#ff6b6b">Egreso</th>
+            <th style="text-align:right;padding:6px 10px">Contribución</th>
+          </tr></thead>
+          <tbody>${profitCatRows}</tbody>
+          <tfoot><tr style="border-top:2px solid rgba(255,255,255,.12);font-weight:700">
+            <td style="padding:7px 10px">TOTAL</td>
+            <td style="padding:7px 10px;text-align:right;color:#2ecc71">${money.format(income)}</td>
+            <td style="padding:7px 10px;text-align:right;color:#ff6b6b">${money.format(expenses)}</td>
+            <td style="padding:7px 10px;text-align:right;color:${barColor}">${money.format(balance)}</td>
+          </tr></tfoot>
+        </table>` : ""}
+      </div>` : "";
+  }
+
   // Tickets by stage
   const stageRows = ticketStages.map(s=>{
     const n = bTickets.filter(t=>t.status===s).length;

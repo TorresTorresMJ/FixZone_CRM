@@ -28,7 +28,7 @@ There is no test suite and no linter configured.
 | File | Purpose |
 |---|---|
 | `index.html` | App shell — all view sections are `<section class="view">` |
-| `src/app.js` | All client-side logic (~3 600 lines, single file) |
+| `src/app.js` | All client-side logic (~4 800 lines, single file) |
 | `src/supabase-config.js` | Supabase project URL and anon key (`window.FIXZONE_SUPABASE`) |
 | `src/brand-config.js` | Per-branch brand config — colors, logos, copy, marketing links (`window.BRANCH_BRANDS`) |
 | `src/styles/brand-tokens.css` | Static CSS custom properties (fallback values only — JS overrides at runtime) |
@@ -43,6 +43,13 @@ There is no test suite and no linter configured.
 | `supabase/10_storage_bucket_policies.sql` | RLS for `ticket-photos` Storage bucket |
 | `supabase/12_discount_fields.sql` | Adds discount_code, discount_amount, discount_pct to service_tickets |
 | `supabase/13_pos_tables.sql` | POS tables: pos_sales, pos_sale_items, stock-decrement trigger, RLS |
+| `supabase/14_inventory_vallarta.sql` | Initial Puerto Vallarta product/inventory seed data |
+| `supabase/15_supply_stock_link.sql` | Adds `product_id` FK to supply_purchases; auto-increments stock on purchase |
+| `supabase/16_quote_items.sql` | `quote_items` JSONB column on service_tickets for cotización line items |
+| `supabase/17_pos_stock_constraint.sql` | `CHECK (stock >= 0)` constraint on products |
+| `supabase/18_discount_codes.sql` | `discount_codes` table with scope, date range, usage tracking, RLS |
+| `supabase/19_nullable_customer_device.sql` | `customer_id` DROP NOT NULL in customer_devices (walk-in tickets) |
+| `supabase/20_backfill_ticket_payments.sql` | Backfills missing Ingreso transactions for tickets with paid_amount > 0 |
 
 ## Architecture
 
@@ -95,7 +102,7 @@ Both functions are `security definer` (bypass RLS when querying employees, no ci
 All per-branch tables have a `branch_id` FK to `public.branches`. The frontend filters with `branchTickets()`, `branchTransactions()`, etc. using `!t.branch || t.branch === activeBranchId` (permissive — records with unresolved branch show everywhere rather than disappearing). In remote mode, `branchSupplies()` and `branchTransactions()` use the same permissive logic.
 
 ### State management
-- `state` is the in-memory object holding all data: `tickets`, `clients`, `products`, `supplies`, `transactions`, `employees`, `branches`, `supportTasks`, `posSales`
+- `state` is the in-memory object holding all data: `tickets`, `clients`, `products`, `supplies`, `transactions`, `employees`, `branches`, `supportTasks`, `posSales`, `discounts`
 - `reloadState()` fetches all tables from Supabase in a `Promise.all` and overwrites state. If any individual query returns empty, the corresponding key falls back to `seed` data
 - `reloadState()` failure after a successful INSERT is **non-fatal** — caught with `console.warn`, UI still renders with the locally-added record
 - `createRemoteTicket` and `createRemoteTransaction` use `.select().single()` to get the created row back and add it to state immediately, so the kanban/dashboard updates even if `reloadState()` subsequently fails
@@ -130,6 +137,7 @@ The POS view (`#pos-view`) handles **direct retail sales** — selling products 
 - `posCart` — array of `{productId, name, qty, unitPrice, maxStock}`
 - `posCatalogFilter` — `"all"` | `"producto"` | `"refaccion"`
 - `posDiscount` — discount amount in MXN
+- `posDiscountCode` — promo code string currently applied in the cart (empty string = none)
 - `posPaymentMethod` — selected payment method string
 
 **Checkout flow (`checkoutPos()`):**
@@ -141,7 +149,50 @@ The POS view (`#pos-view`) handles **direct retail sales** — selling products 
 
 **Important:** `supabase/13_pos_tables.sql` must be applied in the Supabase SQL Editor before the POS section works in production. Without it, checkout will fail with a table-not-found error.
 
-**Known limitation:** No DB-level `CHECK (stock >= 0)` constraint — concurrent sales of the last unit can produce negative stock. The trigger decrements without a minimum check.
+**Discount codes in POS**: the cart panel shows a "Código descuento" text input + "Aplicar" button. On apply, `applyDiscount(subtotal, code, "pos")` validates against `state.discounts` (loaded from `discount_codes` table). A valid code sets `posDiscount` and `posDiscountCode`; typing a manual amount in the discount field clears `posDiscountCode`.
+
+### Cotizaciones
+
+Cotizaciones are quotes stored as `service_tickets` with `stage = "Cotización"`. They have their own serial (`[COT] 0001`) separate from repair tickets (`[FZ] 0001`).
+
+**Quote line items** — stored in `ticket.quoteItems` (JSONB array in `quote_items` column, migration 16). Each item: `{type, description, qty, unitPrice}`. The builder (`buildQuoteItemsSection()`) renders add/remove rows and updates running totals with discount. Hidden inputs `name="discountCode"` and `name="discountAmount"` in the form are picked up automatically by `FormData` on submit.
+
+**Discount in cotización**: `applyDiscount(subtotal, code, "cotizacion")` validates scope. The `#qi-apply-code` button updates the hidden inputs and shows status text. On approval (converting to ticket), the discount values are preserved in the ticket.
+
+**Print**: `printCotizacion(ticket)` writes a formal quote layout (logo, line-item table, subtotal, discount, total, validity, signature) into `#print-receipt` and calls `window.print()`. Width follows the 58/80mm toggle in localStorage (same as receipt printing).
+
+**WhatsApp**: `shareQuoteWhatsApp(ticketId)` builds a `wa.me?text=` URL. If the `"cotizacion"` WA template (Automatización tab) is non-empty it fills `{cliente}`, `{total}`, `{items}` variables; otherwise it auto-formats a message with all line items. Opens in a new tab.
+
+**Conversion**: "Aprobar" button on a cotización changes stage to `"Recibido"`, converting it to a repair ticket.
+
+### Discount Codes
+
+Discount codes live in the `discount_codes` Supabase table (migration 18). They are loaded into `state.discounts` at startup by `loadSupabaseState()`.
+
+**Key functions:**
+- `applyDiscount(baseAmount, code, scope)` — finds a matching active code from `state.discounts`, checks date range, scope array, and usage limit; returns `{amount, pct, label, valid, id}`.
+- `markDiscountUsed(discountId)` — increments `used_count` in-memory and in Supabase. Called by `checkoutPos()` and cotización/ticket save paths when a code was applied.
+- `renderDiscountManager()` — full CRUD UI in the Marketing tab; reads/writes `discount_codes` via Supabase.
+
+**Schema**: `code` (unique), `type` (`fixed`|`percent`), `value`, `scope` (text array, e.g. `['pos','cotizacion','ticket']`), `valid_from`, `valid_until`, `max_uses`, `used_count`, `active`, `branch_id`.
+
+**Scope values**: `"pos"`, `"cotizacion"`, `"ticket"` — a code with scope `['pos']` will be rejected when applied in a cotización.
+
+### Marketing & Automation links
+
+Marketing quick-links and automation tools are stored in `localStorage` (not Supabase):
+- `fixzone-mkt-links-v1` — array of `{icon, name, url, desc}` objects
+- `fixzone-auto-tools-v1` — same shape, default populated from `DEFAULT_AUTO_TOOLS`
+
+**`renderMarketingLinksGrid(container, links, onSave)`** — reusable inline editor used by both marketing links and automation tools sections. Renders a grid of clickable cards in view mode; switches to row-based input form in edit mode. Anti-accumulation pattern: `container.cloneNode(false)` + `replaceWith()` on each call to avoid stacking click listeners.
+
+### WhatsApp templates
+
+Templates stored in `localStorage` key `fixzone-wa-templates-v1`. Default keys:
+- `cotizacion` — empty by default (falls back to auto-formatted message with line items)
+- `listo`, `abono`, `pagado`, `garantia` — status-based message templates
+
+Available variables: `{cliente}`, `{equipo}`, `{sucursal}`, `{folio}`, `{monto}`, `{saldo}`, `{total}`, `{items}`. `fillWATemplate()` handles substitution. Templates are editable in the Automatización tab.
 
 ### Supabase SQL files (apply in order)
 SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
@@ -156,9 +207,13 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 9. `11_merge_owner_into_admin.sql` — merge `owner` → `admin`
 10. `12_discount_fields.sql` — discount fields on service_tickets
 11. `13_pos_tables.sql` — POS tables, RLS, and stock-decrement trigger
-12. `16_quote_items.sql` — `quote_items` JSONB column on service_tickets (required for line-items cotizaciones)
-13. `17_pos_stock_constraint.sql` — `CHECK (stock >= 0)` constraint on products
-14. `18_discount_codes.sql` — `discount_codes` table with scope, date range, usage tracking, RLS
+12. `14_inventory_vallarta.sql` — initial Puerto Vallarta product/inventory seed
+13. `15_supply_stock_link.sql` — `product_id` FK on supply_purchases, auto-increments stock
+14. `16_quote_items.sql` — `quote_items` JSONB column on service_tickets (cotización line items)
+15. `17_pos_stock_constraint.sql` — `CHECK (stock >= 0)` constraint on products
+16. `18_discount_codes.sql` — `discount_codes` table with scope, date range, usage tracking, RLS
+17. `19_nullable_customer_device.sql` — `customer_id` DROP NOT NULL in customer_devices
+18. `20_backfill_ticket_payments.sql` — backfill missing Ingreso transactions for paid tickets
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -200,4 +255,9 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **Sidebar tooltip position**: `NAV_TOOLTIPS` renders tooltips at `left: 220px` (sidebar width). If the sidebar width changes, update that value in `initNavTooltips()`.
 - **Adding a new view**: (1) add nav button in `index.html`, (2) add `<section class="view" id="{name}-view">`, (3) add `"{name}"` to the relevant role tabs in `PERMISSIONS`, (4) add to `PERM_SECTIONS`, (5) add entry to `NAV_TOOLTIPS`, (6) call `render{Name}()` from `render()`.
 - **POS requires migration 13**: `supabase/13_pos_tables.sql` must be applied in the Supabase SQL Editor. Until then, `checkoutPos()` will throw a table-not-found error.
+- **Cotizaciones require migration 16**: `supabase/16_quote_items.sql` adds the `quote_items` JSONB column. Without it, saving a cotización with line items will silently discard them.
+- **Discount codes require migration 18**: `supabase/18_discount_codes.sql`. Without it, `state.discounts` stays `[]` and all discount code lookups fail silently (returns `{valid: false}`).
+- **`applyDiscount` scope must match exactly**: valid scope values are `"pos"`, `"cotizacion"`, `"ticket"`. A mismatch (e.g. passing `"tickets"`) always returns `{valid: false}` — check the scope array in the `discount_codes` row and the call site.
+- **`markDiscountUsed` must be called after a successful save** — not before. If the INSERT/UPDATE fails after calling it, the usage counter will be incremented with no matching transaction.
+- **`renderMarketingLinksGrid` anti-accumulation**: always call it with the same DOM node reference; it internally calls `container.cloneNode(false)` + `replaceWith()`. Do not attach external click listeners to the container after calling this function — they'll be lost on the next render.
 - **Browser cache after deploy**: Cloudflare Pages may serve cached JS/CSS. Users should hard-refresh (`Cmd+Shift+R` / `Ctrl+Shift+R`) after a new deploy if they see stale styles.
