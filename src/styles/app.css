@@ -945,6 +945,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
   html, body {
     width: var(--receipt-width, 58mm);
+    height: auto !important;
+    min-height: 0 !important;
     margin: 0;
     padding: 0;
     background: #fff !important;
@@ -973,7 +975,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   .rct {
     width: var(--receipt-width, 58mm);
     margin: 0;
-    padding: 0 2mm 2mm;
+    padding: 0 2mm 4mm;
     font-family: "Courier New", Courier, monospace;
     font-size: 9pt;
     color: #000;
@@ -981,16 +983,18 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     box-sizing: border-box;
   }
 
-  /* ── Logo — FIX 2: top padding before logo ────────────── */
+  /* ── Logo ────────────────────────────────────────────── */
   .rct-logo {
     text-align: center;
     padding: 0;
-    margin: 3mm 0 2mm;             /* 3mm top breathing room before logo */
+    margin: 1mm 0 0;
   }
 
   .rct-logo img {
-    width: 52mm;
+    width: 44mm;
+    max-height: 14mm;
     height: auto;
+    object-fit: contain;
     display: block;
     margin: 0 auto;
     filter: none;
@@ -1053,7 +1057,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   .rct-table {
     width: 100%;
     border-collapse: collapse;
-    margin: 1.5mm 0;              /* was: 1mm */
+    margin: 1.5mm 0;
+    table-layout: fixed;
   }
 
   .rct-table thead tr {
@@ -1074,10 +1079,18 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     -webkit-print-color-adjust: exact;
   }
 
+  .rct-table th:first-child,
+  .rct-table td:first-child {
+    width: auto;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
   .rct-table th:last-child,
   .rct-table td:last-child {
     text-align: right;
-    width: 20mm;
+    width: 18mm;
+    white-space: nowrap;
   }
 
   .rct-table td {
@@ -1086,6 +1099,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     color: #000;
     vertical-align: top;
     border-bottom: 1px dotted #666;
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 
   /* ── Totals block ─────────────────────────────────────── */
@@ -1153,14 +1168,14 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   /* ── Signature — FIX 1: tight bottom, no trailing space ── */
   .rct-sign {
     text-align: center;
-    margin: 2mm 0 0;              /* was: 2mm 0 3mm — bottom set to 0 */
+    margin: 2mm 0 0;
     page-break-inside: avoid;
     page-break-after: avoid;
   }
 
   .rct-sign-line {
     width: 100%;
-    height: 10mm;                 /* was: 12mm */
+    height: 8mm;
     border-bottom: 1px solid #000;
     margin-bottom: 1mm;
     display: block;
@@ -1170,7 +1185,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     font-size: 8pt;
     font-weight: 700;
     margin: 0;
-    padding-bottom: 1mm;          /* tiny clearance at very end of roll */
+    padding-bottom: 0;
     text-transform: uppercase;
     letter-spacing: 1px;
   }
