@@ -85,6 +85,8 @@ _Última actualización: 2026-06-01_
 - [ ] Función para enviar recordatorios de garantía o promociones por WhatsApp / email.
 - [ ] Crear sección de plantillas de email para clientes, editable.
 - [ ] Permitir subir/gestionar imágenes y documentos desde la UI.
+- [ ] icono de copiar para que tengamos la funcion rapida de copiar el texto plantilla y pegarlo en las conversaciones. 
+- [ ] Algun repertorio de plantillas: Saludo incicial, despedida, repsuesta a horarios, respuesta a pedido de garantia, otros. 
 
 ## Fase 8: Deploy interno
 
@@ -101,7 +103,7 @@ _Última actualización: 2026-06-01_
 - [ ] Agregar lector de códigos QR para consulta de tickets.
 - [ ] Agregar integración contable si se requiere facturación formal.
 - [ ] Actualizar logos en `assets/brand/` — los actuales son versiones antiguas.
-- [ ] Recibo de impresión de largo dinámico — que no imprima espacio en blanco al final; el alto del papel debe ajustarse al contenido real (como otros sistemas POS). 
+- [x] Recibo de impresión de largo dinámico — alto del papel se ajusta al contenido real, sin espacio en blanco al final (`doPrint()` inyecta `@page { size: Xmm auto }` antes de cada impresión, evitando el bug de `var()` en `@page` de Chrome).
 - [x] Autocomplete de equipo en tickets y cotizaciones — lista base ~100 modelos (iPhone/Samsung/Motorola/Xiaomi/Huawei), filtrado substring, opción agregar modelo nuevo.
 - [x] Búsqueda avanzada por teléfono, IMEI, folio o cliente.
 - [x] Filtrar dashboard por sucursal.

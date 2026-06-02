@@ -935,7 +935,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 @media print {
 
   @page {
-    size: var(--receipt-width, 58mm) auto;
+    size: 58mm auto; /* fallback — doPrint() in app.js overrides this with the correct width before every print */
     margin: 0;
   }
 

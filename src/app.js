@@ -4461,6 +4461,17 @@ window.openTransactionForm = openTransactionForm;
 // ──────────────────────────────────────────────────────────────────────────────
 // PRINT / EXPORT
 // ──────────────────────────────────────────────────────────────────────────────
+
+// Chrome/Chromium does not evaluate var() inside @page { size }, so we inject
+// a <style> with the literal value before every print call.
+function doPrint() {
+  const w = localStorage.getItem("fixzone-receipt-width") || "58mm";
+  let s = document.getElementById("fz-print-size");
+  if (!s) { s = document.createElement("style"); s.id = "fz-print-size"; document.head.appendChild(s); }
+  s.textContent = `@media print { @page { size: ${w} auto; margin: 0; } }`;
+  doPrint();
+}
+
 // ── Receipt variants ──────────────────────────────────────────────────────────
 function printRecibo(ticket, type) {
   const client    = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
@@ -4555,7 +4566,7 @@ function printRecibo(ticket, type) {
   }
 
   document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}<p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p><p class="rct-dash">${D}</p></div>`;
-  window.print();
+  doPrint();
 }
 
 function printPosRecibo() {
@@ -4594,7 +4605,7 @@ function printPosRecibo() {
       <p class="rct-thanks">★ Gracias por su compra ★</p>
       <p class="rct-dash">${D}</p>
     </div>`;
-  window.print();
+  doPrint();
 }
 
 function printTicket(ticket) {
@@ -4708,7 +4719,7 @@ function printTicket(ticket) {
   // Set paper width via CSS variable before printing
   const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "58mm";
   document.documentElement.style.setProperty("--receipt-width", receiptWidth);
-  window.print();
+  doPrint();
   // Show size toggle in a small floating bar before print dialog
 }
 
@@ -4777,7 +4788,7 @@ function printCotizacion(ticket) {
   <p class="rct-dash">${D}</p>
   <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE AUTORIZACIÓN DEL CLIENTE</p></div>
 </div>`;
-  window.print();
+  doPrint();
 }
 
 function shareQuoteWhatsApp(ticketId) {
