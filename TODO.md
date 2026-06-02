@@ -72,6 +72,7 @@ _Última actualización: 2026-06-01_
 - [x] Crear reporte de tickets por estado (distribución con barra visual).
 - [x] Crear reporte de empleados y productividad.
 - [x] Crear reporte de utilidad estimada (ingresos − egresos por período, margen %, desglose por categoría).
+- [x] Reporte de equipos más frecuentes — top 20 por sucursal con tickets, cerrados e ingresos (historial completo).
 - [ ] Exportar reportes a Excel.
 - [ ] Ver y descargar reportes de períodos anteriores o rangos personalizados.
 
@@ -100,6 +101,8 @@ _Última actualización: 2026-06-01_
 - [ ] Agregar lector de códigos QR para consulta de tickets.
 - [ ] Agregar integración contable si se requiere facturación formal.
 - [ ] Actualizar logos en `assets/brand/` — los actuales son versiones antiguas.
+- [ ] Recibo de impresión de largo dinámico — que no imprima espacio en blanco al final; el alto del papel debe ajustarse al contenido real (como otros sistemas POS). 
+- [x] Autocomplete de equipo en tickets y cotizaciones — lista base ~100 modelos (iPhone/Samsung/Motorola/Xiaomi/Huawei), filtrado substring, opción agregar modelo nuevo.
 - [x] Búsqueda avanzada por teléfono, IMEI, folio o cliente.
 - [x] Filtrar dashboard por sucursal.
 - [x] Editar datos de clientes.

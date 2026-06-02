@@ -159,6 +159,16 @@ Cotizaciones are quotes stored as `service_tickets` with `stage = "Cotización"`
 
 **Discount in cotización**: `applyDiscount(subtotal, code, "cotizacion")` validates scope. The `#qi-apply-code` button updates the hidden inputs and shows status text. On approval (converting to ticket), the discount values are preserved in the ticket.
 
+**Reportes — secciones activas** (cada una tiene un `<div id="reports-*">` en `index.html`, renderizado por `renderReports()`):
+- `#reports-grid` — tarjetas resumen (ingresos, egresos, balance, tickets cerrados, inventario, stock bajo)
+- `#reports-cash` — movimientos por categoría del período
+- `#reports-profit` — utilidad estimada: tarjetas ingresos/egresos/neta, barra de margen %, tabla por categoría
+- `#reports-monthly` — balance mensual histórico completo (ignora filtro de período)
+- `#reports-tickets` — tickets por etapa con barra de distribución
+- `#reports-devices` — top 20 equipos más frecuentes por sucursal (historial completo): tickets, cerrados, ingresos
+- `#reports-stock` — productos con stock bajo
+- `#reports-productivity` — productividad por empleado
+
 **Print**: `printCotizacion(ticket)` writes a formal quote layout (logo, line-item table, subtotal, discount, total, validity, signature) into `#print-receipt` and calls `window.print()`. Width follows the 58/80mm toggle in localStorage (same as receipt printing).
 
 **WhatsApp**: `shareQuoteWhatsApp(ticketId)` builds a `wa.me?text=` URL. If the `"cotizacion"` WA template (Automatización tab) is non-empty it fills `{cliente}`, `{total}`, `{items}` variables; otherwise it auto-formats a message with all line items. Opens in a new tab.
@@ -177,6 +187,22 @@ Discount codes live in the `discount_codes` Supabase table (migration 18). They 
 **Schema**: `code` (unique), `type` (`fixed`|`percent`), `value`, `scope` (text array, e.g. `['pos','cotizacion','ticket']`), `valid_from`, `valid_until`, `max_uses`, `used_count`, `active`, `branch_id`.
 
 **Scope values**: `"pos"`, `"cotizacion"`, `"ticket"` — a code with scope `['pos']` will be rejected when applied in a cotización.
+
+### Device autocomplete
+
+The "Producto / equipo" field in ticket and cotización forms uses `ftype = "device-autocomplete"` — renders a custom dropdown instead of native `<datalist>` (which is inconsistent across browsers).
+
+**Key constants and functions:**
+- `DEVICE_MODELS_KEY = "fixzone-device-models-v1"` — localStorage key for saved models
+- `DEFAULT_DEVICE_MODELS` — ~100 pre-loaded models: iPhone 6–16, Samsung Galaxy S/A/Note/Fold, Motorola Moto G, Xiaomi/Redmi, Huawei, LG, tablets
+- `loadDeviceModels()` — reads localStorage, falls back to `DEFAULT_DEVICE_MODELS`
+- `saveDeviceModel(name)` — appends a new model to localStorage (deduplicates, re-sorts)
+- `getAllDeviceNames()` — merges localStorage models + `state.tickets[].productName`, deduped, sorted
+- `initDeviceAutocomplete()` — attaches custom dropdown behavior to all `input[data-device-ac]` in `formFields`
+
+**How it works:** `fieldTemplate("device-autocomplete")` renders `<div class="device-ac-wrapper"><input data-device-ac /></div>`. After `formFields.innerHTML = ...`, call `initDeviceAutocomplete()` to wire up filtering, keyboard nav, and the `+ Agregar "X"` option. Must be called in `openForm()` and both paths in `openEditTicket()`.
+
+**Pitfall:** `initDeviceAutocomplete()` must be called **after** `formFields.innerHTML` is set — calling it before means no `input[data-device-ac]` elements exist yet.
 
 ### Marketing & Automation links
 
