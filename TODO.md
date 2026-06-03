@@ -62,7 +62,8 @@ _Última actualización: 2026-06-01_
 - [ ] Registrar proveedores (sección dedicada con nombre, contacto y RLS).
 - [ ] Asociar compras de insumos con proveedor y comprobante — permitir adjuntar foto de comprobante.
 - [ ] Exportar inventario a Excel.
-- [x] Tabla de precios por dispositivo × servicio — vista Precios con matriz editable, gestión de servicios, auto-fill del monto al crear ticket (migration 21 requerida).
+- [x] Tabla de precios por dispositivo × servicio — costo de mano de obra, vista Precios con matriz editable, gestión de servicios, auto-fill del monto al crear ticket (migration 21 requerida).
+- [ ] Reglas de margen sobre insumos — tabla configurable de rangos de costo con % de ganancia (ej. costo ≤ $1,500 → 110%, costo > $1,500 → 100%). Precio total = costo insumo + (costo × %ganancia) + mano de obra.
 - [ ] Ticket de request de compra de insumos / material 
 
 ## Fase 6: Finanzas y reportes
