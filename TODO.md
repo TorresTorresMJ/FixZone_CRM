@@ -62,6 +62,7 @@ _Última actualización: 2026-06-01_
 - [ ] Registrar proveedores (sección dedicada con nombre, contacto y RLS).
 - [ ] Asociar compras de insumos con proveedor y comprobante — permitir adjuntar foto de comprobante.
 - [ ] Exportar inventario a Excel.
+- [ ] Ticket de request de compra de insumos / material 
 
 ## Fase 6: Finanzas y reportes
 
@@ -82,6 +83,7 @@ _Última actualización: 2026-06-01_
 - [x] Plantillas de mensaje WhatsApp editables — tab Automatización (ahora incluye plantilla de Cotización).
 - [x] Códigos de descuento en Supabase (`discount_codes`) — válidos en Cotización, Ticket y POS, con scope, fecha de vigencia, máx. usos, activo/inactivo, tipo fijo o porcentaje.
 - [x] Marketing UI — cards compactas, links editables inline sin ticket a IT (add/edit/delete, con icono, nombre, URL y descripción).
+- [ ] Integración WhatsApp Business Cloud API — envío automático al cliente cuando cambia el estado del ticket (Listo, Pagado, Garantía). Prerequisito: Meta Business verificado + número dedicado registrado en la API. Programación lista en 1 sprint una vez que estén los accesos.
 - [ ] Función para enviar recordatorios de garantía o promociones por WhatsApp / email.
 - [ ] Crear sección de plantillas de email para clientes, editable.
 - [ ] Permitir subir/gestionar imágenes y documentos desde la UI.
