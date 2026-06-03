@@ -1201,7 +1201,6 @@ function renderPrecios() {
     const upserts = [];
     inputs.forEach(inp => {
       upserts.push({
-        ...(inp.dataset.pid ? { id: inp.dataset.pid } : {}),
         device_model: inp.dataset.device,
         service_type_id: inp.dataset.stype,
         price: Number(inp.value) || 0,
