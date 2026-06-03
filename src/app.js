@@ -1034,7 +1034,252 @@ function branchServicePrices() {
   return (state.servicePrices||[]).filter(p => !p.branchId || p.branchId === bid);
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// COTIZADOR — config, calculator, render
+// ──────────────────────────────────────────────────────────────────────────────
+const PRICING_CONFIG_DEFAULT = {
+  margenNormal: 1.10,
+  margenAlto:   1.00,
+  umbral:       1500,
+  comTecPct:    0.15,
+};
+
+function loadPricingConfig() {
+  try {
+    const s = JSON.parse(localStorage.getItem("fixzone-pricing-config") || "{}");
+    return { ...PRICING_CONFIG_DEFAULT, ...s };
+  } catch { return { ...PRICING_CONFIG_DEFAULT }; }
+}
+
+function savePricingConfig(cfg) {
+  localStorage.setItem("fixzone-pricing-config", JSON.stringify(cfg));
+}
+
+function calcPrecio({ insumo, config }) {
+  const cfg       = config || loadPricingConfig();
+  const n         = Number(insumo) || 0;
+  const margenPct = n >= cfg.umbral ? cfg.margenAlto : cfg.margenNormal;
+  const base      = n * (1 + margenPct);
+  const iva       = base * 0.16;
+  const conIva    = base * 1.16;
+  const mpCosto   = conIva * 0.0406;
+  const precioFinal = conIva + mpCosto;
+  const comTec    = base * cfg.comTecPct;
+  const costoReal = n + comTec + mpCosto;
+  const utilidad  = precioFinal - costoReal;
+  const margenNeto = precioFinal > 0 ? (utilidad / precioFinal) * 100 : 0;
+  return { precioFinal, ganancia: n * margenPct, base, iva, mpCosto, comTec, utilidad, margenNeto, margenAplicado: margenPct };
+}
+
+function cotSlider(id, label, value, min, max, step) {
+  const isPct = label.includes("%");
+  const disp  = isPct ? `${Number(value).toFixed(0)}%` : `$${Number(value).toLocaleString("es-MX")}`;
+  return `
+    <div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:11px;color:rgba(255,255,255,.5)">${label}</span>
+        <span id="${id}-val" style="font-size:11px;font-weight:600;color:var(--fz-primary)">${disp}</span>
+      </div>
+      <input type="range" class="cot-slider" id="${id}" min="${min}" max="${max}" step="${step}"
+        value="${Number(value).toFixed(0)}" data-unit="${isPct?"pct":"mxn"}"
+        style="width:100%;accent-color:var(--fz-primary)"/>
+    </div>`;
+}
+
+function readSlidersConfig(container) {
+  const g = id => Number(container.querySelector(`#${id}`)?.value ?? 0);
+  return {
+    margenNormal: g("cot-margen-normal") / 100,
+    margenAlto:   g("cot-margen-alto")   / 100,
+    umbral:       g("cot-umbral"),
+    comTecPct:    g("cot-com-tec")       / 100,
+  };
+}
+
+function updateCotBreakdown(container, res) {
+  const tbody = container.querySelector("#cot-detail-body");
+  if (!tbody) return;
+  const row = (lbl, val, s="") =>
+    `<tr><td style="padding:3px 8px;color:rgba(255,255,255,.45);font-size:12px">${lbl}</td>` +
+    `<td style="padding:3px 8px;text-align:right;font-size:12px;${s}">${val}</td></tr>`;
+  tbody.innerHTML = [
+    row("Margen aplicado", `${(res.margenAplicado*100).toFixed(0)}%`),
+    row("Ganancia bruta", money.format(res.ganancia)),
+    row("Base (antes IVA)", money.format(res.base)),
+    row("IVA 16%", money.format(res.iva)),
+    row("Comisión MP 4.06%", money.format(res.mpCosto), "color:rgba(255,180,0,.7)"),
+    row("Comisión técnico", money.format(res.comTec), "color:rgba(255,180,0,.7)"),
+    row("Utilidad estimada", money.format(res.utilidad), "color:#4ade80;font-weight:700"),
+    row("Margen neto", `${res.margenNeto.toFixed(1)}%`, "color:#4ade80"),
+  ].join("");
+}
+
+function renderCotizador() {
+  const el = document.querySelector("#precios-cotizador");
+  if (!el) return;
+
+  const isPriv = ["it","admin","owner"].includes(currentEmployee?.role || "");
+  const cfg = loadPricingConfig();
+
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="margin-bottom:14px">
+        <h3 style="margin:0 0 3px;font-size:14px">Cotizador rápido</h3>
+        <p class="muted" style="font-size:11px;margin:0">Precio = Insumo × (1 + margen) × 1.16 × 1.0406</p>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <div style="flex:1;min-width:240px">
+          <div style="margin-bottom:12px">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.45);margin-bottom:6px">Tipo de servicio</div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="cot-tipo-btn" data-tipo="pantalla"
+                style="flex:1;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;
+                border:1.5px solid rgba(var(--fz-primary-rgb),.5);background:rgba(var(--fz-primary-rgb),.15);color:inherit">
+                Pantalla<br><span style="font-weight:400;font-size:10px;opacity:.6">30 días garantía</span>
+              </button>
+              <button type="button" class="cot-tipo-btn" data-tipo="glass"
+                style="flex:1;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;
+                border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit">
+                Glass<br><span style="font-weight:400;font-size:10px;opacity:.6">Sin garantía</span>
+              </button>
+            </div>
+          </div>
+          <div style="margin-bottom:12px">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.45);margin-bottom:6px">Costo del insumo (MXN)</div>
+            <input id="cot-insumo" type="number" min="0" step="1" placeholder="0"
+              style="font-size:28px;font-weight:700;width:100%;padding:10px 12px;border-radius:7px;
+              border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:inherit;
+              appearance:textfield;-moz-appearance:textfield;box-sizing:border-box"/>
+          </div>
+          <div>
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.45);margin-bottom:6px">Proveedor</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button type="button" class="cot-prov-btn" data-prov="Macrocell"
+                style="padding:5px 14px;border-radius:6px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px">Macrocell</button>
+              <button type="button" class="cot-prov-btn" data-prov="Staff"
+                style="padding:5px 14px;border-radius:6px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px">Staff</button>
+              <button type="button" class="cot-prov-btn" data-prov="Otro"
+                style="padding:5px 14px;border-radius:6px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px">Otro</button>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+          padding:20px 16px;background:rgba(var(--fz-primary-rgb),.06);border:1px solid rgba(var(--fz-primary-rgb),.2);
+          border-radius:10px;min-height:160px;text-align:center">
+          <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Precio al cliente</div>
+          <div id="cot-precio-display" style="font-size:40px;font-weight:800;color:var(--fz-primary);line-height:1">—</div>
+          <div id="cot-margen-badge"
+            style="margin-top:10px;font-size:11px;padding:3px 10px;border-radius:20px;
+            background:rgba(var(--fz-primary-rgb),.14);color:var(--fz-primary);min-height:20px"></div>
+          <div id="cot-garantia-note" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.4)"></div>
+        </div>
+      </div>
+
+      ${isPriv ? `
+      <div style="margin-top:16px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px">
+        <button type="button" id="cot-toggle-detail"
+          style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,.45);font-size:12px;padding:0;display:flex;align-items:center;gap:6px">
+          <span id="cot-toggle-arrow" style="font-size:10px">▶</span> Desglose interno
+        </button>
+        <div id="cot-detail" style="display:none;margin-top:10px">
+          <table style="min-width:0;width:280px;border-collapse:collapse">
+            <tbody id="cot-detail-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.35);margin-bottom:12px">Configuración de márgenes</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          ${cotSlider("cot-margen-normal","Margen normal (%)",cfg.margenNormal*100,50,200,5)}
+          ${cotSlider("cot-margen-alto","Margen alto (%)",cfg.margenAlto*100,20,150,5)}
+          ${cotSlider("cot-umbral","Umbral ($MXN)",cfg.umbral,200,5000,100)}
+          ${cotSlider("cot-com-tec","Comisión técnico (%)",cfg.comTecPct*100,0,40,1)}
+        </div>
+      </div>` : ""}
+    </div>`;
+
+  const insumoInp = el.querySelector("#cot-insumo");
+  let cotTipo = "pantalla";
+
+  const recalc = () => {
+    const insumo = Number(insumoInp?.value) || 0;
+    const priceDisp = el.querySelector("#cot-precio-display");
+    const badge     = el.querySelector("#cot-margen-badge");
+    const nota      = el.querySelector("#cot-garantia-note");
+    if (insumo <= 0) {
+      if (priceDisp) priceDisp.textContent = "—";
+      if (badge) badge.textContent = "";
+      if (nota) nota.textContent = "";
+      if (isPriv) updateCotBreakdown(el, calcPrecio({ insumo: 0 }));
+      return;
+    }
+    const cfg2 = isPriv ? readSlidersConfig(el) : loadPricingConfig();
+    const res  = calcPrecio({ insumo, config: cfg2 });
+    if (priceDisp) priceDisp.textContent = money.format(res.precioFinal);
+    if (badge) {
+      const pct = (res.margenAplicado * 100).toFixed(0);
+      badge.textContent = insumo >= cfg2.umbral
+        ? `Margen ${pct}% (insumo ≥ $${cfg2.umbral.toLocaleString("es-MX")})`
+        : `Margen ${pct}% (insumo < $${cfg2.umbral.toLocaleString("es-MX")})`;
+    }
+    if (nota) nota.textContent = cotTipo === "glass" ? "Sin garantía" : "30 días en mano de obra";
+    if (isPriv) updateCotBreakdown(el, res);
+  };
+
+  el.querySelectorAll(".cot-tipo-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      cotTipo = btn.dataset.tipo;
+      el.querySelectorAll(".cot-tipo-btn").forEach(b => {
+        const active = b.dataset.tipo === cotTipo;
+        b.style.borderColor = active ? "rgba(var(--fz-primary-rgb),.5)" : "rgba(255,255,255,.12)";
+        b.style.background  = active ? "rgba(var(--fz-primary-rgb),.15)" : "rgba(255,255,255,.05)";
+        b.style.fontWeight  = active ? "600" : "500";
+      });
+      recalc();
+    });
+  });
+
+  el.querySelectorAll(".cot-prov-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const wasActive = btn.style.background.includes("var(--fz-primary-rgb)");
+      el.querySelectorAll(".cot-prov-btn").forEach(b => {
+        b.style.borderColor = "rgba(255,255,255,.12)";
+        b.style.background  = "rgba(255,255,255,.05)";
+      });
+      if (!wasActive) {
+        btn.style.borderColor = "rgba(var(--fz-primary-rgb),.5)";
+        btn.style.background  = "rgba(var(--fz-primary-rgb),.15)";
+      }
+    });
+  });
+
+  insumoInp?.addEventListener("input", recalc);
+
+  if (isPriv) {
+    el.querySelector("#cot-toggle-detail")?.addEventListener("click", () => {
+      const det = el.querySelector("#cot-detail");
+      const arr = el.querySelector("#cot-toggle-arrow");
+      if (!det) return;
+      const shown = det.style.display !== "none";
+      det.style.display = shown ? "none" : "block";
+      if (arr) arr.textContent = shown ? "▶" : "▼";
+    });
+
+    el.querySelectorAll(".cot-slider").forEach(s => {
+      s.addEventListener("input", () => {
+        const valEl = el.querySelector(`#${s.id}-val`);
+        if (valEl) valEl.textContent = s.dataset.unit === "pct"
+          ? `${s.value}%`
+          : `$${Number(s.value).toLocaleString("es-MX")}`;
+        savePricingConfig(readSlidersConfig(el));
+        recalc();
+      });
+    });
+  }
+}
+
 function renderPrecios() {
+  renderCotizador();
   const stEl = document.querySelector("#precios-service-types");
   const mxEl = document.querySelector("#precios-matrix");
   if (!stEl || !mxEl) return;
@@ -3441,7 +3686,7 @@ function openForm(type, prefill = {}) {
     initQuoteItemsBuilder(prefill.quoteItems || []);
   }
   initDeviceAutocomplete();
-  if (type === "ticket") initPriceAutofill();
+  if (type === "ticket") { initPriceAutofill(); initTicketCotizadorWidget(); }
   modal.showModal();
 }
 
@@ -3520,6 +3765,7 @@ function openEditTicket(ticketId) {
   ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
   initDeviceAutocomplete();
   initPriceAutofill();
+  initTicketCotizadorWidget();
   modal.showModal();
   initPhotoUpload(ticketId);
   loadTicketParts(ticketId);
@@ -3787,6 +4033,96 @@ function initDeviceAutocomplete(container = formFields) {
         }
       } else if (e.key === "Escape") close();
     });
+  });
+}
+
+function initTicketCotizadorWidget() {
+  const amountField = formFields.querySelector("#repairAmount")?.closest(".field");
+  if (!amountField) return;
+
+  const widget = document.createElement("div");
+  widget.className = "field is-wide";
+  widget.id = "ticket-cot-widget";
+  widget.style.cssText = "margin-top:2px;padding:10px 12px;border-radius:8px;border:1px dashed rgba(var(--fz-primary-rgb),.2);background:rgba(var(--fz-primary-rgb),.03)";
+  widget.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:11px;color:rgba(255,255,255,.4)">Cotizador de precio</span>
+      <button type="button" id="tc-toggle"
+        style="background:none;border:1px solid rgba(var(--fz-primary-rgb),.35);color:var(--fz-primary);
+        border-radius:5px;cursor:pointer;font-size:11px;padding:3px 10px">Calcular ▾</button>
+    </div>
+    <div id="tc-body" style="display:none;margin-top:10px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:120px">
+          <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:4px">Costo insumo ($)</div>
+          <input id="tc-insumo" type="number" min="0" step="1" placeholder="0"
+            style="font-size:18px;font-weight:700;width:100%;padding:7px 10px;border-radius:6px;
+            border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:inherit;
+            appearance:textfield;-moz-appearance:textfield;box-sizing:border-box"/>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;padding-bottom:2px">
+          <button type="button" class="tc-prov mini-button" data-prov="Macrocell" style="font-size:11px;padding:4px 10px">Macrocell</button>
+          <button type="button" class="tc-prov mini-button" data-prov="Staff"     style="font-size:11px;padding:4px 10px">Staff</button>
+          <button type="button" class="tc-prov mini-button" data-prov="Otro"      style="font-size:11px;padding:4px 10px">Otro</button>
+        </div>
+      </div>
+      <div id="tc-result" style="display:none;margin-top:10px;padding:10px 12px;border-radius:7px;
+        background:rgba(var(--fz-primary-rgb),.08);border:1px solid rgba(var(--fz-primary-rgb),.2)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="muted" style="font-size:11px">Precio al cliente</div>
+            <div id="tc-precio" style="font-size:22px;font-weight:800;color:var(--fz-primary)">—</div>
+            <div id="tc-badge" style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px"></div>
+          </div>
+          <button type="button" id="tc-apply" class="primary-action"
+            style="font-size:12px;min-height:34px;padding:0 16px">Aplicar precio →</button>
+        </div>
+      </div>
+    </div>`;
+
+  amountField.after(widget);
+
+  widget.querySelector("#tc-toggle").addEventListener("click", () => {
+    const body  = widget.querySelector("#tc-body");
+    const shown = body.style.display !== "none";
+    body.style.display = shown ? "none" : "block";
+    widget.querySelector("#tc-toggle").textContent = shown ? "Calcular ▾" : "Calcular ▲";
+    if (!shown) widget.querySelector("#tc-insumo")?.focus();
+  });
+
+  widget.querySelectorAll(".tc-prov").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const wasActive = btn.style.background.includes("var(--fz-primary-rgb)");
+      widget.querySelectorAll(".tc-prov").forEach(b => { b.style.borderColor = ""; b.style.background = ""; });
+      if (!wasActive) {
+        btn.style.borderColor = "rgba(var(--fz-primary-rgb),.5)";
+        btn.style.background  = "rgba(var(--fz-primary-rgb),.15)";
+      }
+    });
+  });
+
+  widget.querySelector("#tc-insumo").addEventListener("input", () => {
+    const insumo  = Number(widget.querySelector("#tc-insumo").value) || 0;
+    const result  = widget.querySelector("#tc-result");
+    if (insumo <= 0) { result.style.display = "none"; return; }
+    const res = calcPrecio({ insumo });
+    widget.querySelector("#tc-precio").textContent = money.format(res.precioFinal);
+    widget.querySelector("#tc-badge").textContent  = `Margen ${(res.margenAplicado*100).toFixed(0)}%`;
+    result.style.display = "flex";
+  });
+
+  widget.querySelector("#tc-apply").addEventListener("click", () => {
+    const insumo = Number(widget.querySelector("#tc-insumo").value) || 0;
+    if (!insumo) return;
+    const res = calcPrecio({ insumo });
+    const repairInp = formFields.querySelector("#repairAmount");
+    if (repairInp) {
+      repairInp.value = Math.round(res.precioFinal);
+      repairInp.dispatchEvent(new Event("input"));
+    }
+    widget.querySelector("#tc-body").style.display = "none";
+    widget.querySelector("#tc-toggle").textContent = "Calcular ▾";
+    showToast(`Precio aplicado: ${money.format(res.precioFinal)}`);
   });
 }
 
