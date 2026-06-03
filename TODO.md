@@ -158,4 +158,7 @@ _Última actualización: 2026-06-01_
 - [x] Botones circulares 🔧 Ticket y 🛒 POS en el header para acceso rápido.
 - [x] Cards de marketing compactas (padding reducido, fuente más pequeña).
 - [x] Toasts de éxito/error y confirm modal reemplazando alert/confirm nativos.
+- [ ] Revisar y simplificar opciones de impresión de tickets — actualmente hay múltiples botones/modalidades que pueden confundir el proceso o generar impresiones redundantes. Definir flujo claro: qué imprime qué y cuándo.
+- [ ] Centro de notificaciones — avisos en tiempo real para: ticket asignado, cambio de stage, respuesta en ticket IT. Tickets de Soporte IT con hilo de comentarios y seguimiento de estado visible para quien lo levantó.
 - [ ] Definir que se hará cuando ya haya muchos tickets en las columnas del KANBAN , tal vez hacer las cards mas chicas o acortar lo que hay visible a menos que se abra y se desgloce lo demas, tipo Hubspot. 
+- [ ]Al hacer click en un movimiento reciente en "Home" , desplegar la vista de ese movimiento, es decir abrir la pantallita que muestra la informacion de ese movieminto ![alt text](image.png)
