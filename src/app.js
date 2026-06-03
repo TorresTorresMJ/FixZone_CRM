@@ -68,13 +68,13 @@ const ROLE_LABELS  = { it: "Admin", owner: "Admin", admin: "Admin", standard: "E
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
   // Frontend roles
-  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   standard:  { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   marketing: { tabs: ["dashboard","cotizaciones","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
   // DB roles (map to equivalent frontend permission sets)
-  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  sales:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
+  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  sales:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
   technician: { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
 };
@@ -111,6 +111,8 @@ const seed = {
   supportTasks: [],
   posSales: [],
   discounts: [],
+  serviceTypes: [],
+  servicePrices: [],
 };
 
 let state = loadState();
@@ -153,6 +155,7 @@ const formSchemas = {
       ["color","Color","text"],
       ["accessories","Accesorios recibidos","text",null,true],
       ["physicalCondition","Condición física","select",["Bueno","Regular","Con daños","Muy dañado"]],
+      ["serviceType","Tipo de servicio","service-type-select",null,false,true],
       ["issue","Falla / trabajo","text",null,true],
       ["branch","Sucursal","select",BRANCHES],["assignedTo","Empleado","select",employees],
       ["status","Stage","select",ticketStages],["priority","Prioridad","select",["Normal","Media","Alta","Urgente"]],
@@ -302,8 +305,10 @@ async function reloadState() {
       tickets:      remote.tickets.length      ? remote.tickets      : structuredClone(seed.tickets),
       supplies:     remote.supplies.length     ? remote.supplies     : structuredClone(seed.supplies),
       transactions: remote.transactions.length ? remote.transactions : structuredClone(seed.transactions),
-      posSales:     remote.posSales            ? remote.posSales     : [],
-      discounts:    remote.discounts           || [],
+      posSales:      remote.posSales            ? remote.posSales     : [],
+      discounts:     remote.discounts           || [],
+      serviceTypes:  remote.serviceTypes        || [],
+      servicePrices: remote.servicePrices       || [],
     };
     return state;
   } finally {
@@ -540,7 +545,7 @@ function currentPerms() {
 // REMOTE DATA
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadSupabaseState() {
-  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes] = await Promise.all([
+  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("name"),
     supabaseClient.from("employees").select("*").order("full_name"),
     supabaseClient.from("customers").select("*").order("created_at",{ascending:false}),
@@ -552,6 +557,8 @@ async function loadSupabaseState() {
     supabaseClient.from("support_tasks").select("*, employees!support_tasks_assigned_to_fkey(full_name)").order("created_at",{ascending:false}),
     supabaseClient.from("pos_sales").select("*").order("created_at",{ascending:false}).limit(50),
     supabaseClient.from("discount_codes").select("*").order("created_at",{ascending:false}),
+    supabaseClient.from("service_types").select("*").order("sort_order"),
+    supabaseClient.from("service_prices").select("*"),
   ]);
 
   const branchRows   = bRes.data  || [];
@@ -612,6 +619,7 @@ async function loadSupabaseState() {
         discountCode:t.discount_code||"",
         discountAmount:Number(t.discount_amount||0),
         discountPct:Number(t.discount_pct||0),
+        serviceType:t.service_type||"",
         deviceId:t.device_id||null,
         // Device fields — enable search by IMEI/serial and pre-populate edit form
         imei:dev?.imei||"",
@@ -654,6 +662,11 @@ async function loadSupabaseState() {
       scope:Array.isArray(d.scope)?d.scope:["pos","cotizacion","ticket"],
       active:d.active, branchId:d.branch_id||null,
     })),
+    serviceTypes: (stypRes.data||[]).map(s => ({ id:s.id, name:s.name, sortOrder:Number(s.sort_order||0) })),
+    servicePrices: (spRes.data||[]).map(p => ({
+      id:p.id, deviceModel:p.device_model, serviceTypeId:p.service_type_id,
+      price:Number(p.price||0), branchId:p.branch_id||null, notes:p.notes||"",
+    })),
   };
 }
 
@@ -678,6 +691,7 @@ function render() {
   renderTickets();
   renderCotizaciones();
   renderSupplies();
+  renderPrecios();
   renderPos();
   renderFinance();
   renderReports();
@@ -1009,6 +1023,198 @@ function renderSupplies() {
       <td><button class="mini-button" data-edit-supply="${i.id}">Editar</button></td>
     </tr>
   `).join("")||tableEmpty(7);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// TABLA DE PRECIOS
+// ──────────────────────────────────────────────────────────────────────────────
+function branchServicePrices() {
+  const bid = (state.branches||[]).find(b=>b.name===activeBranchId)?.id || activeBranchId;
+  return (state.servicePrices||[]).filter(p => !p.branchId || p.branchId === bid);
+}
+
+function renderPrecios() {
+  const stEl = document.querySelector("#precios-service-types");
+  const mxEl = document.querySelector("#precios-matrix");
+  if (!stEl || !mxEl) return;
+
+  const types   = state.serviceTypes || [];
+  const prices  = branchServicePrices();
+  const branchId = (state.branches||[]).find(b=>b.name===activeBranchId)?.id || null;
+
+  // ── Service types manager ────────────────────────────────────────────────
+  stEl.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h3 style="margin:0;font-size:14px">Servicios disponibles</h3>
+        <button class="mini-button" id="precio-add-type-btn">+ Agregar servicio</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px" id="precio-types-list">
+        ${types.map(t=>`
+          <div style="display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:4px 10px;font-size:12px">
+            <span>${escapeHtml(t.name)}</span>
+            ${supabaseClient?`<button class="danger-btn" data-del-stype="${t.id}" style="background:none;border:none;color:#ff6b6b;cursor:pointer;padding:0 2px;font-size:11px">✕</button>`:""}
+          </div>`).join("")}
+      </div>
+      <div id="precio-add-type-form" style="display:none;margin-top:12px;display:none">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="precio-new-type-input" type="text" placeholder="Nombre del servicio" style="flex:1;padding:7px 10px;font-size:13px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:inherit"/>
+          <button class="primary-action" id="precio-save-type-btn" style="font-size:12px">Guardar</button>
+          <button class="ghost-button"   id="precio-cancel-type-btn" style="font-size:12px">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+
+  stEl.querySelector("#precio-add-type-btn")?.addEventListener("click", () => {
+    stEl.querySelector("#precio-add-type-form").style.display = "flex";
+    stEl.querySelector("#precio-new-type-input")?.focus();
+  });
+  stEl.querySelector("#precio-cancel-type-btn")?.addEventListener("click", () => {
+    stEl.querySelector("#precio-add-type-form").style.display = "none";
+  });
+  stEl.querySelector("#precio-save-type-btn")?.addEventListener("click", async () => {
+    const name = stEl.querySelector("#precio-new-type-input")?.value.trim();
+    if (!name || !supabaseClient) return;
+    const maxOrder = types.reduce((m,t)=>Math.max(m,t.sortOrder),0);
+    const { data, error } = await supabaseClient.from("service_types").insert({ name, sort_order: maxOrder+1 }).select().single();
+    if (error) { showErrorToast("Error al guardar servicio"); return; }
+    state.serviceTypes.push({ id:data.id, name:data.name, sortOrder:Number(data.sort_order||0) });
+    renderPrecios();
+    showToast(`✓ Servicio "${name}" agregado`);
+  });
+  stEl.querySelectorAll("[data-del-stype]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.delStype;
+      if (!await confirmModal(`¿Eliminar servicio? Se borrarán todos sus precios.`)) return;
+      await supabaseClient.from("service_types").delete().eq("id", id);
+      state.serviceTypes = state.serviceTypes.filter(t=>t.id!==id);
+      state.servicePrices = state.servicePrices.filter(p=>p.serviceTypeId!==id);
+      renderPrecios();
+    });
+  });
+
+  // ── Price matrix ────────────────────────────────────────────────────────
+  if (!types.length) { mxEl.innerHTML = `<p class="muted" style="margin-top:8px">Agrega al menos un servicio para construir la tabla.</p>`; return; }
+
+  // Build price lookup map: "deviceModel|serviceTypeId" -> price record
+  const priceMap = new Map(prices.map(p=>[`${p.deviceModel}|${p.serviceTypeId}`, p]));
+
+  // Unique device models with at least one price in this branch
+  const deviceModels = [...new Set(prices.map(p=>p.deviceModel))].sort((a,b)=>a.localeCompare(b,"es"));
+
+  const headerCols = types.map(t=>`<th style="padding:6px 10px;font-size:11px;white-space:nowrap;text-align:right">${escapeHtml(t.name)}</th>`).join("");
+
+  const rows = deviceModels.map(dev => {
+    const cells = types.map(t => {
+      const rec = priceMap.get(`${dev}|${t.id}`);
+      const val = rec ? rec.price : 0;
+      return `<td style="padding:3px 4px;text-align:right">
+        <input type="number" min="0" step="1" value="${val}"
+          data-device="${escapeHtml(dev)}" data-stype="${t.id}" data-pid="${rec?.id||""}"
+          class="price-cell-input"
+          style="width:80px;padding:5px 7px;font-size:12px;text-align:right;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:inherit" />
+      </td>`;
+    }).join("");
+    return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
+      <td style="padding:6px 10px;font-size:12px;white-space:nowrap;font-weight:500">${escapeHtml(dev)}</td>
+      ${cells}
+      <td style="padding:3px 6px"><button class="mini-button danger-btn" data-del-device="${escapeHtml(dev)}" style="font-size:10px;padding:2px 7px">✕</button></td>
+    </tr>`;
+  }).join("");
+
+  mxEl.innerHTML = `
+    <div class="card" style="overflow-x:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <div>
+          <h3 style="margin:0 0 3px;font-size:14px">Matriz de precios — ${escapeHtml(activeBranchId)}</h3>
+          <small class="muted">Edita las celdas y presiona Guardar cambios</small>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="ghost-button" id="precio-add-device-btn" style="font-size:12px">+ Agregar equipo</button>
+          <button class="primary-action" id="precio-save-matrix-btn" style="font-size:12px">💾 Guardar cambios</button>
+        </div>
+      </div>
+      <div id="precio-add-device-form" style="display:none;margin-bottom:12px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="device-ac-wrapper" style="flex:1;min-width:180px">
+            <input id="precio-new-device-input" type="text" data-device-ac placeholder="Modelo del equipo"
+              style="width:100%;padding:7px 10px;font-size:13px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:inherit"/>
+          </div>
+          <button class="primary-action" id="precio-save-device-btn" style="font-size:12px">Agregar</button>
+          <button class="ghost-button" id="precio-cancel-device-btn" style="font-size:12px">Cancelar</button>
+        </div>
+      </div>
+      ${deviceModels.length ? `
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="border-bottom:2px solid rgba(255,255,255,.12)">
+          <th style="text-align:left;padding:6px 10px;font-size:11px">Equipo</th>
+          ${headerCols}
+          <th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>` : `<p class="muted" style="margin:8px 0">Agrega equipos con el botón "+" para empezar a capturar precios.</p>`}
+    </div>`;
+
+  // Add device
+  mxEl.querySelector("#precio-add-device-btn")?.addEventListener("click", () => {
+    const form = mxEl.querySelector("#precio-add-device-form");
+    form.style.display = "flex";
+    initDeviceAutocomplete();
+    mxEl.querySelector("#precio-new-device-input")?.focus();
+  });
+  mxEl.querySelector("#precio-cancel-device-btn")?.addEventListener("click", () => {
+    mxEl.querySelector("#precio-add-device-form").style.display = "none";
+  });
+  mxEl.querySelector("#precio-save-device-btn")?.addEventListener("click", async () => {
+    const dev = mxEl.querySelector("#precio-new-device-input")?.value.trim();
+    if (!dev || !supabaseClient) return;
+    if (deviceModels.includes(dev)) { showErrorToast("Ese equipo ya está en la tabla"); return; }
+    // Insert a $0 record for each service type so the device appears in the matrix
+    const inserts = types.map(t => ({ device_model:dev, service_type_id:t.id, price:0, branch_id:branchId }));
+    const { data, error } = await supabaseClient.from("service_prices").upsert(inserts, {onConflict:"device_model,service_type_id,branch_id"}).select();
+    if (error) { showErrorToast("Error al agregar equipo"); return; }
+    (data||[]).forEach(r => state.servicePrices.push({ id:r.id, deviceModel:r.device_model, serviceTypeId:r.service_type_id, price:Number(r.price||0), branchId:r.branch_id }));
+    renderPrecios();
+    showToast(`✓ ${dev} agregado a la tabla`);
+  });
+
+  // Delete device row
+  mxEl.querySelectorAll("[data-del-device]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const dev = btn.dataset.delDevice;
+      if (!await confirmModal(`¿Eliminar todos los precios de "${dev}"?`)) return;
+      await supabaseClient.from("service_prices").delete().eq("device_model", dev).eq("branch_id", branchId);
+      state.servicePrices = state.servicePrices.filter(p => p.deviceModel !== dev || p.branchId !== branchId);
+      renderPrecios();
+    });
+  });
+
+  // Save matrix (upsert all changed cells)
+  mxEl.querySelector("#precio-save-matrix-btn")?.addEventListener("click", async () => {
+    if (!supabaseClient) return;
+    const inputs = mxEl.querySelectorAll(".price-cell-input");
+    const upserts = [];
+    inputs.forEach(inp => {
+      upserts.push({
+        ...(inp.dataset.pid ? { id: inp.dataset.pid } : {}),
+        device_model: inp.dataset.device,
+        service_type_id: inp.dataset.stype,
+        price: Number(inp.value) || 0,
+        branch_id: branchId,
+      });
+    });
+    const { data, error } = await supabaseClient.from("service_prices")
+      .upsert(upserts, { onConflict: "device_model,service_type_id,branch_id" }).select();
+    if (error) { showErrorToast("Error al guardar precios"); return; }
+    // Update local state
+    (data||[]).forEach(r => {
+      const idx = state.servicePrices.findIndex(p=>p.id===r.id);
+      const updated = { id:r.id, deviceModel:r.device_model, serviceTypeId:r.service_type_id, price:Number(r.price||0), branchId:r.branch_id };
+      if (idx>=0) state.servicePrices[idx] = updated;
+      else state.servicePrices.push(updated);
+    });
+    showToast("✓ Precios guardados");
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1667,6 +1873,7 @@ const PERM_SECTIONS = [
   { key:"products",       label:"Productos" },
   { key:"tickets",        label:"Tickets" },
   { key:"supplies",       label:"Insumos" },
+  { key:"precios",        label:"Tabla de Precios" },
   { key:"pos",            label:"Punto de Venta" },
   { key:"finance",        label:"Finanzas" },
   { key:"reports",        label:"Reportes" },
@@ -3018,6 +3225,7 @@ function openForm(type, prefill = {}) {
     initQuoteItemsBuilder(prefill.quoteItems || []);
   }
   initDeviceAutocomplete();
+  if (type === "ticket") initPriceAutofill();
   modal.showModal();
 }
 
@@ -3095,6 +3303,7 @@ function openEditTicket(ticketId) {
     fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "", optional)
   ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
   initDeviceAutocomplete();
+  initPriceAutofill();
   modal.showModal();
   initPhotoUpload(ticketId);
   loadTicketParts(ticketId);
@@ -3365,6 +3574,35 @@ function initDeviceAutocomplete() {
   });
 }
 
+function initPriceAutofill() {
+  const deviceInput  = formFields.querySelector("input[data-device-ac]");
+  const serviceSelect = formFields.querySelector("select[data-price-trigger]");
+  const amountInput  = formFields.querySelector("#repairAmount");
+  if (!deviceInput || !serviceSelect || !amountInput) return;
+
+  const lookupPrice = () => {
+    const device  = deviceInput.value.trim();
+    const svcName = serviceSelect.value;
+    if (!device || !svcName) return;
+    const branchId = (state.branches||[]).find(b=>b.name===activeBranchId)?.id;
+    const stype = (state.serviceTypes||[]).find(t=>t.name===svcName);
+    if (!stype) return;
+    const rec = (state.servicePrices||[]).find(p =>
+      p.deviceModel.toLowerCase() === device.toLowerCase() &&
+      p.serviceTypeId === stype.id &&
+      (!p.branchId || p.branchId === branchId)
+    );
+    if (rec && rec.price > 0) {
+      amountInput.value = rec.price;
+      showToast(`💡 Precio sugerido: ${money.format(rec.price)} — puedes modificarlo`);
+    }
+  };
+
+  serviceSelect.addEventListener("change", lookupPrice);
+  // Also trigger when device field loses focus
+  deviceInput.addEventListener("blur", () => setTimeout(lookupPrice, 200));
+}
+
 function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=false) {
   const labelHtml = optional
     ? `${label} <span style="font-size:11px;font-weight:400;opacity:0.45;text-transform:none;letter-spacing:0">(opcional)</span>`
@@ -3392,6 +3630,17 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
       <label for="${name}">${labelHtml}</label>
       <input id="${name}" name="${name}" type="text" value="${escapeHtml(String(val))}"
         data-device-ac autocomplete="off" placeholder="Escribe para buscar…" ${optional?"":"required"} />
+    </div>`;
+  }
+  if (ftype==="service-type-select") {
+    const serviceTypes = state.serviceTypes || [];
+    const val = defaultValue ?? "";
+    return `<div class="field ${wide?"is-wide":""}">
+      <label for="${name}">${labelHtml}</label>
+      <select id="${name}" name="${name}" data-price-trigger>
+        <option value="">— Sin especificar —</option>
+        ${serviceTypes.map(t=>`<option value="${escapeHtml(t.name)}" ${t.name===val?"selected":""}>${escapeHtml(t.name)}</option>`).join("")}
+      </select>
     </div>`;
   }
   const val = defaultValue ?? (ftype==="date" ? new Date().toISOString().slice(0,10) : "");
@@ -3680,6 +3929,7 @@ async function createRemoteTicket(r) {
     branch_id:branchId, notes:r.notes||null,
     assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId(),
     quote_items: r.quoteItems?.length ? r.quoteItems : null,
+    service_type: r.serviceType||null,
   }).select().single();
   if (error) throw error;
 
@@ -3747,6 +3997,7 @@ async function updateRemoteTicket(ticketId, r) {
     discount_code:        r.discountCode||null,
     discount_amount:      Number(r.discountAmount||0),
     discount_pct:         Number(r.discountPct||0),
+    service_type:         r.serviceType||null,
     ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
   }).eq("id", ticketId);
   if (error) throw error;
@@ -5115,6 +5366,7 @@ const NAV_TOOLTIPS = {
   clients:        "Registro de clientes y sus equipos. Busca por nombre, teléfono o IMEI.",
   products:       "Inventario de refacciones, accesorios y productos vendibles.",
   supplies:       "Compras de insumos y materiales. Se registran como egreso automáticamente.",
+  precios:        "Tabla de precios por dispositivo y servicio. Al crear un ticket se sugiere el precio automáticamente.",
   finance:        "Ingresos y egresos del negocio con filtro por período.",
   reports:        "Reportes de caja, tickets por etapa y productividad del equipo.",
   users:          "Gestión de empleados, roles y permisos de acceso.",

@@ -62,6 +62,7 @@ _Última actualización: 2026-06-01_
 - [ ] Registrar proveedores (sección dedicada con nombre, contacto y RLS).
 - [ ] Asociar compras de insumos con proveedor y comprobante — permitir adjuntar foto de comprobante.
 - [ ] Exportar inventario a Excel.
+- [x] Tabla de precios por dispositivo × servicio — vista Precios con matriz editable, gestión de servicios, auto-fill del monto al crear ticket (migration 21 requerida).
 - [ ] Ticket de request de compra de insumos / material 
 
 ## Fase 6: Finanzas y reportes
@@ -135,6 +136,7 @@ _Última actualización: 2026-06-01_
 - [x] Botón 🖨 Imprimir — PDF formal de cotización con tabla de partidas, subtotal, descuento, vigencia y firma.
 - [x] Código de descuento aplicable desde el builder de cotización.
 - [ ] Cambio de status de Cotización a "Venta concretada" (diferente de aprobar como reparación).
+- [ ] Crear tabla de dispositivo / servicios para poder encontrar el precio dependiendo del dispositivo y del servicio en la interseccion. 
 
 ## Fase 12: Punto de Venta (POS)
 
@@ -155,3 +157,4 @@ _Última actualización: 2026-06-01_
 - [x] Botones circulares 🔧 Ticket y 🛒 POS en el header para acceso rápido.
 - [x] Cards de marketing compactas (padding reducido, fuente más pequeña).
 - [x] Toasts de éxito/error y confirm modal reemplazando alert/confirm nativos.
+- [ ] Definir que se hará cuando ya haya muchos tickets en las columnas del KANBAN , tal vez hacer las cards mas chicas o acortar lo que hay visible a menos que se abra y se desgloce lo demas, tipo Hubspot. 

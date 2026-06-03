@@ -48,6 +48,9 @@
           <button class="nav-item" data-view="supplies" title="Insumos">
             <span aria-hidden="true">◉</span> Insumos
           </button>
+          <button class="nav-item" data-view="precios" title="Tabla de precios">
+            <span aria-hidden="true">₱</span> Precios
+          </button>
           <hr class="nav-divider">
           <!-- Finanzas -->
           <button class="nav-item" data-view="finance" title="Finanzas">
@@ -240,6 +243,16 @@
             </div>
           </div>
           <div id="pos-history" style="margin-top:28px"></div>
+        </section>
+
+        <!-- ── Tabla de Precios ───────────────────────────────────────── -->
+        <section class="view" id="precios-view" data-title="Tabla de Precios">
+          <div class="section-heading">
+            <h2>Tabla de precios</h2>
+            <span class="role-badge role-admin">Admin</span>
+          </div>
+          <div id="precios-service-types"></div>
+          <div id="precios-matrix"></div>
         </section>
 
         <!-- ── Finanzas ──────────────────────────────────────────────────── -->
