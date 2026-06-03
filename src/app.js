@@ -4609,7 +4609,7 @@ function doPrint() {
   let s = document.getElementById("fz-print-size");
   if (!s) { s = document.createElement("style"); s.id = "fz-print-size"; document.head.appendChild(s); }
   s.textContent = `@media print { @page { size: ${w} auto; margin: 0; } }`;
-  doPrint();
+  window.print();
 }
 
 // ── Receipt variants ──────────────────────────────────────────────────────────
