@@ -132,7 +132,7 @@ const formSchemas = {
     title: "Cliente", collection: "clients",
     fields: [
       ["name","Nombre","text"],["phone","Telefono","tel"],["email","Email","email"],
-      ["device","Equipo","text"],["address","Direccion","text"],
+      ["device","Equipo","device-autocomplete"],["address","Direccion","text"],
       ["lastVisit","Ultima visita","date"],
       ["status","Estado","select",["Nuevo","Activo","Garantia","Inactivo"]],
       ["notes","Notas","text",null,true],
@@ -2890,6 +2890,7 @@ function openEditClient(clientId) {
   formFields.innerHTML = formSchemas["client"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, client[name] ?? "", optional)
   ).join("");
+  initDeviceAutocomplete();
   modal.showModal();
 }
 
