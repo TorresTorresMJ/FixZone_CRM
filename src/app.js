@@ -4866,7 +4866,14 @@ function doPrint() {
   let s = document.getElementById("fz-print-size");
   if (!s) { s = document.createElement("style"); s.id = "fz-print-size"; document.head.appendChild(s); }
   s.textContent = `@media print { @page { size: ${w} auto; margin: 0; } }`;
-  window.print();
+  const imgs = [...document.querySelectorAll("#print-receipt img")];
+  const unloaded = imgs.filter(img => !img.complete);
+  if (unloaded.length === 0) { window.print(); return; }
+  let printed = false;
+  const now = () => { if (!printed) { printed = true; window.print(); } };
+  let done = 0;
+  unloaded.forEach(img => { img.onload = img.onerror = () => { if (++done >= unloaded.length) now(); }; });
+  setTimeout(now, 1200);
 }
 
 // ── Receipt variants ──────────────────────────────────────────────────────────
