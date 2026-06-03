@@ -1,6 +1,5 @@
 -- Migration 21: Tabla de precios por dispositivo × servicio
--- service_types: lista configurable de servicios (columnas de la matriz)
--- service_prices: precio por combinación dispositivo + servicio + sucursal
+-- Idempotente — se puede correr múltiples veces sin error.
 
 CREATE TABLE IF NOT EXISTS public.service_types (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -24,6 +23,12 @@ CREATE TABLE IF NOT EXISTS public.service_prices (
 ALTER TABLE public.service_types  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_prices ENABLE ROW LEVEL SECURITY;
 
+-- Policies: DROP IF EXISTS primero para que sea idempotente
+DROP POLICY IF EXISTS "active employees can read service_types"  ON public.service_types;
+DROP POLICY IF EXISTS "admin can manage service_types"           ON public.service_types;
+DROP POLICY IF EXISTS "active employees can read service_prices" ON public.service_prices;
+DROP POLICY IF EXISTS "admin can manage service_prices"          ON public.service_prices;
+
 CREATE POLICY "active employees can read service_types"
   ON public.service_types FOR SELECT USING (private.is_active_employee());
 
@@ -40,22 +45,26 @@ CREATE POLICY "admin can manage service_prices"
   USING     (private.has_employee_role(ARRAY['owner','admin','it']))
   WITH CHECK(private.has_employee_role(ARRAY['owner','admin','it']));
 
--- Add service_type column to service_tickets (stores the selected service label)
+-- Columna service_type en tickets
 ALTER TABLE public.service_tickets
   ADD COLUMN IF NOT EXISTS service_type text;
 
--- Servicios predeterminados
+-- Servicios predeterminados (ON CONFLICT DO NOTHING = idempotente)
 INSERT INTO public.service_types (name, sort_order) VALUES
-  ('Cambio de pantalla',     1),
-  ('Cambio de batería',      2),
-  ('Puerto de carga',        3),
-  ('Bocina / altavoz',       4),
-  ('Micrófono',              5),
-  ('Cámara frontal',         6),
-  ('Cámara trasera',         7),
-  ('Botones',                8),
-  ('Face ID / Touch ID',     9),
-  ('Daño por agua',         10),
-  ('Diagnóstico',           11),
-  ('Otro',                  12)
+  ('Cambio de pantalla',          1),
+  ('Cambio de batería',           2),
+  ('Puerto de carga',             3),
+  ('Bocina / altavoz',            4),
+  ('Micrófono',                   5),
+  ('Cámara frontal',              6),
+  ('Cámara frontal flexor',       7),
+  ('Cámara trasera flexor',       8),
+  ('Cámara trasera cristal',      9),
+  ('Cambio de glass (iPhone)',   10),
+  ('Cambio de glass (Android)',  11),
+  ('Botones',                    12),
+  ('Face ID / Touch ID',         13),
+  ('Daño por agua',              14),
+  ('Diagnóstico',                15),
+  ('Otro',                       16)
 ON CONFLICT DO NOTHING;
