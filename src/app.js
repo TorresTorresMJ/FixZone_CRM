@@ -1144,22 +1144,27 @@ function renderPrecios() {
           <button class="ghost-button" id="precio-cancel-device-btn" style="font-size:12px">Cancelar</button>
         </div>
       </div>
-      ${deviceModels.length ? `
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="border-bottom:2px solid rgba(255,255,255,.12)">
-          <th style="text-align:left;padding:6px 10px;font-size:11px">Equipo</th>
-          ${headerCols}
-          <th></th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>` : `<p class="muted" style="margin:8px 0">Agrega equipos con el botón "+" para empezar a capturar precios.</p>`}
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
+          <thead><tr style="border-bottom:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04)">
+            <th style="text-align:left;padding:8px 12px;font-size:11px;white-space:nowrap;position:sticky;left:0;background:#0f0f1a;z-index:2;min-width:160px">Equipo / Servicio</th>
+            ${types.map(t=>`<th style="text-align:right;padding:8px 8px;font-size:10px;white-space:nowrap;color:rgba(255,255,255,.6);font-weight:600">${escapeHtml(t.name)}</th>`).join("")}
+            <th style="width:32px"></th>
+          </tr></thead>
+          <tbody>
+            ${rows || `<tr><td colspan="${types.length + 2}" style="padding:20px 12px;color:rgba(255,255,255,.35);font-size:12px;font-style:italic">
+              Usa "+ Agregar equipo" para añadir la primera fila
+            </td></tr>`}
+          </tbody>
+        </table>
+      </div>
     </div>`;
 
   // Add device
   mxEl.querySelector("#precio-add-device-btn")?.addEventListener("click", () => {
     const form = mxEl.querySelector("#precio-add-device-form");
     form.style.display = "flex";
-    initDeviceAutocomplete();
+    initDeviceAutocomplete(mxEl);
     mxEl.querySelector("#precio-new-device-input")?.focus();
   });
   mxEl.querySelector("#precio-cancel-device-btn")?.addEventListener("click", () => {
@@ -3509,8 +3514,8 @@ function getAllDeviceNames() {
   return result.sort((a, b) => a.localeCompare(b, "es"));
 }
 
-function initDeviceAutocomplete() {
-  formFields.querySelectorAll("input[data-device-ac]").forEach(input => {
+function initDeviceAutocomplete(container = formFields) {
+  container.querySelectorAll("input[data-device-ac]").forEach(input => {
     const wrapper = input.closest(".device-ac-wrapper");
     if (!wrapper) return;
     let ddEl = null;
