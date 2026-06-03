@@ -1333,30 +1333,51 @@ function renderPrecios() {
   const prices  = branchServicePrices();
   const branchId = (state.branches||[]).find(b=>b.name===activeBranchId)?.id || null;
 
-  // ── Service types manager ────────────────────────────────────────────────
+  // ── Service types manager (colapsable) ──────────────────────────────────
   stEl.innerHTML = `
-    <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h3 style="margin:0;font-size:14px">Servicios disponibles</h3>
-        <button class="mini-button" id="precio-add-type-btn">+ Agregar servicio</button>
+    <div style="margin-bottom:12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,.03);cursor:pointer" id="precio-stype-toggle">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:12px;color:rgba(255,255,255,.4)" id="precio-stype-arrow">▶</span>
+          <span style="font-size:13px;font-weight:600">Servicios configurados</span>
+          <span style="font-size:11px;color:rgba(255,255,255,.4);background:rgba(255,255,255,.07);border-radius:999px;padding:1px 8px">${types.length}</span>
+        </div>
+        <button class="mini-button" id="precio-add-type-btn" style="font-size:11px;padding:3px 10px">+ Agregar</button>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px" id="precio-types-list">
-        ${types.map(t=>`
-          <div style="display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:4px 10px;font-size:12px">
-            <span>${escapeHtml(t.name)}</span>
-            ${supabaseClient?`<button class="danger-btn" data-del-stype="${t.id}" style="background:none;border:none;color:#ff6b6b;cursor:pointer;padding:0 2px;font-size:11px">✕</button>`:""}
-          </div>`).join("")}
-      </div>
-      <div id="precio-add-type-form" style="display:none;margin-top:12px;display:none">
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="precio-new-type-input" type="text" placeholder="Nombre del servicio" style="flex:1;padding:7px 10px;font-size:13px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:inherit"/>
-          <button class="primary-action" id="precio-save-type-btn" style="font-size:12px">Guardar</button>
-          <button class="ghost-button"   id="precio-cancel-type-btn" style="font-size:12px">Cancelar</button>
+      <div id="precio-stype-body" style="display:none">
+        <div style="padding:10px 14px 4px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px">
+          ${types.map((t,i)=>`
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.04);font-size:12px">
+              <span style="color:rgba(255,255,255,.45);margin-right:6px;font-size:10px">${i+1}</span>
+              <span style="flex:1">${escapeHtml(t.name)}</span>
+              ${supabaseClient?`<button data-del-stype="${t.id}" style="background:none;border:none;color:rgba(255,100,100,.5);cursor:pointer;padding:0 0 0 6px;font-size:11px;line-height:1" title="Eliminar">✕</button>`:""}
+            </div>`).join("")}
+        </div>
+        <div id="precio-add-type-form" style="display:none;padding:10px 14px 12px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="precio-new-type-input" type="text" placeholder="Nombre del servicio"
+              style="flex:1;padding:7px 10px;font-size:13px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:inherit"/>
+            <button class="primary-action" id="precio-save-type-btn" style="font-size:12px">Guardar</button>
+            <button class="ghost-button" id="precio-cancel-type-btn" style="font-size:12px">Cancelar</button>
+          </div>
         </div>
       </div>
     </div>`;
 
+  stEl.querySelector("#precio-stype-toggle")?.addEventListener("click", e => {
+    if (e.target.closest("#precio-add-type-btn")) return;
+    const body  = stEl.querySelector("#precio-stype-body");
+    const arrow = stEl.querySelector("#precio-stype-arrow");
+    const open  = body.style.display === "none";
+    body.style.display  = open ? "block" : "none";
+    arrow.textContent   = open ? "▼" : "▶";
+  });
+
   stEl.querySelector("#precio-add-type-btn")?.addEventListener("click", () => {
+    const body  = stEl.querySelector("#precio-stype-body");
+    const arrow = stEl.querySelector("#precio-stype-arrow");
+    body.style.display = "block";
+    arrow.textContent  = "▼";
     stEl.querySelector("#precio-add-type-form").style.display = "flex";
     stEl.querySelector("#precio-new-type-input")?.focus();
   });
