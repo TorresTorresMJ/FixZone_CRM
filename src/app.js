@@ -1041,6 +1041,7 @@ const PRICING_CONFIG_DEFAULT = {
   margenNormal: 1.10,
   margenAlto:   1.00,
   umbral:       1500,
+  glassDesc:    0.35,
   comTecPct:    0.15,
 };
 
@@ -1055,20 +1056,25 @@ function savePricingConfig(cfg) {
   localStorage.setItem("fixzone-pricing-config", JSON.stringify(cfg));
 }
 
-function calcPrecio({ insumo, config }) {
-  const cfg       = config || loadPricingConfig();
-  const n         = Number(insumo) || 0;
-  const margenPct = n >= cfg.umbral ? cfg.margenAlto : cfg.margenNormal;
-  const base      = n * (1 + margenPct);
-  const iva       = base * 0.16;
-  const conIva    = base * 1.16;
-  const mpCosto   = conIva * 0.0406;
-  const precioFinal = conIva + mpCosto;
-  const comTec    = base * cfg.comTecPct;
-  const costoReal = n + comTec + mpCosto;
-  const utilidad  = precioFinal - costoReal;
-  const margenNeto = precioFinal > 0 ? (utilidad / precioFinal) * 100 : 0;
-  return { precioFinal, ganancia: n * margenPct, base, iva, mpCosto, comTec, utilidad, margenNeto, margenAplicado: margenPct };
+function calcPrecio({ insumo, tipo = "pantalla", config }) {
+  const cfg          = config || loadPricingConfig();
+  const n            = Number(insumo) || 0;
+  const esGlass      = tipo === "glass";
+  const margenPct    = n >= cfg.umbral ? cfg.margenAlto : cfg.margenNormal;
+  const ganancia     = n * margenPct;
+  const base         = n + ganancia;
+  const iva          = base * 0.16;
+  const conIva       = base * 1.16;
+  const mpCosto      = conIva * 0.0406;
+  const precioPantalla = conIva + mpCosto;
+  const descuento    = esGlass ? precioPantalla * cfg.glassDesc : 0;
+  const precioFinal  = precioPantalla - descuento;
+  const comTec       = base * cfg.comTecPct;
+  const costoReal    = n + comTec + mpCosto;
+  const utilidad     = precioFinal - costoReal;
+  const margenNeto   = precioFinal > 0 ? (utilidad / precioFinal) * 100 : 0;
+  return { precioFinal, precioPantalla, descuento, ganancia, base, iva,
+           mpCosto, comTec, costoReal, utilidad, margenNeto, margenAplicado: margenPct, esGlass };
 }
 
 function cotSlider(id, label, value, min, max, step) {
@@ -1087,11 +1093,13 @@ function cotSlider(id, label, value, min, max, step) {
 }
 
 function readSlidersConfig(container) {
-  const g = id => Number(container.querySelector(`#${id}`)?.value ?? 0);
+  const g    = id => Number(container.querySelector(`#${id}`)?.value ?? 0);
+  const base = loadPricingConfig();
   return {
     margenNormal: g("cot-margen-normal") / 100,
     margenAlto:   g("cot-margen-alto")   / 100,
-    umbral:       g("cot-umbral"),
+    umbral:       base.umbral,
+    glassDesc:    g("cot-glass-desc")    / 100,
     comTecPct:    g("cot-com-tec")       / 100,
   };
 }
@@ -1102,16 +1110,24 @@ function updateCotBreakdown(container, res) {
   const row = (lbl, val, s="") =>
     `<tr><td style="padding:3px 8px;color:rgba(255,255,255,.45);font-size:12px">${lbl}</td>` +
     `<td style="padding:3px 8px;text-align:right;font-size:12px;${s}">${val}</td></tr>`;
-  tbody.innerHTML = [
+  const rows = [
     row("Margen aplicado", `${(res.margenAplicado*100).toFixed(0)}%`),
     row("Ganancia bruta", money.format(res.ganancia)),
     row("Base (antes IVA)", money.format(res.base)),
     row("IVA 16%", money.format(res.iva)),
     row("Comisión MP 4.06%", money.format(res.mpCosto), "color:rgba(255,180,0,.7)"),
+  ];
+  if (res.esGlass) {
+    rows.push(row("Precio pantalla (base)", money.format(res.precioPantalla)));
+    rows.push(row(`Descuento glass (${((res.descuento/res.precioPantalla)*100).toFixed(0)}%)`,
+      `-${money.format(res.descuento)}`, "color:#f59e0b"));
+  }
+  rows.push(
     row("Comisión técnico", money.format(res.comTec), "color:rgba(255,180,0,.7)"),
     row("Utilidad estimada", money.format(res.utilidad), "color:#4ade80;font-weight:700"),
     row("Margen neto", `${res.margenNeto.toFixed(1)}%`, "color:#4ade80"),
-  ].join("");
+  );
+  tbody.innerHTML = rows.join("");
 }
 
 function renderCotizador() {
@@ -1125,7 +1141,7 @@ function renderCotizador() {
     <div class="card" style="margin-bottom:16px">
       <div style="margin-bottom:14px">
         <h3 style="margin:0 0 3px;font-size:14px">Cotizador rápido</h3>
-        <p class="muted" style="font-size:11px;margin:0">Precio = Insumo × (1 + margen) × 1.16 × 1.0406</p>
+        <p class="muted" style="font-size:11px;margin:0">Pantalla: Insumo × (1+margen) × 1.16 × 1.0406 &nbsp;·&nbsp; Glass: precio pantalla × (1 − descuento)</p>
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
         <div style="flex:1;min-width:240px">
@@ -1139,9 +1155,13 @@ function renderCotizador() {
               </button>
               <button type="button" class="cot-tipo-btn" data-tipo="glass"
                 style="flex:1;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;
-                border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit">
-                Glass<br><span style="font-weight:400;font-size:10px;opacity:.6">Sin garantía</span>
+                border:1.5px solid rgba(245,158,11,.25);background:rgba(245,158,11,.07);color:inherit">
+                Glass<br><span style="font-weight:400;font-size:10px;opacity:.6">Sin garantía · −${(cfg.glassDesc*100).toFixed(0)}%</span>
               </button>
+            </div>
+            <div id="cot-glass-aviso" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;
+              background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:11px;color:rgba(245,158,11,.9)">
+              Si sale mal → no se cobra el servicio. El insumo no se daña, solo se pierde tiempo del técnico.
             </div>
           </div>
           <div style="margin-bottom:12px">
@@ -1163,11 +1183,12 @@ function renderCotizador() {
             </div>
           </div>
         </div>
-        <div style="flex:1;min-width:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        <div id="cot-result-panel" style="flex:1;min-width:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;
           padding:20px 16px;background:rgba(var(--fz-primary-rgb),.06);border:1px solid rgba(var(--fz-primary-rgb),.2);
           border-radius:10px;min-height:160px;text-align:center">
           <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Precio al cliente</div>
-          <div id="cot-precio-display" style="font-size:40px;font-weight:800;color:var(--fz-primary);line-height:1">—</div>
+          <div id="cot-precio-tachado" style="font-size:16px;font-weight:500;color:rgba(255,255,255,.3);text-decoration:line-through;min-height:20px;line-height:1.2"></div>
+          <div id="cot-precio-display" style="font-size:40px;font-weight:800;color:var(--fz-primary);line-height:1.1">—</div>
           <div id="cot-margen-badge"
             style="margin-top:10px;font-size:11px;padding:3px 10px;border-radius:20px;
             background:rgba(var(--fz-primary-rgb),.14);color:var(--fz-primary);min-height:20px"></div>
@@ -1182,7 +1203,7 @@ function renderCotizador() {
           <span id="cot-toggle-arrow" style="font-size:10px">▶</span> Desglose interno
         </button>
         <div id="cot-detail" style="display:none;margin-top:10px">
-          <table style="min-width:0;width:280px;border-collapse:collapse">
+          <table style="min-width:0;width:300px;border-collapse:collapse">
             <tbody id="cot-detail-body"></tbody>
           </table>
         </div>
@@ -1192,7 +1213,7 @@ function renderCotizador() {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           ${cotSlider("cot-margen-normal","Margen normal (%)",cfg.margenNormal*100,50,200,5)}
           ${cotSlider("cot-margen-alto","Margen alto (%)",cfg.margenAlto*100,20,150,5)}
-          ${cotSlider("cot-umbral","Umbral ($MXN)",cfg.umbral,200,5000,100)}
+          ${cotSlider("cot-glass-desc","Descuento glass (%)",cfg.glassDesc*100,10,60,5)}
           ${cotSlider("cot-com-tec","Comisión técnico (%)",cfg.comTecPct*100,0,40,1)}
         </div>
       </div>` : ""}
@@ -1201,42 +1222,66 @@ function renderCotizador() {
   const insumoInp = el.querySelector("#cot-insumo");
   let cotTipo = "pantalla";
 
+  const COT_AMBER = { border: "rgba(245,158,11,.55)", bg: "rgba(245,158,11,.15)", text: "#f59e0b", panelBg: "rgba(245,158,11,.06)", panelBorder: "rgba(245,158,11,.25)" };
+  const COT_BLUE  = { border: "rgba(var(--fz-primary-rgb),.5)", bg: "rgba(var(--fz-primary-rgb),.15)", text: "var(--fz-primary)", panelBg: "rgba(var(--fz-primary-rgb),.06)", panelBorder: "rgba(var(--fz-primary-rgb),.2)" };
+
   const recalc = () => {
-    const insumo = Number(insumoInp?.value) || 0;
-    const priceDisp = el.querySelector("#cot-precio-display");
-    const badge     = el.querySelector("#cot-margen-badge");
-    const nota      = el.querySelector("#cot-garantia-note");
+    const insumo     = Number(insumoInp?.value) || 0;
+    const priceDisp  = el.querySelector("#cot-precio-display");
+    const tachadoEl  = el.querySelector("#cot-precio-tachado");
+    const badge      = el.querySelector("#cot-margen-badge");
+    const nota       = el.querySelector("#cot-garantia-note");
+    const panel      = el.querySelector("#cot-result-panel");
+    const theme      = cotTipo === "glass" ? COT_AMBER : COT_BLUE;
+
+    if (panel) { panel.style.background = theme.panelBg; panel.style.borderColor = theme.panelBorder; }
+    if (priceDisp) priceDisp.style.color = theme.text;
+    if (badge) { badge.style.background = theme.bg; badge.style.color = theme.text; }
+
     if (insumo <= 0) {
       if (priceDisp) priceDisp.textContent = "—";
+      if (tachadoEl) tachadoEl.textContent = "";
       if (badge) badge.textContent = "";
       if (nota) nota.textContent = "";
-      if (isPriv) updateCotBreakdown(el, calcPrecio({ insumo: 0 }));
+      if (isPriv) updateCotBreakdown(el, calcPrecio({ insumo: 0, tipo: cotTipo }));
       return;
     }
     const cfg2 = isPriv ? readSlidersConfig(el) : loadPricingConfig();
-    const res  = calcPrecio({ insumo, config: cfg2 });
+    const res  = calcPrecio({ insumo, tipo: cotTipo, config: cfg2 });
+
     if (priceDisp) priceDisp.textContent = money.format(res.precioFinal);
+    if (tachadoEl) tachadoEl.textContent = res.esGlass ? money.format(res.precioPantalla) : "";
     if (badge) {
       const pct = (res.margenAplicado * 100).toFixed(0);
+      const glPart = res.esGlass ? ` · −${(cfg2.glassDesc*100).toFixed(0)}% glass` : "";
       badge.textContent = insumo >= cfg2.umbral
-        ? `Margen ${pct}% (insumo ≥ $${cfg2.umbral.toLocaleString("es-MX")})`
-        : `Margen ${pct}% (insumo < $${cfg2.umbral.toLocaleString("es-MX")})`;
+        ? `Margen ${pct}% (≥ $${cfg2.umbral.toLocaleString("es-MX")})${glPart}`
+        : `Margen ${pct}% (< $${cfg2.umbral.toLocaleString("es-MX")})${glPart}`;
     }
     if (nota) nota.textContent = cotTipo === "glass" ? "Sin garantía" : "30 días en mano de obra";
     if (isPriv) updateCotBreakdown(el, res);
   };
 
-  el.querySelectorAll(".cot-tipo-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      cotTipo = btn.dataset.tipo;
-      el.querySelectorAll(".cot-tipo-btn").forEach(b => {
-        const active = b.dataset.tipo === cotTipo;
-        b.style.borderColor = active ? "rgba(var(--fz-primary-rgb),.5)" : "rgba(255,255,255,.12)";
-        b.style.background  = active ? "rgba(var(--fz-primary-rgb),.15)" : "rgba(255,255,255,.05)";
-        b.style.fontWeight  = active ? "600" : "500";
-      });
-      recalc();
+  const updateTipoUI = () => {
+    el.querySelectorAll(".cot-tipo-btn").forEach(b => {
+      const isP = b.dataset.tipo === "pantalla";
+      const active = b.dataset.tipo === cotTipo;
+      if (active) {
+        b.style.borderColor = isP ? COT_BLUE.border  : COT_AMBER.border;
+        b.style.background  = isP ? COT_BLUE.bg       : COT_AMBER.bg;
+        b.style.fontWeight  = "600";
+      } else {
+        b.style.borderColor = isP ? "rgba(255,255,255,.12)" : "rgba(245,158,11,.25)";
+        b.style.background  = isP ? "rgba(255,255,255,.05)" : "rgba(245,158,11,.07)";
+        b.style.fontWeight  = "500";
+      }
     });
+    const aviso = el.querySelector("#cot-glass-aviso");
+    if (aviso) aviso.style.display = cotTipo === "glass" ? "block" : "none";
+  };
+
+  el.querySelectorAll(".cot-tipo-btn").forEach(btn => {
+    btn.addEventListener("click", () => { cotTipo = btn.dataset.tipo; updateTipoUI(); recalc(); });
   });
 
   el.querySelectorAll(".cot-prov-btn").forEach(btn => {
@@ -4052,6 +4097,18 @@ function initTicketCotizadorWidget() {
         border-radius:5px;cursor:pointer;font-size:11px;padding:3px 10px">Calcular ▾</button>
     </div>
     <div id="tc-body" style="display:none;margin-top:10px">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button type="button" class="tc-tipo-btn" data-tipo="pantalla"
+          style="flex:1;padding:5px 8px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;
+          border:1.5px solid rgba(var(--fz-primary-rgb),.5);background:rgba(var(--fz-primary-rgb),.15);color:inherit">
+          Pantalla <span style="font-weight:400;opacity:.6">30d gtía</span>
+        </button>
+        <button type="button" class="tc-tipo-btn" data-tipo="glass"
+          style="flex:1;padding:5px 8px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;
+          border:1.5px solid rgba(245,158,11,.25);background:rgba(245,158,11,.07);color:inherit">
+          Glass <span style="font-weight:400;opacity:.6">sin gtía · −35%</span>
+        </button>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <div style="flex:1;min-width:120px">
           <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:4px">Costo insumo ($)</div>
@@ -4071,6 +4128,7 @@ function initTicketCotizadorWidget() {
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div>
             <div class="muted" style="font-size:11px">Precio al cliente</div>
+            <div id="tc-tachado" style="font-size:12px;color:rgba(255,255,255,.3);text-decoration:line-through;min-height:16px"></div>
             <div id="tc-precio" style="font-size:22px;font-weight:800;color:var(--fz-primary)">—</div>
             <div id="tc-badge" style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px"></div>
           </div>
@@ -4082,12 +4140,28 @@ function initTicketCotizadorWidget() {
 
   amountField.after(widget);
 
+  let tcTipo = "pantalla";
+
   widget.querySelector("#tc-toggle").addEventListener("click", () => {
     const body  = widget.querySelector("#tc-body");
     const shown = body.style.display !== "none";
     body.style.display = shown ? "none" : "block";
     widget.querySelector("#tc-toggle").textContent = shown ? "Calcular ▾" : "Calcular ▲";
     if (!shown) widget.querySelector("#tc-insumo")?.focus();
+  });
+
+  widget.querySelectorAll(".tc-tipo-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      tcTipo = btn.dataset.tipo;
+      widget.querySelectorAll(".tc-tipo-btn").forEach(b => {
+        const isP   = b.dataset.tipo === "pantalla";
+        const active = b.dataset.tipo === tcTipo;
+        b.style.borderColor = active ? (isP ? "rgba(var(--fz-primary-rgb),.5)" : "rgba(245,158,11,.55)") : (isP ? "rgba(255,255,255,.12)" : "rgba(245,158,11,.25)");
+        b.style.background  = active ? (isP ? "rgba(var(--fz-primary-rgb),.15)" : "rgba(245,158,11,.15)") : (isP ? "rgba(255,255,255,.05)" : "rgba(245,158,11,.07)");
+        b.style.fontWeight  = active ? "600" : "500";
+      });
+      widget.querySelector("#tc-insumo").dispatchEvent(new Event("input"));
+    });
   });
 
   widget.querySelectorAll(".tc-prov").forEach(btn => {
@@ -4102,19 +4176,24 @@ function initTicketCotizadorWidget() {
   });
 
   widget.querySelector("#tc-insumo").addEventListener("input", () => {
-    const insumo  = Number(widget.querySelector("#tc-insumo").value) || 0;
-    const result  = widget.querySelector("#tc-result");
+    const insumo = Number(widget.querySelector("#tc-insumo").value) || 0;
+    const result = widget.querySelector("#tc-result");
     if (insumo <= 0) { result.style.display = "none"; return; }
-    const res = calcPrecio({ insumo });
+    const res        = calcPrecio({ insumo, tipo: tcTipo });
+    const priceColor = tcTipo === "glass" ? "#f59e0b" : "var(--fz-primary)";
     widget.querySelector("#tc-precio").textContent = money.format(res.precioFinal);
-    widget.querySelector("#tc-badge").textContent  = `Margen ${(res.margenAplicado*100).toFixed(0)}%`;
-    result.style.display = "flex";
+    widget.querySelector("#tc-precio").style.color = priceColor;
+    widget.querySelector("#tc-tachado").textContent = res.esGlass ? money.format(res.precioPantalla) : "";
+    widget.querySelector("#tc-badge").textContent   = `Margen ${(res.margenAplicado*100).toFixed(0)}%${res.esGlass?" · −35% glass":""}`;
+    result.style.background  = tcTipo === "glass" ? "rgba(245,158,11,.08)" : "rgba(var(--fz-primary-rgb),.08)";
+    result.style.borderColor = tcTipo === "glass" ? "rgba(245,158,11,.25)" : "rgba(var(--fz-primary-rgb),.2)";
+    result.style.display = "block";
   });
 
   widget.querySelector("#tc-apply").addEventListener("click", () => {
     const insumo = Number(widget.querySelector("#tc-insumo").value) || 0;
     if (!insumo) return;
-    const res = calcPrecio({ insumo });
+    const res = calcPrecio({ insumo, tipo: tcTipo });
     const repairInp = formFields.querySelector("#repairAmount");
     if (repairInp) {
       repairInp.value = Math.round(res.precioFinal);
