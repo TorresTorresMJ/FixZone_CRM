@@ -1279,22 +1279,29 @@ function renderPrecios() {
   matrixTable?.addEventListener("input", e => { if (e.target.closest(".pv-price")) pvTrigger(); });
 
   // ── Focus highlight ────────────────────────────────────────────────────
+  const pvClearHL = () => {
+    matrixTable?.querySelectorAll(".pv-hl").forEach(el => { el.classList.remove("pv-hl"); el.style.background=""; });
+  };
   matrixTable?.addEventListener("focusin", e => {
     const inp = e.target.closest(".pv-price");
     if (!inp) return;
     if (inp.value==="0") inp.select();
+    pvClearHL();
     const rIdx=inp.dataset.rowIdx, cIdx=inp.dataset.colIdx;
-    matrixTable.querySelectorAll("tr[data-row-idx]").forEach(tr =>
-      tr.style.background = tr.dataset.rowIdx===rIdx ? "rgba(var(--fz-primary-rgb),.06)" : "");
-    matrixTable.querySelectorAll("[data-col-idx]").forEach(el =>
-      el.style.background = el.dataset.colIdx===cIdx ? "rgba(var(--fz-primary-rgb),.06)" : "");
+    // Only tint the active row cells (not all rows)
+    matrixTable.querySelectorAll(`tr[data-row-idx="${rIdx}"] td, tr[data-row-idx="${rIdx}"] th`).forEach(el => {
+      el.classList.add("pv-hl"); el.style.background="rgba(var(--fz-primary-rgb),.05)";
+    });
+    // Only tint the active column cells
+    matrixTable.querySelectorAll(`[data-col-idx="${cIdx}"]`).forEach(el => {
+      el.classList.add("pv-hl"); el.style.background="rgba(var(--fz-primary-rgb),.05)";
+    });
     inp.style.outline="2px solid var(--fz-primary)";
     inp.style.background="rgba(var(--fz-primary-rgb),.18)";
   });
   matrixTable?.addEventListener("focusout", e => {
     if (!e.target.closest(".pv-price")) return;
-    matrixTable.querySelectorAll("tr[data-row-idx]").forEach(tr => tr.style.background="");
-    matrixTable.querySelectorAll("[data-col-idx]").forEach(el => el.style.background="");
+    pvClearHL();
     e.target.style.outline=""; e.target.style.background="rgba(255,255,255,.05)";
   });
 
@@ -1316,6 +1323,7 @@ function renderPrecios() {
   };
 
   const pvOpen = (dev, stype, rIdx, cIdx, anchor) => {
+    pvClearHL();
     pvCurDev=dev; pvCurStype=stype; pvCurRIdx=rIdx; pvCurCIdx=cIdx;
     pvPopRows.innerHTML="";
     const bid2=(state.branches||[]).find(b=>b.name===activeBranchId)?.id||null;
