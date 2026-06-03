@@ -1102,21 +1102,20 @@ function renderPrecios() {
   // Unique device models with at least one price in this branch
   const deviceModels = [...new Set(prices.map(p=>p.deviceModel))].sort((a,b)=>a.localeCompare(b,"es"));
 
-  const headerCols = types.map(t=>`<th style="padding:6px 10px;font-size:11px;white-space:nowrap;text-align:right">${escapeHtml(t.name)}</th>`).join("");
-
-  const rows = deviceModels.map(dev => {
-    const cells = types.map(t => {
+  const rows = deviceModels.map((dev, rowIdx) => {
+    const cells = types.map((t, colIdx) => {
       const rec = priceMap.get(`${dev}|${t.id}`);
       const val = rec ? rec.price : 0;
-      return `<td style="padding:3px 4px;text-align:right">
+      return `<td data-col-idx="${colIdx}" style="padding:3px 4px;text-align:right">
         <input type="number" min="0" step="1" value="${val}"
           data-device="${escapeHtml(dev)}" data-stype="${t.id}" data-pid="${rec?.id||""}"
+          data-row-idx="${rowIdx}" data-col-idx="${colIdx}"
           class="price-cell-input"
           style="width:80px;padding:5px 7px;font-size:12px;text-align:right;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:inherit" />
       </td>`;
     }).join("");
-    return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
-      <td style="padding:6px 10px;font-size:12px;white-space:nowrap;font-weight:500">${escapeHtml(dev)}</td>
+    return `<tr data-row-idx="${rowIdx}" data-device-name="${escapeHtml(dev.toLowerCase())}" style="border-bottom:1px solid rgba(255,255,255,.05)">
+      <td style="padding:6px 10px;font-size:12px;white-space:nowrap;font-weight:500;position:sticky;left:0;background:#0f0f1a">${escapeHtml(dev)}</td>
       ${cells}
       <td style="padding:3px 6px"><button class="mini-button danger-btn" data-del-device="${escapeHtml(dev)}" style="font-size:10px;padding:2px 7px">✕</button></td>
     </tr>`;
@@ -1144,11 +1143,17 @@ function renderPrecios() {
           <button class="ghost-button" id="precio-cancel-device-btn" style="font-size:12px">Cancelar</button>
         </div>
       </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input id="precio-filter-device" type="text" placeholder="🔍 Filtrar por equipo…"
+          style="flex:1;min-width:160px;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit"/>
+        <input id="precio-filter-service" type="text" placeholder="🔍 Filtrar por servicio…"
+          style="flex:1;min-width:160px;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit"/>
+      </div>
       <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
+        <table id="precio-matrix-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
           <thead><tr style="border-bottom:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04)">
             <th style="text-align:left;padding:8px 12px;font-size:11px;white-space:nowrap;position:sticky;left:0;background:#0f0f1a;z-index:2;min-width:160px">Equipo / Servicio</th>
-            ${types.map(t=>`<th style="text-align:right;padding:8px 8px;font-size:10px;white-space:nowrap;color:rgba(255,255,255,.6);font-weight:600">${escapeHtml(t.name)}</th>`).join("")}
+            ${types.map((t,i)=>`<th data-col-idx="${i}" data-svc-name="${escapeHtml(t.name.toLowerCase())}" style="text-align:right;padding:8px 8px;font-size:10px;white-space:nowrap;color:rgba(255,255,255,.6);font-weight:600">${escapeHtml(t.name)}</th>`).join("")}
             <th style="width:32px"></th>
           </tr></thead>
           <tbody>
@@ -1159,6 +1164,44 @@ function renderPrecios() {
         </table>
       </div>
     </div>`;
+
+  // Cell focus: clear zero + highlight row/column
+  const matrixTable = mxEl.querySelector("#precio-matrix-table");
+  matrixTable?.addEventListener("focusin", e => {
+    const inp = e.target.closest(".price-cell-input");
+    if (!inp) return;
+    if (inp.value === "0") { inp.select(); }
+    const rIdx = inp.dataset.rowIdx;
+    const cIdx = inp.dataset.colIdx;
+    matrixTable.querySelectorAll("tr[data-row-idx]").forEach(tr =>
+      tr.style.background = tr.dataset.rowIdx === rIdx ? "rgba(var(--fz-primary-rgb),.06)" : "");
+    matrixTable.querySelectorAll("[data-col-idx]").forEach(el =>
+      el.style.background = el.dataset.colIdx === cIdx ? "rgba(var(--fz-primary-rgb),.06)" : "");
+    inp.style.outline = "2px solid var(--fz-primary)";
+    inp.style.background = "rgba(var(--fz-primary-rgb),.18)";
+  });
+  matrixTable?.addEventListener("focusout", e => {
+    if (!e.target.closest(".price-cell-input")) return;
+    matrixTable.querySelectorAll("tr[data-row-idx]").forEach(tr => tr.style.background = "");
+    matrixTable.querySelectorAll("[data-col-idx]").forEach(el => el.style.background = "");
+    e.target.style.outline = "";
+    e.target.style.background = "rgba(255,255,255,.05)";
+  });
+
+  // Filter by device (rows) and service (columns)
+  const applyPrecioFilters = () => {
+    const devQ  = (mxEl.querySelector("#precio-filter-device")?.value  || "").toLowerCase().trim();
+    const svcQ  = (mxEl.querySelector("#precio-filter-service")?.value || "").toLowerCase().trim();
+    matrixTable?.querySelectorAll("tbody tr[data-row-idx]").forEach(tr =>
+      tr.style.display = (!devQ || tr.dataset.deviceName?.includes(devQ)) ? "" : "none");
+    matrixTable?.querySelectorAll("[data-col-idx]").forEach(el => {
+      if (!svcQ) { el.style.display = ""; return; }
+      const th = matrixTable.querySelector(`thead [data-col-idx="${el.dataset.colIdx}"]`);
+      el.style.display = (th?.dataset.svcName?.includes(svcQ)) ? "" : "none";
+    });
+  };
+  mxEl.querySelector("#precio-filter-device")?.addEventListener("input",  applyPrecioFilters);
+  mxEl.querySelector("#precio-filter-service")?.addEventListener("input", applyPrecioFilters);
 
   // Add device
   mxEl.querySelector("#precio-add-device-btn")?.addEventListener("click", () => {
