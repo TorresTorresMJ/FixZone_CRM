@@ -1481,3 +1481,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .device-ac-add { color: var(--fz-primary, #085ACB); font-style: italic; }
 .device-ac-add:hover,
 .device-ac-add.is-hi { background: rgba(var(--fz-primary-rgb,8,90,203), .15); }
+
+/* Ocultar flechitas de inputs numéricos en la tabla de precios */
+input[type=number].pv-price::-webkit-inner-spin-button,
+input[type=number].pv-price::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number].pv-price { -moz-appearance: textfield; appearance: textfield; }

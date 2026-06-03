@@ -666,6 +666,7 @@ async function loadSupabaseState() {
     servicePrices: (spRes.data||[]).map(p => ({
       id:p.id, deviceModel:p.device_model, serviceTypeId:p.service_type_id,
       price:Number(p.price||0), branchId:p.branch_id||null, notes:p.notes||"",
+      variant:p.variant||"",
     })),
   };
 }
@@ -1102,22 +1103,41 @@ function renderPrecios() {
   // Unique device models with at least one price in this branch
   const deviceModels = [...new Set(prices.map(p=>p.deviceModel))].sort((a,b)=>a.localeCompare(b,"es"));
 
+  // Group prices by "deviceModel|serviceTypeId" → array of variants
+  const pricesByCell = new Map();
+  prices.forEach(p => {
+    const key = `${p.deviceModel}|${p.serviceTypeId}`;
+    if (!pricesByCell.has(key)) pricesByCell.set(key, []);
+    pricesByCell.get(key).push(p);
+  });
+
+  const pvInpStyle = "width:68px;padding:3px 5px;font-size:12px;text-align:right;border-radius:4px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:inherit;-moz-appearance:textfield;appearance:textfield";
+  const pvLblStyle = "width:60px;padding:3px 5px;font-size:11px;border-radius:4px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:inherit;";
+
   const rows = deviceModels.map((dev, rowIdx) => {
     const cells = types.map((t, colIdx) => {
-      const rec = priceMap.get(`${dev}|${t.id}`);
-      const val = rec ? rec.price : 0;
-      return `<td data-col-idx="${colIdx}" style="padding:3px 4px;text-align:right">
-        <input type="number" min="0" step="1" value="${val}"
-          data-device="${escapeHtml(dev)}" data-stype="${t.id}" data-pid="${rec?.id||""}"
-          data-row-idx="${rowIdx}" data-col-idx="${colIdx}"
-          class="price-cell-input"
-          style="width:80px;padding:5px 7px;font-size:12px;text-align:right;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:inherit" />
+      const variants = pricesByCell.get(`${dev}|${t.id}`) || [{ id:"", variant:"", price:0 }];
+      const variantHtml = variants.map(v => `
+        <div class="pv-row" style="display:flex;align-items:center;gap:2px;margin-bottom:2px">
+          <input class="pv-label" value="${escapeHtml(v.variant||"")}" placeholder="Estándar" style="${pvLblStyle}" title="Nombre del nivel (ej: Original, Compatible)"/>
+          <input class="pv-price" type="number" min="0" step="1" value="${v.price||0}"
+            data-device="${escapeHtml(dev)}" data-stype="${t.id}" data-pid="${v.id||""}"
+            data-row-idx="${rowIdx}" data-col-idx="${colIdx}"
+            style="${pvInpStyle}"/>
+          <button class="pv-del" title="Quitar nivel" style="background:none;border:none;color:rgba(255,100,100,.7);cursor:pointer;font-size:14px;padding:0 3px;line-height:1;flex-shrink:0">−</button>
+        </div>`).join("");
+      return `<td data-col-idx="${colIdx}" style="padding:3px 4px;vertical-align:top;min-width:148px">
+        <div class="pv-container" data-device="${escapeHtml(dev)}" data-stype="${t.id}"
+          data-col-idx="${colIdx}" data-row-idx="${rowIdx}" data-deleted-pids="">
+          ${variantHtml}
+          <button class="pv-add" style="width:100%;font-size:10px;padding:2px 0;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.15);border-radius:4px;color:rgba(255,255,255,.45);cursor:pointer;margin-top:1px">+ nivel</button>
+        </div>
       </td>`;
     }).join("");
     return `<tr data-row-idx="${rowIdx}" data-device-name="${escapeHtml(dev.toLowerCase())}" style="border-bottom:1px solid rgba(255,255,255,.05)">
       <td style="padding:6px 10px;font-size:12px;white-space:nowrap;font-weight:500;position:sticky;left:0;background:#0f0f1a">${escapeHtml(dev)}</td>
       ${cells}
-      <td style="padding:3px 6px"><button class="mini-button danger-btn" data-del-device="${escapeHtml(dev)}" style="font-size:10px;padding:2px 7px">✕</button></td>
+      <td style="padding:3px 6px;vertical-align:top"><button class="mini-button danger-btn" data-del-device="${escapeHtml(dev)}" style="font-size:10px;padding:2px 7px">✕</button></td>
     </tr>`;
   }).join("");
 
@@ -1168,9 +1188,9 @@ function renderPrecios() {
   // Cell focus: clear zero + highlight row/column
   const matrixTable = mxEl.querySelector("#precio-matrix-table");
   matrixTable?.addEventListener("focusin", e => {
-    const inp = e.target.closest(".price-cell-input");
+    const inp = e.target.closest(".pv-price");
     if (!inp) return;
-    if (inp.value === "0") { inp.select(); }
+    if (inp.value === "0") inp.select();
     const rIdx = inp.dataset.rowIdx;
     const cIdx = inp.dataset.colIdx;
     matrixTable.querySelectorAll("tr[data-row-idx]").forEach(tr =>
@@ -1181,11 +1201,42 @@ function renderPrecios() {
     inp.style.background = "rgba(var(--fz-primary-rgb),.18)";
   });
   matrixTable?.addEventListener("focusout", e => {
-    if (!e.target.closest(".price-cell-input")) return;
+    if (!e.target.closest(".pv-price")) return;
     matrixTable.querySelectorAll("tr[data-row-idx]").forEach(tr => tr.style.background = "");
     matrixTable.querySelectorAll("[data-col-idx]").forEach(el => el.style.background = "");
     e.target.style.outline = "";
     e.target.style.background = "rgba(255,255,255,.05)";
+  });
+
+  // Add / remove variant rows (event delegation)
+  mxEl.addEventListener("click", e => {
+    const addBtn = e.target.closest(".pv-add");
+    if (addBtn) {
+      const c = addBtn.closest(".pv-container");
+      const rIdx = c.dataset.rowIdx; const cIdx = c.dataset.colIdx;
+      const row = document.createElement("div");
+      row.className = "pv-row";
+      row.style.cssText = "display:flex;align-items:center;gap:2px;margin-bottom:2px";
+      row.innerHTML = `
+        <input class="pv-label" value="" placeholder="Ej: Original" style="${pvLblStyle}" title="Nombre del nivel"/>
+        <input class="pv-price" type="number" min="0" step="1" value="0"
+          data-device="${escapeHtml(c.dataset.device)}" data-stype="${c.dataset.stype}"
+          data-pid="" data-row-idx="${rIdx}" data-col-idx="${cIdx}"
+          style="${pvInpStyle}"/>
+        <button class="pv-del" title="Quitar nivel" style="background:none;border:none;color:rgba(255,100,100,.7);cursor:pointer;font-size:14px;padding:0 3px;line-height:1;flex-shrink:0">−</button>`;
+      c.insertBefore(row, addBtn);
+      row.querySelector(".pv-price")?.focus();
+      return;
+    }
+    const delBtn = e.target.closest(".pv-del");
+    if (delBtn) {
+      const row = delBtn.closest(".pv-row");
+      const c   = row.closest(".pv-container");
+      const pid = row.querySelector(".pv-price")?.dataset.pid || "";
+      if (pid) c.dataset.deletedPids = [c.dataset.deletedPids, pid].filter(Boolean).join(",");
+      if (c.querySelectorAll(".pv-row").length > 1) { row.remove(); }
+      else { row.querySelector(".pv-price").value="0"; row.querySelector(".pv-label").value=""; }
+    }
   });
 
   // Filter by device (rows) and service (columns)
@@ -1218,10 +1269,10 @@ function renderPrecios() {
     if (!dev || !supabaseClient) return;
     if (deviceModels.includes(dev)) { showErrorToast("Ese equipo ya está en la tabla"); return; }
     // Insert a $0 record for each service type so the device appears in the matrix
-    const inserts = types.map(t => ({ device_model:dev, service_type_id:t.id, price:0, branch_id:branchId }));
-    const { data, error } = await supabaseClient.from("service_prices").upsert(inserts, {onConflict:"device_model,service_type_id,branch_id"}).select();
+    const inserts = types.map(t => ({ id:crypto.randomUUID(), device_model:dev, service_type_id:t.id, price:0, branch_id:branchId, variant:"" }));
+    const { data, error } = await supabaseClient.from("service_prices").upsert(inserts, {onConflict:"device_model,service_type_id,branch_id,variant"}).select();
     if (error) { showErrorToast("Error al agregar equipo"); return; }
-    (data||[]).forEach(r => state.servicePrices.push({ id:r.id, deviceModel:r.device_model, serviceTypeId:r.service_type_id, price:Number(r.price||0), branchId:r.branch_id }));
+    (data||[]).forEach(r => state.servicePrices.push({ id:r.id, deviceModel:r.device_model, serviceTypeId:r.service_type_id, price:Number(r.price||0), branchId:r.branch_id, variant:r.variant||"" }));
     renderPrecios();
     showToast(`✓ ${dev} agregado a la tabla`);
   });
@@ -1240,27 +1291,41 @@ function renderPrecios() {
   // Save matrix (upsert all changed cells)
   mxEl.querySelector("#precio-save-matrix-btn")?.addEventListener("click", async () => {
     if (!supabaseClient) return;
-    const inputs = mxEl.querySelectorAll(".price-cell-input");
+    // Collect deleted pids
+    const deletePids = [];
+    mxEl.querySelectorAll(".pv-container").forEach(c =>
+      (c.dataset.deletedPids||"").split(",").filter(Boolean).forEach(pid => deletePids.push(pid)));
+    // Collect current variant rows
     const upserts = [];
-    inputs.forEach(inp => {
-      upserts.push({
-        id: inp.dataset.pid || crypto.randomUUID(),
-        device_model: inp.dataset.device,
-        service_type_id: inp.dataset.stype,
-        price: Number(inp.value) || 0,
-        branch_id: branchId,
+    mxEl.querySelectorAll(".pv-container").forEach(c => {
+      c.querySelectorAll(".pv-row").forEach(row => {
+        const priceInp = row.querySelector(".pv-price");
+        upserts.push({
+          id: priceInp?.dataset.pid || crypto.randomUUID(),
+          device_model: c.dataset.device,
+          service_type_id: c.dataset.stype,
+          price: Number(priceInp?.value) || 0,
+          branch_id: branchId,
+          variant: row.querySelector(".pv-label")?.value.trim() || "",
+        });
       });
     });
+    if (deletePids.length > 0) {
+      const { error: de } = await supabaseClient.from("service_prices").delete().in("id", deletePids);
+      if (de) { showErrorToast(`Error: ${de.message||"ver consola"}`); console.error(de); return; }
+    }
+    if (!upserts.length) { showToast("✓ Precios guardados"); return; }
     const { data, error } = await supabaseClient.from("service_prices")
-      .upsert(upserts, { onConflict: "device_model,service_type_id,branch_id" }).select();
+      .upsert(upserts, { onConflict: "device_model,service_type_id,branch_id,variant" }).select();
     if (error) { console.error("service_prices upsert error:", error); showErrorToast(`Error al guardar: ${error.message||error.code||"ver consola"}`); return; }
-    // Update local state
     (data||[]).forEach(r => {
+      const updated = { id:r.id, deviceModel:r.device_model, serviceTypeId:r.service_type_id, price:Number(r.price||0), branchId:r.branch_id, variant:r.variant||"" };
       const idx = state.servicePrices.findIndex(p=>p.id===r.id);
-      const updated = { id:r.id, deviceModel:r.device_model, serviceTypeId:r.service_type_id, price:Number(r.price||0), branchId:r.branch_id };
-      if (idx>=0) state.servicePrices[idx] = updated;
-      else state.servicePrices.push(updated);
+      if (idx>=0) state.servicePrices[idx] = updated; else state.servicePrices.push(updated);
     });
+    deletePids.forEach(pid => { state.servicePrices = state.servicePrices.filter(p=>p.id!==pid); });
+    // Clear deleted-pids trackers
+    mxEl.querySelectorAll(".pv-container").forEach(c => { c.dataset.deletedPids = ""; });
     showToast("✓ Precios guardados");
   });
 }
