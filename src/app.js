@@ -1210,7 +1210,7 @@ function renderPrecios() {
     });
     const { data, error } = await supabaseClient.from("service_prices")
       .upsert(upserts, { onConflict: "device_model,service_type_id,branch_id" }).select();
-    if (error) { showErrorToast("Error al guardar precios"); return; }
+    if (error) { console.error("service_prices upsert error:", error); showErrorToast(`Error al guardar: ${error.message||error.code||"ver consola"}`); return; }
     // Update local state
     (data||[]).forEach(r => {
       const idx = state.servicePrices.findIndex(p=>p.id===r.id);
