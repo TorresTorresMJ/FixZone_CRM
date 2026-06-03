@@ -1201,6 +1201,7 @@ function renderPrecios() {
     const upserts = [];
     inputs.forEach(inp => {
       upserts.push({
+        id: inp.dataset.pid || crypto.randomUUID(),
         device_model: inp.dataset.device,
         service_type_id: inp.dataset.stype,
         price: Number(inp.value) || 0,
