@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-01_
+_Última actualización: 2026-06-05_
 
 ## Fase 1: Definir operacion interna
 
@@ -62,7 +62,7 @@ _Última actualización: 2026-06-01_
 - [ ] Registrar proveedores (sección dedicada con nombre, contacto y RLS).
 - [ ] Asociar compras de insumos con proveedor y comprobante — permitir adjuntar foto de comprobante.
 - [ ] Exportar inventario a Excel.
-- [x] Tabla de precios por dispositivo × servicio — costo de mano de obra, vista Precios con matriz editable, gestión de servicios, auto-fill del monto al crear ticket (migration 21 requerida).
+- [x] Tabla de precios por dispositivo × servicio — costo de mano de obra, vista Precios con matriz editable, gestión de servicios, cotizador rápido con slider y −35% descuento base (migrations 21 + 21b + 22 aplicadas). Soporta variantes de precio por celda (ej. Original vs Genérica).
 - [ ] Reglas de margen sobre insumos — tabla configurable de rangos de costo con % de ganancia (ej. costo ≤ $1,500 → 110%, costo > $1,500 → 100%). Precio total = costo insumo + (costo × %ganancia) + mano de obra.
 - [ ] Ticket de request de compra de insumos / material 
 
@@ -78,6 +78,7 @@ _Última actualización: 2026-06-01_
 - [x] Reporte de equipos más frecuentes — top 20 por sucursal con tickets, cerrados e ingresos (historial completo).
 - [ ] Exportar reportes a Excel.
 - [ ] Ver y descargar reportes de períodos anteriores o rangos personalizados.
+- [ ] Considerar gastos de movilidad / gasolina como categoría de egreso (traslados a proveedor, entregas a domicilio).
 
 ## Fase 7: Marketing
 
@@ -137,7 +138,7 @@ _Última actualización: 2026-06-01_
 - [x] Botón 🖨 Imprimir — PDF formal de cotización con tabla de partidas, subtotal, descuento, vigencia y firma.
 - [x] Código de descuento aplicable desde el builder de cotización.
 - [ ] Cambio de status de Cotización a "Venta concretada" (diferente de aprobar como reparación).
-- [ ] Crear tabla de dispositivo / servicios para poder encontrar el precio dependiendo del dispositivo y del servicio en la interseccion. 
+- [x] Partidas de cotización sincronizadas con service_types — tipo Servicio usa select del catálogo, auto-rellena precio desde service_prices al seleccionar equipo + servicio.
 
 ## Fase 12: Punto de Venta (POS)
 
@@ -162,3 +163,4 @@ _Última actualización: 2026-06-01_
 - [ ] Centro de notificaciones — avisos en tiempo real para: ticket asignado, cambio de stage, respuesta en ticket IT. Tickets de Soporte IT con hilo de comentarios y seguimiento de estado visible para quien lo levantó.
 - [ ] Definir que se hará cuando ya haya muchos tickets en las columnas del KANBAN , tal vez hacer las cards mas chicas o acortar lo que hay visible a menos que se abra y se desgloce lo demas, tipo Hubspot. 
 - [ ]Al hacer click en un movimiento reciente en "Home" , desplegar la vista de ese movimiento, es decir abrir la pantallita que muestra la informacion de ese movieminto ![alt text](image.png)
+- [ ] Si le damos en refresh, que se haga refresh en la tab que se quedó? porque siempre se va a home 

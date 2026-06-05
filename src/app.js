@@ -207,7 +207,6 @@ const formSchemas = {
     fields: [
       ["client","Cliente","text"],
       ["productName","Dispositivo / equipo","device-autocomplete"],
-      ["issue","Descripción del problema","text",null,true,true],
       ["branch","Sucursal","select",BRANCHES],
       ["notes","Notas","text",null,true,true],
     ],
@@ -3592,16 +3591,29 @@ function renderQuoteItemsDraft() {
   const emptyEl = document.querySelector("#qi-empty");
   if (!rowsEl) return;
   emptyEl && (emptyEl.style.display = quoteItemsDraft.length ? "none" : "");
-  rowsEl.innerHTML = quoteItemsDraft.map((item, idx) => `
+  const serviceTypes = state.serviceTypes || [];
+  rowsEl.innerHTML = quoteItemsDraft.map((item, idx) => {
+    // Description field: select from service_types when Servicio, free text otherwise
+    const descField = item.type === "Servicio"
+      ? `<select class="qi-desc" data-idx="${idx}" style="font-size:12px;padding:5px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit">
+           <option value="">— Tipo de servicio —</option>
+           ${serviceTypes.map(t=>`<option value="${escapeHtml(t.name)}" ${item.description===t.name?"selected":""}>${escapeHtml(t.name)}</option>`).join("")}
+         </select>`
+      : `<input class="qi-desc" data-idx="${idx}" type="text"
+           placeholder="${item.type==="Producto"?"Nombre del producto…":"Descripción…"}"
+           value="${escapeHtml(item.description||"")}"
+           style="font-size:13px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;padding:5px 8px">`;
+    return `
     <div class="qi-row" style="display:grid;grid-template-columns:100px 1fr 52px 88px 26px;gap:6px;align-items:center;margin-bottom:4px">
-      <select class="qi-type" data-idx="${idx}" style="font-size:12px;padding:5px 6px">
+      <select class="qi-type" data-idx="${idx}" style="font-size:12px;padding:5px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit">
         ${["Servicio","Refacción","Producto"].map(t=>`<option ${item.type===t?"selected":""}>${t}</option>`).join("")}
       </select>
-      <input class="qi-desc" data-idx="${idx}" type="text" placeholder="Descripción…" value="${escapeHtml(item.description||"")}" style="font-size:13px">
-      <input class="qi-qty" data-idx="${idx}" type="number" value="${item.qty}" min="1" style="font-size:13px;text-align:center">
-      <input class="qi-price" data-idx="${idx}" type="number" value="${item.unitPrice||""}" placeholder="Precio" min="0" step="1" style="font-size:13px">
+      ${descField}
+      <input class="qi-qty" data-idx="${idx}" type="number" value="${item.qty}" min="1" style="font-size:13px;text-align:center;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;padding:5px 4px">
+      <input class="qi-price" data-idx="${idx}" type="number" value="${item.unitPrice||""}" placeholder="Precio" min="0" step="1" style="font-size:13px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;padding:5px 8px">
       <button type="button" class="qi-del" data-idx="${idx}" title="Eliminar fila" style="padding:2px 5px;font-size:13px;opacity:.5;cursor:pointer;background:none;border:none;color:inherit">✕</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
   updateQuoteItemsHiddenInputs();
 }
 
@@ -3642,11 +3654,13 @@ function initQuoteItemsBuilder(existingItems = []) {
     document.querySelectorAll(".qi-desc")[quoteItemsDraft.length - 1]?.focus();
   });
 
-  // Delegate input/change/click on the rows container to avoid losing focus on each keystroke
+  // Delegate input/change/click on the rows container
   document.querySelector("#qi-rows")?.addEventListener("input", e => {
     const idx = Number(e.target.dataset.idx);
     if (isNaN(idx) || !quoteItemsDraft[idx]) return;
-    if (e.target.classList.contains("qi-desc"))  quoteItemsDraft[idx].description = e.target.value;
+    // Skip select elements — handled by change event to avoid double-firing
+    if (e.target.tagName === "SELECT") return;
+    if (e.target.classList.contains("qi-desc"))       quoteItemsDraft[idx].description = e.target.value;
     else if (e.target.classList.contains("qi-qty"))   quoteItemsDraft[idx].qty = Math.max(1, Number(e.target.value)||1);
     else if (e.target.classList.contains("qi-price")) quoteItemsDraft[idx].unitPrice = Number(e.target.value)||0;
     updateQuoteItemsHiddenInputs();
@@ -3654,7 +3668,40 @@ function initQuoteItemsBuilder(existingItems = []) {
   document.querySelector("#qi-rows")?.addEventListener("change", e => {
     const idx = Number(e.target.dataset.idx);
     if (isNaN(idx) || !quoteItemsDraft[idx]) return;
-    if (e.target.classList.contains("qi-type")) { quoteItemsDraft[idx].type = e.target.value; updateQuoteItemsHiddenInputs(); }
+
+    if (e.target.classList.contains("qi-type")) {
+      quoteItemsDraft[idx].type = e.target.value;
+      quoteItemsDraft[idx].description = ""; // reset desc when category changes
+      updateQuoteItemsHiddenInputs();
+      renderQuoteItemsDraft(); // swap between select and text input
+      return;
+    }
+
+    if (e.target.classList.contains("qi-desc") && quoteItemsDraft[idx].type === "Servicio") {
+      const svcName = e.target.value;
+      quoteItemsDraft[idx].description = svcName;
+      // Auto price lookup from service_prices
+      if (svcName) {
+        const deviceName = document.querySelector("#productName")?.value?.trim();
+        const branchId   = (state.branches||[]).find(b=>b.name===activeBranchId)?.id;
+        const stype      = (state.serviceTypes||[]).find(t=>t.name===svcName);
+        if (stype && deviceName) {
+          const rec = (state.servicePrices||[]).find(p =>
+            p.deviceModel.toLowerCase() === deviceName.toLowerCase() &&
+            p.serviceTypeId === stype.id &&
+            (!p.branchId || p.branchId === branchId)
+          );
+          if (rec && rec.price > 0) {
+            quoteItemsDraft[idx].unitPrice = rec.price;
+            // Update price input directly without full re-render
+            const priceInputs = document.querySelectorAll(".qi-price");
+            if (priceInputs[idx]) priceInputs[idx].value = rec.price;
+            showToast(`💡 Precio sugerido: ${money.format(rec.price)}`);
+          }
+        }
+      }
+      updateQuoteItemsHiddenInputs();
+    }
   });
   document.querySelector("#qi-rows")?.addEventListener("click", e => {
     const del = e.target.closest(".qi-del");
