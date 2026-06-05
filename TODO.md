@@ -139,6 +139,7 @@ _Última actualización: 2026-06-05_
 - [x] Código de descuento aplicable desde el builder de cotización.
 - [ ] Cambio de status de Cotización a "Venta concretada" (diferente de aprobar como reparación).
 - [x] Partidas de cotización sincronizadas con service_types — tipo Servicio usa select del catálogo, auto-rellena precio desde service_prices al seleccionar equipo + servicio.
+- [ ] Métricas de cotizaciones en Reportes: total de cotizaciones por período, tasa de conversión (cotización → ticket aprobado), monto promedio cotizado, cuántas se pierden/vencen sin aprobar.
 
 ## Fase 12: Punto de Venta (POS)
 
