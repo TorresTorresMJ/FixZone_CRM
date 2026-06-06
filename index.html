@@ -655,6 +655,14 @@
     </form>
   </dialog>
 
+  <!-- Print options floating panel -->
+  <div id="print-panel" style="display:none;position:fixed;z-index:9999;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:6px;min-width:210px;box-shadow:0 12px 32px rgba(0,0,0,.6)">
+    <button class="ghost-button" id="pp-auto"      style="width:100%;text-align:left;padding:8px 12px;font-size:13px;border-radius:6px">⚡ Auto (según estado)</button>
+    <button class="ghost-button" id="pp-recepcion" style="width:100%;text-align:left;padding:8px 12px;font-size:13px;border-radius:6px">📋 Recibo de recepción</button>
+    <button class="ghost-button" id="pp-pago"      style="width:100%;text-align:left;padding:8px 12px;font-size:13px;border-radius:6px">💳 Comprobante de pago</button>
+    <button class="ghost-button" id="pp-garantia"  style="width:100%;text-align:left;padding:8px 12px;font-size:13px;border-radius:6px">🛡 Certificado de garantía</button>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./src/supabase-config.js"></script>
   <script src="./src/brand-config.js"></script>

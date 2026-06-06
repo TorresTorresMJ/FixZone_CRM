@@ -1090,7 +1090,7 @@ function ticketCard(ticket, perms, idx = 0) {
     ${issueHtml}
     ${priceHtml}
     <div class="ticket-actions">
-      <button class="mini-button" data-print-auto="${ticket.id}" title="Imprimir recibo">🖨</button>
+      <button class="mini-button" data-print-ticket="${ticket.id}" title="Opciones de impresión">🖨</button>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
       ${/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticket.id)?`<button class="mini-button" data-qr-ticket="${ticket.id}" title="QR Técnico">📱</button>`:""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
@@ -5923,24 +5923,9 @@ document.addEventListener("click", async e => {
   const editTask = e.target.closest("[data-edit-task]");
   if (editTask) { openEditSupportTask(editTask.dataset.editTask); return; }
 
-  // Print ticket
-  const printAuto = e.target.closest("[data-print-auto]");
-  if (printAuto) {
-    const t = state.tickets.find(i=>i.id===printAuto.dataset.printAuto);
-    if (t) {
-      let type = "recepcion";
-      if (t.status === "Garantia") type = "garantia";
-      else if (t.paymentStatus === "Pagado" || t.status === "Entregado" || t.paymentStatus === "Abonado") type = "pago";
-      printRecibo(t, type);
-    }
-    return;
-  }
-  const printRec = e.target.closest("[data-print-recepcion]");
-  if (printRec) { document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none"); const t=state.tickets.find(i=>i.id===printRec.dataset.printRecepcion); if(t) printRecibo(t,"recepcion"); return; }
-  const printPago = e.target.closest("[data-print-pago]");
-  if (printPago) { document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none"); const t=state.tickets.find(i=>i.id===printPago.dataset.printPago); if(t) printRecibo(t,"pago"); return; }
-  const printGar = e.target.closest("[data-print-garantia]");
-  if (printGar) { document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none"); const t=state.tickets.find(i=>i.id===printGar.dataset.printGarantia); if(t) printRecibo(t,"garantia"); return; }
+  // Print ticket — open fixed panel
+  const printTicketBtn = e.target.closest("[data-print-ticket]");
+  if (printTicketBtn) { openPrintPanel(printTicketBtn.dataset.printTicket, printTicketBtn); return; }
 
   // Abono
   const abonoBtn = e.target.closest("[data-abono-ticket]");
@@ -7046,5 +7031,62 @@ async function initializeApp() {
   setupDogCursor();
   await refreshSession();
 }
+
+// ── Print panel (fixed-position, never clipped by kanban overflow) ────────────
+let _printPanelTicketId = null;
+const _printPanel = document.getElementById("print-panel");
+
+function openPrintPanel(ticketId, anchorEl) {
+  _printPanelTicketId = ticketId;
+  const rect = anchorEl.getBoundingClientRect();
+  // Position below the button; flip up if too close to bottom
+  const panelH = 180;
+  const top = rect.bottom + 6 + panelH > window.innerHeight
+    ? rect.top - panelH - 6
+    : rect.bottom + 6;
+  _printPanel.style.top  = top + "px";
+  _printPanel.style.left = Math.min(rect.left, window.innerWidth - 220) + "px";
+  _printPanel.style.display = "block";
+}
+
+function closePrintPanel() {
+  _printPanel.style.display = "none";
+  _printPanelTicketId = null;
+}
+
+document.getElementById("pp-auto")?.addEventListener("click", () => {
+  const t = state.tickets.find(i => i.id === _printPanelTicketId);
+  if (t) {
+    let type = "recepcion";
+    if (t.status === "Garantia") type = "garantia";
+    else if (t.paymentStatus === "Pagado" || t.status === "Entregado" || t.paymentStatus === "Abonado") type = "pago";
+    printRecibo(t, type);
+  }
+  closePrintPanel();
+});
+document.getElementById("pp-recepcion")?.addEventListener("click", () => {
+  const t = state.tickets.find(i => i.id === _printPanelTicketId);
+  if (t) printRecibo(t, "recepcion");
+  closePrintPanel();
+});
+document.getElementById("pp-pago")?.addEventListener("click", () => {
+  const t = state.tickets.find(i => i.id === _printPanelTicketId);
+  if (t) printRecibo(t, "pago");
+  closePrintPanel();
+});
+document.getElementById("pp-garantia")?.addEventListener("click", () => {
+  const t = state.tickets.find(i => i.id === _printPanelTicketId);
+  if (t) printRecibo(t, "garantia");
+  closePrintPanel();
+});
+
+// Close panel on outside click
+document.addEventListener("click", e => {
+  if (_printPanel.style.display === "block" &&
+      !_printPanel.contains(e.target) &&
+      !e.target.closest("[data-print-ticket]")) {
+    closePrintPanel();
+  }
+}, true);
 
 initializeApp();
