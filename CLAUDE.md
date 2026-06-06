@@ -28,7 +28,7 @@ There is no test suite and no linter configured.
 | File | Purpose |
 |---|---|
 | `index.html` | App shell — all view sections are `<section class="view">` |
-| `src/app.js` | All client-side logic (~4 800 lines, single file) |
+| `src/app.js` | All client-side logic (~5 500 lines, single file) |
 | `src/supabase-config.js` | Supabase project URL and anon key (`window.FIXZONE_SUPABASE`) |
 | `src/brand-config.js` | Per-branch brand config — colors, logos, copy, marketing links (`window.BRANCH_BRANDS`) |
 | `src/styles/brand-tokens.css` | Static CSS custom properties (fallback values only — JS overrides at runtime) |
@@ -53,6 +53,8 @@ There is no test suite and no linter configured.
 | `supabase/21_service_prices.sql` | `service_types` + `service_prices` tables — price matrix device × service, RLS |
 | `supabase/21b_dedup_service_types.sql` | Deduplicates service_types and adds UNIQUE(name) constraint |
 | `supabase/22_variant_prices.sql` | Adds `variant` column to service_prices — multiple prices per cell (e.g. screen quality) |
+| `supabase/22_service_type_default_price.sql` | Adds `default_price` to service_types — precio base global por servicio (ej. Diagnóstico $350) |
+| `supabase/23_cotizacion_ref.sql` | Adds `cotizacion_ref` + `converted_to_ticket` to service_tickets — traceabilidad bidireccional |
 
 ## Architecture
 
@@ -63,7 +65,7 @@ The sidebar (220px wide) groups views by workflow with `<hr class="nav-divider">
 | Group | Views |
 |---|---|
 | Operaciones | dashboard, tickets, cotizaciones, pos, clients |
-| Inventario | products, supplies |
+| Inventario | products, supplies, precios |
 | Finanzas | finance, reports |
 | Admin | users, soporte, diseno, automatizacion |
 
@@ -105,7 +107,7 @@ Both functions are `security definer` (bypass RLS when querying employees, no ci
 All per-branch tables have a `branch_id` FK to `public.branches`. The frontend filters with `branchTickets()`, `branchTransactions()`, etc. using `!t.branch || t.branch === activeBranchId` (permissive — records with unresolved branch show everywhere rather than disappearing). In remote mode, `branchSupplies()` and `branchTransactions()` use the same permissive logic.
 
 ### State management
-- `state` is the in-memory object holding all data: `tickets`, `clients`, `products`, `supplies`, `transactions`, `employees`, `branches`, `supportTasks`, `posSales`, `discounts`
+- `state` is the in-memory object holding all data: `tickets`, `clients`, `products`, `supplies`, `transactions`, `employees`, `branches`, `supportTasks`, `posSales`, `discounts`, `serviceTypes`, `servicePrices`
 - `reloadState()` fetches all tables from Supabase in a `Promise.all` and overwrites state. If any individual query returns empty, the corresponding key falls back to `seed` data
 - `reloadState()` failure after a successful INSERT is **non-fatal** — caught with `console.warn`, UI still renders with the locally-added record
 - `createRemoteTicket` and `createRemoteTransaction` use `.select().single()` to get the created row back and add it to state immediately, so the kanban/dashboard updates even if `reloadState()` subsequently fails
@@ -176,7 +178,11 @@ Cotizaciones are quotes stored as `service_tickets` with `stage = "Cotización"`
 
 **WhatsApp**: `shareQuoteWhatsApp(ticketId)` builds a `wa.me?text=` URL. If the `"cotizacion"` WA template (Automatización tab) is non-empty it fills `{cliente}`, `{total}`, `{items}` variables; otherwise it auto-formats a message with all line items. Opens in a new tab.
 
-**Conversion**: "Aprobar" button on a cotización changes stage to `"Recibido"`, converting it to a repair ticket.
+**Quote line items** — each item now has an optional `insumoCost` field. When `insumoCost > 0` and type is "Servicio", `calcPrecio({ insumo, tipo })` auto-calculates the final price using the configured margins. Glass is detected by `/glass/i` in the service name. Price field turns green when auto-calculated; technician can still override manually.
+
+**Conversion**: "Aprobar" button on a cotización assigns a **new `[FZ]` tracking number**, saves the original `[COT]` folio as `cotizacion_ref` on the ticket, and saves the new `[FZ]` folio as `converted_to_ticket` on the cotización. Bidirectional traceability is visible on both cards.
+
+**Cotizador → Cotización**: The `renderCotizador()` widget in the Precios view has a "📋 Crear cotización con este precio" button that pre-fills `openForm("cotizacion", prefill)` with the calculated price as a Servicio line item.
 
 ### Discount Codes
 
@@ -201,7 +207,7 @@ The "Producto / equipo" field in ticket and cotización forms uses `ftype = "dev
 - `loadDeviceModels()` — reads localStorage, falls back to `DEFAULT_DEVICE_MODELS`
 - `saveDeviceModel(name)` — appends a new model to localStorage (deduplicates, re-sorts)
 - `getAllDeviceNames()` — merges localStorage models + `state.tickets[].productName`, deduped, sorted
-- `initDeviceAutocomplete()` — attaches custom dropdown behavior to all `input[data-device-ac]` in `formFields`
+- `initDeviceAutocomplete(container?)` — attaches custom dropdown behavior to all `input[data-device-ac]` in the given container (default: `formFields`). Pass a different container (e.g. `mxEl` in `renderPrecios`) to use outside the modal.
 
 **How it works:** `fieldTemplate("device-autocomplete")` renders `<div class="device-ac-wrapper"><input data-device-ac /></div>`. After `formFields.innerHTML = ...`, call `initDeviceAutocomplete()` to wire up filtering, keyboard nav, and the `+ Agregar "X"` option. Must be called in `openForm()` and both paths in `openEditTicket()`.
 
@@ -243,18 +249,26 @@ La vista `#precios-view` tiene dos secciones: la **matriz de precios** y el **co
 - `branchServicePrices()` filtra `state.servicePrices` por `branchId` activo
 
 **Cotizador rápido** (`#precios-cotizador`):
-- Widget flotante (glass card) que aparece también en la vista Tickets
-- Sliders de equipo y servicio, muestra precio final con −35% descuento base aplicado
-- `renderCotizadorWidget(el)` — renderiza el widget en cualquier contenedor dado; llamado desde `renderPrecios()` y desde la vista Tickets
-- Color del precio cambia por tipo de servicio (`theme` object por tipo en `renderCotizadorWidget`)
+- Rendered by `renderCotizador()`, called from `renderPrecios()` and the Tickets view
+- Buttons: Pantalla / Glass; input: costo del insumo; sliders: márgenes (admin only)
+- Formula: `calcPrecio({ insumo, tipo, config })` — returns `{ precioFinal, precioPantalla, ganancia, iva, mpCosto, comTec, utilidad, margenNeto }`
+- Config stored in `localStorage` key `fixzone-pricing-config`; defaults in `PRICING_CONFIG_DEFAULT`
+- "📋 Crear cotización" button pre-fills a new cotización with the calculated price
+
+**Precio base por servicio** (`default_price` en `service_types`):
+- Cada servicio puede tener un precio fijo que aplica cuando no hay precio específico en la matriz
+- Editable inline en la sección "Servicios configurados" de la vista Precios
+- Lookup en cotizaciones: device-specific price → fallback to `stype.defaultPrice`
+- Migration `22_service_type_default_price.sql` añade la columna y seeds Diagnóstico/Limpieza en $350
 
 **State:**
-- `state.serviceTypes` — array de `{id, name, sortOrder}`
+- `state.serviceTypes` — array de `{id, name, sortOrder, defaultPrice}`
 - `state.servicePrices` — array de `{id, deviceModel, serviceTypeId, price, branchId, notes, variant}`
 
 **Pitfalls:**
-- Migrations 21 + 21b + 22 deben estar aplicadas en este orden antes de usar la vista Precios
-- `21b_dedup_service_types.sql` solo corre si ya había duplicados de una ejecución previa de 21; es seguro correrla siempre
+- Migrations 21 + 21b + 22 (`variant_prices`) + `22_service_type_default_price` + 23 deben estar aplicadas
+- `21b_dedup_service_types.sql` solo corre si ya había duplicados; es seguro correrla siempre
+- `22_service_type_default_price.sql` es independiente de `22_variant_prices.sql` — ambas deben aplicarse
 
 ### Print helpers
 
@@ -283,6 +297,8 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 19. `21_service_prices.sql` — `service_types` and `service_prices` tables with RLS
 20. `21b_dedup_service_types.sql` — deduplicate service_types and add UNIQUE(name) (run only if 21 was already applied)
 21. `22_variant_prices.sql` — add `variant` column to service_prices for multi-price cells
+22. `22_service_type_default_price.sql` — add `default_price` to service_types; seed Diagnóstico/Limpieza $350
+23. `23_cotizacion_ref.sql` — add `cotizacion_ref` + `converted_to_ticket` to service_tickets
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -332,3 +348,7 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **Browser cache after deploy**: Cloudflare Pages may serve cached JS/CSS. Users should hard-refresh (`Cmd+Shift+R` / `Ctrl+Shift+R`) after a new deploy if they see stale styles.
 - **Tabla de Precios requires migrations 21 + 21b + 22**: Without 21, `state.serviceTypes` and `state.servicePrices` stay `[]` and the matrix renders empty. Without 22, the `variant` column is missing and multi-price upserts will fail with a constraint error.
 - **`variant` column default is `''`** (empty string, not null): the UNIQUE constraint is `(device_model, service_type_id, branch_id, variant)`. Always pass `variant: ""` when upserting a single-price cell; omitting it causes a null vs "" mismatch that creates duplicate rows.
+- **`22_service_type_default_price.sql` and `22_variant_prices.sql` are both numbered 22** — this is intentional (created independently). Apply both; order between them doesn't matter.
+- **Traceability migrations require 23**: Without `23_cotizacion_ref.sql`, approving a cotización will throw a column-not-found error on `cotizacion_ref` update.
+- **`calcPrecio()` formula**: `precio = (insumo × (1 + margen)) × 1.16 × 1.0406`. Glass applies an additional discount: `precioFinal = precioPantalla × (1 - glassDesc)`. Never hardcode margin values — always read from `loadPricingConfig()`.
+- **Quote item `insumoCost`**: stored in `quoteItems` JSONB array per item. When > 0, `calcPrecio()` is called client-side to auto-fill `unitPrice`. The `insumoCost` is for internal reference only — not shown on client-facing receipts.

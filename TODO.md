@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-05_
+_Última actualización: 2026-06-05_ (sesión 2)
 
 ## Fase 1: Definir operacion interna
 
@@ -63,6 +63,9 @@ _Última actualización: 2026-06-05_
 - [ ] Asociar compras de insumos con proveedor y comprobante — permitir adjuntar foto de comprobante.
 - [ ] Exportar inventario a Excel.
 - [x] Tabla de precios por dispositivo × servicio — costo de mano de obra, vista Precios con matriz editable, gestión de servicios, cotizador rápido con slider y −35% descuento base (migrations 21 + 21b + 22 aplicadas). Soporta variantes de precio por celda (ej. Original vs Genérica).
+- [x] Precio base por servicio — `default_price` en service_types; Diagnóstico y Limpieza $350 fijos para todos los equipos (migration 22b).
+- [x] Cotizador Precios → botón "Crear cotización" pre-llenado con precio calculado por fórmula de márgenes.
+- [x] Traceabilidad bidireccional COT ↔ FZ — al aprobar cotización se asigna folio [FZ] nuevo, ambas cards muestran la referencia cruzada (migration 23).
 - [ ] Reglas de margen sobre insumos — tabla configurable de rangos de costo con % de ganancia (ej. costo ≤ $1,500 → 110%, costo > $1,500 → 100%). Precio total = costo insumo + (costo × %ganancia) + mano de obra.
 - [ ] Ticket de request de compra de insumos / material 
 
@@ -139,7 +142,8 @@ _Última actualización: 2026-06-05_
 - [x] Botón 🖨 Imprimir — PDF formal de cotización con tabla de partidas, subtotal, descuento, vigencia y firma.
 - [x] Código de descuento aplicable desde el builder de cotización.
 - [ ] Cambio de status de Cotización a "Venta concretada" (diferente de aprobar como reparación).
-- [x] Partidas de cotización sincronizadas con service_types — tipo Servicio usa select del catálogo, auto-rellena precio desde service_prices al seleccionar equipo + servicio.
+- [x] Partidas de cotización sincronizadas con service_types — tipo Servicio usa select del catálogo, auto-rellena precio desde service_prices (o default_price) al seleccionar equipo + servicio.
+- [x] Campo "Costo insumo" en partidas Servicio — al ingresar el costo, calcPrecio() calcula el precio final automáticamente con la fórmula de márgenes (pantalla o glass según servicio).
 - [x] Cotizador en Precios → botón "Crear cotización" pre-llenado con precio calculado.
 - [x] Traceabilidad bidireccional: al aprobar, cotización guarda folio [FZ] y ticket guarda folio [COT] de origen. Ambas referencias visibles en las cards.
 - [ ] Métricas de cotizaciones en Reportes: total por período, tasa de conversión, monto promedio, cuántas se pierden sin aprobar.
@@ -168,3 +172,5 @@ _Última actualización: 2026-06-05_
 - [ ] Definir que se hará cuando ya haya muchos tickets en las columnas del KANBAN , tal vez hacer las cards mas chicas o acortar lo que hay visible a menos que se abra y se desgloce lo demas, tipo Hubspot. 
 - [ ]Al hacer click en un movimiento reciente en "Home" , desplegar la vista de ese movimiento, es decir abrir la pantallita que muestra la informacion de ese movieminto ![alt text](image.png)
 - [ ] Si le damos en refresh, que se haga refresh en la tab que se quedó? porque siempre se va a home 
+- [ ] Tickets estan muy grandes para la columna del kanban ![ ](image-1.png) Tipografia demasiado grande 
+- [ ] Revisar que sea excelente para la navegacion en version movil. porque con la letra y las multiples secciones no quiero que se sature. 
