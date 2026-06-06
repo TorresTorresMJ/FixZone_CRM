@@ -137,6 +137,8 @@ _Última actualización: 2026-06-06_ (sesión 3)
 - [ ]Que al tener datos de contacto de un cliente ese cliente se registre automaticamente 
 - [ ] Poner que se peuda adjuntar fotos en los tickets para IT que crean los usuarios. 
 - [ ] En el ticket, cuando el texto de la descripcióm es largo, se corta, no esta delimitado al ancho del ticket, mira: ![alt text](image-2.png)
+- [ ](image-3.png)Que en el chat de notificaciones , cuando IT manda mensaje diga IT. O mejor, como hay roles repetidos, que se muestr el nombre del usuario plis, solo primer nombre. 
+- [ ] Mande mensaje en el centro de notificaciones y no le llegó a nadie, abrieron su centro de campanita y no aparecia nunfun mensaje de los que habia enviado. 
 
 ## Fase 11: Cotizaciones
 

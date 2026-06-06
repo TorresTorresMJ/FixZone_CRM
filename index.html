@@ -1,607 +1,664 @@
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>FixZone CRM</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <link rel="stylesheet" href="./src/styles/brand-tokens.css" />
-    <link rel="stylesheet" href="./src/styles/app.css" />
-  </head>
-  <body>
 
-    <!-- ── App shell (hidden until login) ─────────────────────────────────── -->
-    <div class="app-shell" style="display:none">
-      <aside class="sidebar" aria-label="Navegacion principal">
-        <div class="brand" style="flex-direction:column;align-items:flex-start;gap:4px">
-          <img src="./assets/brand/fixzone/logo-color.png" alt="FixZone"
-            style="width:160px;height:auto;max-height:44px;object-fit:contain;border-radius:4px"
-            onerror="this.style.display='none'" />
-          <span id="brand-crm-label" style="font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,.4)">CRM OPERATIVO</span>
-        </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FixZone CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Outfit:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="./src/styles/brand-tokens.css" />
+  <link rel="stylesheet" href="./src/styles/app.css" />
+</head>
 
-        <nav class="nav-list">
-          <!-- Operaciones diarias -->
-          <button class="nav-item is-active" data-view="dashboard" title="Home">
-            <span aria-hidden="true">⌂</span> Home
-          </button>
-          <button class="nav-item" data-view="tickets" title="Tickets">
-            <span aria-hidden="true">✦</span> Tickets
-          </button>
-          <button class="nav-item" data-view="cotizaciones" title="Cotizaciones">
-            <span aria-hidden="true"><i data-lucide="clipboard-list"></i></span> Cotizaciones
-          </button>
-          <button class="nav-item" data-view="pos" title="Punto de Venta">
-            <span aria-hidden="true">⊞</span> POS
-          </button>
-          <button class="nav-item" data-view="clients" title="Clientes">
-            <span aria-hidden="true">◎</span> Clientes
-          </button>
-          <hr class="nav-divider">
-          <!-- Inventario -->
-          <button class="nav-item" data-view="products" title="Productos">
-            <span aria-hidden="true">◈</span> Productos
-          </button>
-          <button class="nav-item" data-view="supplies" title="Insumos">
-            <span aria-hidden="true">◉</span> Insumos
-          </button>
-          <button class="nav-item" data-view="precios" title="Tabla de precios">
-            <span aria-hidden="true">₱</span> Precios
-          </button>
-          <hr class="nav-divider">
-          <!-- Finanzas -->
-          <button class="nav-item" data-view="finance" title="Finanzas">
-            <span aria-hidden="true">$</span> Finanzas
-          </button>
-          <button class="nav-item" data-view="reports" title="Reportes">
-            <span aria-hidden="true">≡</span> Reportes
-          </button>
-          <hr class="nav-divider">
-          <!-- Admin / roles específicos -->
-          <button class="nav-item" data-view="users" title="Usuarios">
-            <span aria-hidden="true"><i data-lucide="users"></i></span> Usuarios
-          </button>
-          <button class="nav-item" data-view="soporte" title="Soporte IT">
-            <span aria-hidden="true">⚙</span> Soporte
-          </button>
-          <button class="nav-item" data-view="diseno" title="Diseño">
-            <span aria-hidden="true">✦</span> Diseño
-          </button>
-          <button class="nav-item" data-view="automatizacion" title="Automatización">
-            <span aria-hidden="true">⚡</span> Automatización
-          </button>
-        </nav>
+<body>
 
-        <div class="sidebar-footer">
-          <span id="app-status">Base local activa</span>
-          <strong id="record-count">0 registros</strong>
-          <div class="branch-indicator" id="active-branch-label">Puerto Vallarta</div>
-        </div>
-
-        <!-- Global loading bar -->
-        <div id="loading-bar" style="display:none;position:fixed;top:3px;left:0;right:0;height:2px;z-index:10000;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.8) 40%,rgba(255,255,255,.8) 60%,transparent 100%);background-size:200% 100%;animation:loadingBar 1.2s linear infinite"></div>
-      </aside>
-
-      <main class="workspace">
-        <header class="topbar">
-          <div>
-            <h1 id="view-title">Home</h1>
-            <div class="branch-tabs">
-              <button class="branch-tab is-active" onclick="setActiveBranch('Puerto Vallarta')">Puerto Vallarta</button>
-              <button class="branch-tab" onclick="setActiveBranch('Puebla')">Puebla</button>
-            </div>
-          </div>
-          <div class="topbar-actions">
-            <div class="auth-box" id="auth-box" style="position:relative">
-              <div class="auth-info" id="user-profile-trigger" title="Mi perfil" style="cursor:pointer">
-                <span id="auth-user-name">—</span>
-                <small id="auth-user-role" class="muted"></small>
-              </div>
-              <div id="user-profile-menu" style="display:none;position:absolute;top:100%;right:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;min-width:180px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)">
-                <button class="ghost-button" id="change-pw-trigger" style="width:100%;text-align:left;padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px"><i data-lucide="key-round" style="width:13px;height:13px;flex-shrink:0;"></i> Cambiar contraseña</button>
-                <hr style="border:0;border-top:1px solid rgba(255,255,255,0.08);margin:4px 0">
-                <button class="ghost-button" id="logout-from-menu" style="width:100%;text-align:left;padding:8px 12px;font-size:13px;color:#ff6b6b">Salir</button>
-              </div>
-              <button class="help-button" id="help-button" title="Contactar a IT">?</button>
-              <button class="ghost-button is-hidden" id="logout-button">Salir</button>
-            </div>
-            <label class="search-box">
-              <span aria-hidden="true">⌕</span>
-              <input id="global-search" type="search" placeholder="Buscar cliente, ticket, producto..." />
-            </label>
-            <button class="icon-button notif-bell" id="notif-bell-btn" title="Notificaciones" aria-label="Notificaciones" style="position:relative;padding:0;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">
-              <i data-lucide="bell" style="width:18px;height:18px;"></i>
-              <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:#e53e3e;color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px"></span>
-            </button>
-            <div style="display:flex;gap:6px;align-items:center">
-              <button class="quick-fab quick-fab-pos" id="quick-pos" title="Nueva venta POS" aria-label="Nueva venta POS"><i data-lucide="shopping-cart" style="width:16px;height:16px;"></i></button>
-              <button class="quick-fab quick-fab-ticket" id="quick-ticket" title="Nuevo ticket de reparación" aria-label="Nuevo ticket"><i data-lucide="wrench" style="width:16px;height:16px;"></i></button>
-            </div>
-          </div>
-        </header>
-
-        <!-- ── Dashboard ─────────────────────────────────────────────────── -->
-        <section class="view is-visible" id="dashboard-view" data-title="Home">
-          <div class="metric-grid" id="metric-grid"></div>
-          <div id="stock-alert-banner"></div>
-          <div class="split-layout">
-            <section class="home">
-              <div class="section-heading">
-                <h2>Tickets activos</h2>
-                <button class="ghost-button" data-view-target="tickets">Ver todos</button>
-              </div>
-              <div class="ticket-stack" id="active-ticket-list"></div>
-            </section>
-            <section class="home">
-              <div class="section-heading">
-                <h2>Movimiento reciente</h2>
-                <button class="ghost-button" data-view-target="finance">Finanzas</button>
-              </div>
-              <div class="activity-list" id="recent-activity"></div>
-            </section>
-          </div>
-        </section>
-
-        <!-- ── Clientes ──────────────────────────────────────────────────── -->
-        <section class="view" id="clients-view" data-title="Clientes">
-          <div class="section-heading">
-            <h2>Registro de clientes</h2>
-            <div class="action-row">
-              <button class="ghost-button" data-export-sheet="clients">Excel</button>
-              <button class="primary-action" data-open-form="client">+ Cliente</button>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Cliente</th><th>Contacto</th><th>Equipo</th>
-                  <th>Ultima visita</th><th>Estado</th><th></th>
-                </tr>
-              </thead>
-              <tbody id="clients-table"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- ── Productos ─────────────────────────────────────────────────── -->
-        <section class="view" id="products-view" data-title="Productos">
-          <div class="section-heading">
-            <h2>Productos y refacciones</h2>
-            <div class="action-row">
-              <div style="display:flex;gap:6px" id="product-type-bar">
-                <button class="mini-button ptype-filter is-active" data-ptype="all">Todos</button>
-                <button class="mini-button ptype-filter" data-ptype="producto">Vendibles</button>
-                <button class="mini-button ptype-filter" data-ptype="refaccion">Refacciones</button>
-                <button class="mini-button ptype-filter" data-ptype="insumo">Insumos</button>
-              </div>
-              <button class="ghost-button" id="btn-movimiento">± Movimiento</button>
-              <button class="ghost-button" data-export-sheet="products">XLS</button>
-              <button class="primary-action" data-open-form="product">+ Producto</button>
-            </div>
-          </div>
-          <div id="products-grid"></div>
-        </section>
-
-        <!-- ── Cotizaciones ─────────────────────────────────────────────── -->
-        <section class="view" id="cotizaciones-view" data-title="Cotizaciones">
-          <div class="section-heading">
-            <h2>Cotizaciones pendientes</h2>
-            <button class="primary-action" id="new-quote-btn">+ Cotización</button>
-          </div>
-          <p class="muted" style="margin-bottom:16px;font-size:13px">Presupuestos antes de ser aprobados. Pulsa <strong>Aprobar</strong> para convertir a ticket activo.</p>
-          <div class="inventory-grid" id="cotizaciones-board" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
-        </section>
-
-        <!-- ── Tickets ───────────────────────────────────────────────────── -->
-        <section class="view" id="tickets-view" data-title="Tickets">
-          <div class="section-heading">
-            <h2>Tickets de servicio</h2>
-            <div class="action-row">
-              <button class="ghost-button" data-export-sheet="tickets">Excel</button>
-              <button class="primary-action" data-open-form="ticket">+ Ticket</button>
-            </div>
-          </div>
-          <div class="kanban" id="ticket-board"></div>
-        </section>
-
-        <!-- ── Insumos ───────────────────────────────────────────────────── -->
-        <section class="view" id="supplies-view" data-title="Insumos">
-          <div class="section-heading">
-            <h2>Compras de insumos</h2>
-            <div class="action-row">
-              <button class="ghost-button" data-export-sheet="supplies">Excel</button>
-              <button class="primary-action" data-open-form="supply">+ Compra</button>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Fecha</th><th>Proveedor</th><th>Insumo</th><th>Cantidad</th><th>Total</th><th>Recibo</th><th></th></tr>
-              </thead>
-              <tbody id="supplies-table"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- ── Punto de Venta ─────────────────────────────────────────── -->
-        <section class="view" id="pos-view" data-title="Punto de Venta">
-          <div class="section-heading">
-            <h2>Punto de Venta</h2>
-          </div>
-          <div class="pos-layout">
-            <div class="pos-catalog-panel" id="pos-catalog-panel">
-              <!-- Catálogo renderizado por renderPos() -->
-            </div>
-            <div class="pos-cart-panel" id="pos-cart-panel">
-              <!-- Carrito renderizado por renderPos() -->
-            </div>
-          </div>
-          <div id="pos-history" style="margin-top:28px"></div>
-        </section>
-
-        <!-- ── Tabla de Precios ───────────────────────────────────────── -->
-        <section class="view" id="precios-view" data-title="Tabla de Precios">
-          <div class="section-heading">
-            <h2>Tabla de precios</h2>
-            <span class="role-badge role-admin">Admin</span>
-          </div>
-          <div id="precios-cotizador"></div>
-          <div id="precios-service-types"></div>
-          <div id="precios-matrix"></div>
-        </section>
-
-        <!-- ── Finanzas ──────────────────────────────────────────────────── -->
-        <section class="view" id="finance-view" data-title="Finanzas">
-          <!-- top bar: title + period filters + action buttons -->
-          <div class="section-heading" style="flex-wrap:wrap;gap:10px">
-            <h2>Ingresos y egresos</h2>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto">
-              <div id="finance-period-bar" style="display:flex;gap:6px">
-                <button class="mini-button fin-filter is-active" data-fin="month">Este mes</button>
-                <button class="mini-button fin-filter" data-fin="today">Hoy</button>
-                <button class="mini-button fin-filter" data-fin="week">7 días</button>
-                <button class="mini-button fin-filter" data-fin="all">Todo</button>
-              </div>
-              <button class="ghost-button" data-export-sheet="transactions">XLS</button>
-              <button class="mini-button" id="btn-new-ingreso" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>
-              <button class="mini-button danger-btn" id="btn-new-egreso" onclick="openTransactionForm('Egreso')">+ Egreso</button>
-            </div>
-          </div>
-          <!-- metrics row -->
-          <div id="finance-metrics" style="margin-bottom:20px"></div>
-          <!-- transaction table -->
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Categoría</th><th style="text-align:right">Monto</th><th></th></tr>
-              </thead>
-              <tbody id="transactions-table"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- ── Reportes ──────────────────────────────────────────────────── -->
-        <section class="view" id="reports-view" data-title="Reportes">
-          <div class="section-heading">
-            <h2>Reportes y analítica</h2>
-            <div style="display:flex;gap:8px;align-items:center" id="reports-date-filter">
-              <button class="mini-button rpt-filter" data-rpt="today">Hoy</button>
-              <button class="mini-button rpt-filter" data-rpt="week">7 días</button>
-              <button class="mini-button rpt-filter is-active" data-rpt="month">Mes</button>
-              <button class="mini-button rpt-filter" data-rpt="all">Todo</button>
-              <button class="ghost-button" id="export-data" data-export-sheet="" title="Exportar todo a Excel" style="margin-left:8px">📊 Excel</button>
-            </div>
-          </div>
-          <div class="report-grid" id="reports-grid"></div>
-          <div id="reports-cash"></div>
-          <div id="reports-profit"></div>
-          <div id="reports-pos"></div>
-          <div id="reports-cotizaciones"></div>
-          <div id="reports-monthly"></div>
-          <div id="reports-tickets"></div>
-          <div id="reports-devices"></div>
-          <div id="reports-stock"></div>
-          <div id="reports-productivity"></div>
-        </section>
-
-        <!-- ── Usuarios (Admin + IT) ─────────────────────────────────────── -->
-        <section class="view" id="users-view" data-title="Usuarios">
-          <div class="section-heading">
-            <h2>Gestión de usuarios</h2>
-            <button class="primary-action" data-open-form="employee">+ Usuario</button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nombre</th><th>Email</th><th>Rol</th>
-                  <th>Sucursal</th><th>Estado</th><th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody id="users-table"></tbody>
-            </table>
-          </div>
-          <div id="permissions-editor" style="margin-top:32px"></div>
-        </section>
-
-        <!-- ── Soporte IT ─────────────────────────────────────────────────── -->
-        <section class="view" id="soporte-view" data-title="Soporte IT">
-          <div class="section-heading">
-            <h2>Kanban de soporte</h2>
-            <button class="primary-action" data-open-form="supportTasks">+ Tarea</button>
-          </div>
-          <div class="kanban" id="support-board"></div>
-        </section>
-
-        <!-- ── Diseño (Marketing / IT) — contenido dinámico por sucursal ──── -->
-        <section class="view" id="diseno-view" data-title="Diseño">
-          <div class="section-heading">
-            <h2>Recursos de diseño</h2>
-            <span id="diseno-brand-badge"></span>
-          </div>
-
-          <!-- Herramientas — se rellena dinámicamente por renderDiseno() (editable) -->
-          <div id="marketing-links-grid" style="margin-bottom:28px"></div>
-
-          <!-- Brand tokens -->
-          <div class="section-heading"><h2>Paleta de marca</h2></div>
-          <div class="brand-tokens-grid" id="brand-tokens-grid" style="margin-bottom:28px">
-            <div class="token-swatch" style="background:var(--fz-primary)">
-              <span id="token-primary-hex">#2F6FFF</span><small>Primary · Botones, CTAs</small>
-            </div>
-            <div class="token-swatch" style="background:var(--fz-secondary)">
-              <span id="token-secondary-hex">#4A8DFF</span><small>Secondary · Gradientes</small>
-            </div>
-            <div class="token-swatch" style="background:var(--fz-deep)">
-              <span id="token-deep-hex">#1F4FCC</span><small>Deep · Sombras, fondo</small>
-            </div>
-            <div class="token-swatch" style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.12)">
-              <span>#0A0A0A</span><small>Base Black · Fondo premium</small>
-            </div>
-            <div class="token-swatch" style="background:#1c1c1c;border:1px solid rgba(255,255,255,0.08)">
-              <span>#1C1C1C</span><small>Dark Gray · Cards, secciones</small>
-            </div>
-            <div class="token-swatch" style="background:#ffffff;color:#0a0a0a">
-              <span>#FFFFFF</span><small>White · Texto principal</small>
-            </div>
-            <div class="token-swatch" style="background:#bfbfbf;color:#0a0a0a">
-              <span>#BFBFBF</span><small>Light Gray · Texto secundario</small>
-            </div>
-          </div>
-
-          <!-- Tipografía (estática, aplica a ambas marcas) -->
-          <div class="section-heading"><h2>Tipografía</h2></div>
-          <div class="marketing-grid">
-            <div class="marketing-card" style="cursor:default">
-              <strong style="font-size:24px;font-family:'Orbitron',sans-serif;font-weight:700;letter-spacing:2px">ORBITRON</strong>
-              <p>Principal · Bold 700 · Headings y logotipos</p>
-              <p style="margin-top:8px;font-size:11px;opacity:0.5" id="diseno-tagline-sample">WE FIX FAST. YOU RELAX.</p>
-            </div>
-            <div class="marketing-card" style="cursor:default">
-              <strong style="font-size:22px;font-family:'Roboto',sans-serif;font-style:italic;font-weight:400">Roboto Italic</strong>
-              <p>Secundaria · Body text · Sentencias claras</p>
-              <p style="margin-top:8px;font-size:11px;font-style:italic;opacity:0.5">Reparación profesional · Microsoldadura experta</p>
-            </div>
-            <div class="marketing-card" style="cursor:default">
-              <strong style="font-size:18px">Copys clave</strong>
-              <p style="margin-top:8px;line-height:1.8" id="diseno-copys">
-                "WE FIX FAST. YOU RELAX."<br>
-                "REPARACIÓN PROFESIONAL"<br>
-                "MICROSOLDADURA EXPERTA"<br>
-                "TU EQUIPO EN BUENAS MANOS"
-              </p>
-            </div>
-          </div>
-
-          <!-- Editor de paleta y logo de marca (editable por Marketing) -->
-          <div id="brand-palette-editor"></div>
-        </section>
-
-        <!-- ── Automatización (Marketing / IT) — flujos por sucursal ─────── -->
-        <section class="view" id="automatizacion-view" data-title="Automatización">
-          <div class="section-heading">
-            <h2>Herramientas de automatización</h2>
-            <span class="role-badge role-marketing">Marketing</span>
-          </div>
-
-          <!-- Herramientas — se renderizan dinámicamente (editables por Marketing) -->
-          <div id="auto-tools-grid" style="margin-bottom:28px"></div>
-
-          <!-- Flujos sugeridos — se renderizan dinámicamente por sucursal desde renderDiseno() -->
-          <div class="section-heading"><h2>Flujos sugeridos</h2></div>
-          <div class="auto-flows-grid" id="auto-flows-grid"></div>
-
-          <!-- Mensajes rápidos (repertorio copiable) -->
-          <div id="quick-messages-manager"></div>
-          <!-- Códigos de descuento — gestionados por Marketing -->
-          <div id="discount-manager"></div>
-          <!-- Plantillas WhatsApp para tickets -->
-          <div id="wa-templates-manager"></div>
-        </section>
-
-      </main>
-    </div>
-
-    <!-- ── Modal ────────────────────────────────────────────────────────────── -->
-    <dialog class="modal" id="record-modal">
-      <form method="dialog" id="record-form">
-        <div class="modal-header">
-          <div>
-            <p class="eyebrow" id="modal-eyebrow">Nuevo registro</p>
-            <h2 id="modal-title">Registro</h2>
-          </div>
-          <button class="icon-button" type="button" id="close-modal" aria-label="Cerrar">✕</button>
-        </div>
-        <div class="form-grid" id="form-fields"></div>
-        <menu class="modal-actions">
-          <button class="ghost-button" type="button" id="cancel-record">Cancelar</button>
-          <button class="primary-action" id="save-record" value="default">Guardar</button>
-        </menu>
-      </form>
-    </dialog>
-
-    <!-- ── Print area ───────────────────────────────────────────────────────── -->
-    <section class="print-receipt" id="print-receipt" aria-hidden="true"></section>
-
-    <!-- ── Movimiento de inventario modal ───────────────────────────────────── -->
-    <dialog class="modal" id="movimiento-modal" style="max-width:420px">
-      <div class="modal-header">
-        <div><small class="eyebrow">Inventario</small><h2 class="modal-title">Registrar movimiento</h2></div>
-        <button class="icon-button" type="button" id="close-movimiento-modal" aria-label="Cerrar">✕</button>
+  <!-- ── App shell (hidden until login) ─────────────────────────────────── -->
+  <div class="app-shell" style="display:none">
+    <aside class="sidebar" aria-label="Navegacion principal">
+      <div class="brand" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <img src="./assets/brand/fixzone/logo-color.png" alt="FixZone"
+          style="width:160px;height:auto;max-height:44px;object-fit:contain;border-radius:4px"
+          onerror="this.style.display='none'" />
+        <span id="brand-crm-label"
+          style="font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,.4)">CRM
+          OPERATIVO</span>
       </div>
-      <div class="modal-body">
-        <form id="movimiento-form" class="form-fields">
-          <div class="field">
-            <label for="mov-product">Producto</label>
-            <select id="mov-product"></select>
-          </div>
-          <div class="field">
-            <label for="mov-type">Tipo de movimiento</label>
-            <select id="mov-type">
-              <option value="entrada">📥 Entrada (reposición)</option>
-              <option value="salida">📤 Salida (uso/venta)</option>
-              <option value="ajuste">✏️ Ajuste de inventario</option>
-              <option value="merma">🗑 Merma / pérdida</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="mov-qty">Cantidad</label>
-            <input id="mov-qty" type="number" min="0.01" step="0.01" required placeholder="1" />
-          </div>
-          <div class="field">
-            <label for="mov-note">Nota (opcional)</label>
-            <input id="mov-note" type="text" placeholder="Motivo del ajuste..." />
-          </div>
-          <div id="mov-stock-preview" style="font-size:12px;padding:8px 12px;background:rgba(255,255,255,.05);border-radius:6px;margin-top:4px"></div>
-          <div class="modal-actions">
-            <button type="button" class="ghost-button" id="cancel-movimiento">Cancelar</button>
-            <button type="submit" class="primary-action">Registrar</button>
-          </div>
-        </form>
-      </div>
-    </dialog>
 
-    <!-- ── Abono modal ────────────────────────────────────────────────────────── -->
-    <dialog class="modal" id="abono-modal" style="max-width:380px">
+      <nav class="nav-list">
+        <!-- Operaciones diarias -->
+        <button class="nav-item is-active" data-view="dashboard" title="Home">
+          <span aria-hidden="true">⌂</span> Home
+        </button>
+        <button class="nav-item" data-view="tickets" title="Tickets">
+          <span aria-hidden="true">✦</span> Tickets
+        </button>
+        <button class="nav-item" data-view="cotizaciones" title="Cotizaciones">
+          <span aria-hidden="true"><i data-lucide="clipboard-list"></i></span> Cotizaciones
+        </button>
+        <button class="nav-item" data-view="pos" title="Punto de Venta">
+          <span aria-hidden="true">⊞</span> POS
+        </button>
+        <button class="nav-item" data-view="clients" title="Clientes">
+          <span aria-hidden="true">◎</span> Clientes
+        </button>
+        <hr class="nav-divider">
+        <!-- Inventario -->
+        <button class="nav-item" data-view="products" title="Productos">
+          <span aria-hidden="true">◈</span> Productos
+        </button>
+        <button class="nav-item" data-view="supplies" title="Insumos">
+          <span aria-hidden="true">◉</span> Insumos
+        </button>
+        <button class="nav-item" data-view="precios" title="Tabla de precios">
+          <span aria-hidden="true">₱</span> Precios
+        </button>
+        <hr class="nav-divider">
+        <!-- Finanzas -->
+        <button class="nav-item" data-view="finance" title="Finanzas">
+          <span aria-hidden="true">$</span> Finanzas
+        </button>
+        <button class="nav-item" data-view="reports" title="Reportes">
+          <span aria-hidden="true">≡</span> Reportes
+        </button>
+        <hr class="nav-divider">
+        <!-- Admin / roles específicos -->
+        <button class="nav-item" data-view="users" title="Usuarios">
+          <span aria-hidden="true"><i data-lucide="users"></i></span> Usuarios
+        </button>
+        <button class="nav-item" data-view="soporte" title="Soporte IT">
+          <span aria-hidden="true">⚙</span> Soporte
+        </button>
+        <button class="nav-item" data-view="diseno" title="Diseño">
+          <span aria-hidden="true">✦</span> Diseño
+        </button>
+        <button class="nav-item" data-view="automatizacion" title="Automatización">
+          <span aria-hidden="true">⚡</span> Automatización
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span id="app-status">Base local activa</span>
+        <strong id="record-count">0 registros</strong>
+        <div class="branch-indicator" id="active-branch-label">Puerto Vallarta</div>
+      </div>
+
+      <!-- Global loading bar -->
+      <div id="loading-bar"
+        style="display:none;position:fixed;top:3px;left:0;right:0;height:2px;z-index:10000;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.8) 40%,rgba(255,255,255,.8) 60%,transparent 100%);background-size:200% 100%;animation:loadingBar 1.2s linear infinite">
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <h1 id="view-title">Home</h1>
+          <div class="branch-tabs">
+            <button class="branch-tab is-active" onclick="setActiveBranch('Puerto Vallarta')">Puerto Vallarta</button>
+            <button class="branch-tab" onclick="setActiveBranch('Puebla')">Puebla</button>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <div class="auth-box" id="auth-box" style="position:relative">
+            <div class="auth-info" id="user-profile-trigger" title="Mi perfil" style="cursor:pointer">
+              <span id="auth-user-name">—</span>
+              <small id="auth-user-role" class="muted"></small>
+            </div>
+            <div id="user-profile-menu"
+              style="display:none;position:absolute;top:100%;right:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;min-width:180px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+              <button class="ghost-button" id="change-pw-trigger"
+                style="width:100%;text-align:left;padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px"><i
+                  data-lucide="key-round" style="width:13px;height:13px;flex-shrink:0;"></i> Cambiar contraseña</button>
+              <hr style="border:0;border-top:1px solid rgba(255,255,255,0.08);margin:4px 0">
+              <button class="ghost-button" id="logout-from-menu"
+                style="width:100%;text-align:left;padding:8px 12px;font-size:13px;color:#ff6b6b">Salir</button>
+            </div>
+            <button class="help-button" id="help-button" title="Contactar a IT">?</button>
+            <button class="ghost-button is-hidden" id="logout-button">Salir</button>
+          </div>
+          <label class="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input id="global-search" type="search" placeholder="Buscar cliente, ticket, producto..." />
+          </label>
+          <button class="icon-button notif-bell" id="notif-bell-btn" title="Notificaciones" aria-label="Notificaciones"
+            style="position:relative;padding:0;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">
+            <i data-lucide="bell" style="width:18px;height:18px;"></i>
+            <span id="notif-badge"
+              style="display:none;position:absolute;top:2px;right:2px;background:#e53e3e;color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px"></span>
+          </button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="quick-fab quick-fab-pos" id="quick-pos" title="Nueva venta POS"
+              aria-label="Nueva venta POS"><i data-lucide="shopping-cart" style="width:16px;height:16px;"></i></button>
+            <button class="quick-fab quick-fab-ticket" id="quick-ticket" title="Nuevo ticket de reparación"
+              aria-label="Nuevo ticket"><i data-lucide="wrench" style="width:16px;height:16px;"></i></button>
+          </div>
+        </div>
+      </header>
+
+      <!-- ── Dashboard ─────────────────────────────────────────────────── -->
+      <section class="view is-visible" id="dashboard-view" data-title="Home">
+        <div class="metric-grid" id="metric-grid"></div>
+        <div id="stock-alert-banner"></div>
+        <div class="split-layout">
+          <section class="home">
+            <div class="section-heading">
+              <h2>Tickets activos</h2>
+              <button class="ghost-button" data-view-target="tickets">Ver todos</button>
+            </div>
+            <div class="ticket-stack" id="active-ticket-list"></div>
+          </section>
+          <section class="home">
+            <div class="section-heading">
+              <h2>Movimiento reciente</h2>
+              <button class="ghost-button" data-view-target="finance">Finanzas</button>
+            </div>
+            <div class="activity-list" id="recent-activity"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ── Clientes ──────────────────────────────────────────────────── -->
+      <section class="view" id="clients-view" data-title="Clientes">
+        <div class="section-heading">
+          <h2>Registro de clientes</h2>
+          <div class="action-row">
+            <button class="ghost-button" data-export-sheet="clients">Excel</button>
+            <button class="primary-action" data-open-form="client">+ Cliente</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Contacto</th>
+                <th>Equipo</th>
+                <th>Ultima visita</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="clients-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── Productos ─────────────────────────────────────────────────── -->
+      <section class="view" id="products-view" data-title="Productos">
+        <div class="section-heading">
+          <h2>Productos y refacciones</h2>
+          <div class="action-row">
+            <div style="display:flex;gap:6px" id="product-type-bar">
+              <button class="mini-button ptype-filter is-active" data-ptype="all">Todos</button>
+              <button class="mini-button ptype-filter" data-ptype="producto">Vendibles</button>
+              <button class="mini-button ptype-filter" data-ptype="refaccion">Refacciones</button>
+              <button class="mini-button ptype-filter" data-ptype="insumo">Insumos</button>
+            </div>
+            <button class="ghost-button" id="btn-movimiento">± Movimiento</button>
+            <button class="ghost-button" data-export-sheet="products">XLS</button>
+            <button class="primary-action" data-open-form="product">+ Producto</button>
+          </div>
+        </div>
+        <div id="products-grid"></div>
+      </section>
+
+      <!-- ── Cotizaciones ─────────────────────────────────────────────── -->
+      <section class="view" id="cotizaciones-view" data-title="Cotizaciones">
+        <div class="section-heading">
+          <h2>Cotizaciones pendientes</h2>
+          <button class="primary-action" id="new-quote-btn">+ Cotización</button>
+        </div>
+        <p class="muted" style="margin-bottom:16px;font-size:13px">Presupuestos antes de ser aprobados. Pulsa
+          <strong>Aprobar</strong> para convertir a ticket activo.</p>
+        <div class="inventory-grid" id="cotizaciones-board"
+          style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
+      </section>
+
+      <!-- ── Tickets ───────────────────────────────────────────────────── -->
+      <section class="view" id="tickets-view" data-title="Tickets">
+        <div class="section-heading">
+          <h2>Tickets de servicio</h2>
+          <div class="action-row">
+            <button class="ghost-button" data-export-sheet="tickets">Excel</button>
+            <button class="primary-action" data-open-form="ticket">+ Ticket</button>
+          </div>
+        </div>
+        <div class="kanban" id="ticket-board"></div>
+      </section>
+
+      <!-- ── Insumos ───────────────────────────────────────────────────── -->
+      <section class="view" id="supplies-view" data-title="Insumos">
+        <div class="section-heading">
+          <h2>Compras de insumos</h2>
+          <div class="action-row">
+            <button class="ghost-button" data-export-sheet="supplies">Excel</button>
+            <button class="primary-action" data-open-form="supply">+ Compra</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Proveedor</th>
+                <th>Insumo</th>
+                <th>Cantidad</th>
+                <th>Total</th>
+                <th>Recibo</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="supplies-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── Punto de Venta ─────────────────────────────────────────── -->
+      <section class="view" id="pos-view" data-title="Punto de Venta">
+        <div class="section-heading">
+          <h2>Punto de Venta</h2>
+        </div>
+        <div class="pos-layout">
+          <div class="pos-catalog-panel" id="pos-catalog-panel">
+            <!-- Catálogo renderizado por renderPos() -->
+          </div>
+          <div class="pos-cart-panel" id="pos-cart-panel">
+            <!-- Carrito renderizado por renderPos() -->
+          </div>
+        </div>
+        <div id="pos-history" style="margin-top:28px"></div>
+      </section>
+
+      <!-- ── Tabla de Precios ───────────────────────────────────────── -->
+      <section class="view" id="precios-view" data-title="Tabla de Precios">
+        <div class="section-heading">
+          <h2>Tabla de precios</h2>
+          <span class="role-badge role-admin">Admin</span>
+        </div>
+        <div id="precios-cotizador"></div>
+        <div id="precios-service-types"></div>
+        <div id="precios-matrix"></div>
+      </section>
+
+      <!-- ── Finanzas ──────────────────────────────────────────────────── -->
+      <section class="view" id="finance-view" data-title="Finanzas">
+        <!-- top bar: title + period filters + action buttons -->
+        <div class="section-heading" style="flex-wrap:wrap;gap:10px">
+          <h2>Ingresos y egresos</h2>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto">
+            <div id="finance-period-bar" style="display:flex;gap:6px">
+              <button class="mini-button fin-filter is-active" data-fin="month">Este mes</button>
+              <button class="mini-button fin-filter" data-fin="today">Hoy</button>
+              <button class="mini-button fin-filter" data-fin="week">7 días</button>
+              <button class="mini-button fin-filter" data-fin="all">Todo</button>
+            </div>
+            <button class="ghost-button" data-export-sheet="transactions">XLS</button>
+            <button class="mini-button" id="btn-new-ingreso" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>
+            <button class="mini-button danger-btn" id="btn-new-egreso" onclick="openTransactionForm('Egreso')">+
+              Egreso</button>
+          </div>
+        </div>
+        <!-- metrics row -->
+        <div id="finance-metrics" style="margin-bottom:20px"></div>
+        <!-- transaction table -->
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Concepto</th>
+                <th>Categoría</th>
+                <th style="text-align:right">Monto</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="transactions-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── Reportes ──────────────────────────────────────────────────── -->
+      <section class="view" id="reports-view" data-title="Reportes">
+        <div class="section-heading">
+          <h2>Reportes y analítica</h2>
+          <div style="display:flex;gap:8px;align-items:center" id="reports-date-filter">
+            <button class="mini-button rpt-filter" data-rpt="today">Hoy</button>
+            <button class="mini-button rpt-filter" data-rpt="week">7 días</button>
+            <button class="mini-button rpt-filter is-active" data-rpt="month">Mes</button>
+            <button class="mini-button rpt-filter" data-rpt="all">Todo</button>
+            <button class="ghost-button" id="export-data" data-export-sheet="" title="Exportar todo a Excel"
+              style="margin-left:8px">📊 Excel</button>
+          </div>
+        </div>
+        <div class="report-grid" id="reports-grid"></div>
+        <div id="reports-cash"></div>
+        <div id="reports-profit"></div>
+        <div id="reports-pos"></div>
+        <div id="reports-cotizaciones"></div>
+        <div id="reports-monthly"></div>
+        <div id="reports-tickets"></div>
+        <div id="reports-devices"></div>
+        <div id="reports-stock"></div>
+        <div id="reports-productivity"></div>
+      </section>
+
+      <!-- ── Usuarios (Admin + IT) ─────────────────────────────────────── -->
+      <section class="view" id="users-view" data-title="Usuarios">
+        <div class="section-heading">
+          <h2>Gestión de usuarios</h2>
+          <button class="primary-action" data-open-form="employee">+ Usuario</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Email</th>
+                <th>Rol</th>
+                <th>Sucursal</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="users-table"></tbody>
+          </table>
+        </div>
+        <div id="permissions-editor" style="margin-top:32px"></div>
+      </section>
+
+      <!-- ── Soporte IT ─────────────────────────────────────────────────── -->
+      <section class="view" id="soporte-view" data-title="Soporte IT">
+        <div class="section-heading">
+          <h2>Kanban de soporte</h2>
+          <button class="primary-action" data-open-form="supportTasks">+ Tarea</button>
+        </div>
+        <div class="kanban" id="support-board"></div>
+      </section>
+
+      <!-- ── Diseño (Marketing / IT) — contenido dinámico por sucursal ──── -->
+      <section class="view" id="diseno-view" data-title="Diseño">
+        <div class="section-heading">
+          <h2>Recursos de diseño</h2>
+          <span id="diseno-brand-badge"></span>
+        </div>
+
+        <!-- Herramientas — se rellena dinámicamente por renderDiseno() (editable) -->
+        <div id="marketing-links-grid" style="margin-bottom:28px"></div>
+
+        <!-- Brand tokens -->
+        <div class="section-heading">
+          <h2>Paleta de marca</h2>
+        </div>
+        <div class="brand-tokens-grid" id="brand-tokens-grid" style="margin-bottom:28px">
+          <div class="token-swatch" style="background:var(--fz-primary)">
+            <span id="token-primary-hex">#2F6FFF</span><small>Primary · Botones, CTAs</small>
+          </div>
+          <div class="token-swatch" style="background:var(--fz-secondary)">
+            <span id="token-secondary-hex">#4A8DFF</span><small>Secondary · Gradientes</small>
+          </div>
+          <div class="token-swatch" style="background:var(--fz-deep)">
+            <span id="token-deep-hex">#1F4FCC</span><small>Deep · Sombras, fondo</small>
+          </div>
+          <div class="token-swatch" style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.12)">
+            <span>#0A0A0A</span><small>Base Black · Fondo premium</small>
+          </div>
+          <div class="token-swatch" style="background:#1c1c1c;border:1px solid rgba(255,255,255,0.08)">
+            <span>#1C1C1C</span><small>Dark Gray · Cards, secciones</small>
+          </div>
+          <div class="token-swatch" style="background:#ffffff;color:#0a0a0a">
+            <span>#FFFFFF</span><small>White · Texto principal</small>
+          </div>
+          <div class="token-swatch" style="background:#bfbfbf;color:#0a0a0a">
+            <span>#BFBFBF</span><small>Light Gray · Texto secundario</small>
+          </div>
+        </div>
+
+        <!-- Tipografía (estática, aplica a ambas marcas) -->
+        <div class="section-heading">
+          <h2>Tipografía</h2>
+        </div>
+        <div class="marketing-grid">
+          <div class="marketing-card" style="cursor:default">
+            <strong
+              style="font-size:24px;font-family:'Orbitron',sans-serif;font-weight:700;letter-spacing:2px">ORBITRON</strong>
+            <p>Principal · Bold 700 · Headings y logotipos</p>
+            <p style="margin-top:8px;font-size:11px;opacity:0.5" id="diseno-tagline-sample">WE FIX FAST. YOU RELAX.</p>
+          </div>
+          <div class="marketing-card" style="cursor:default">
+            <strong style="font-size:22px;font-family:'Roboto',sans-serif;font-style:italic;font-weight:400">Roboto
+              Italic</strong>
+            <p>Secundaria · Body text · Sentencias claras</p>
+            <p style="margin-top:8px;font-size:11px;font-style:italic;opacity:0.5">Reparación profesional ·
+              Microsoldadura experta</p>
+          </div>
+          <div class="marketing-card" style="cursor:default">
+            <strong style="font-size:18px">Copys clave</strong>
+            <p style="margin-top:8px;line-height:1.8" id="diseno-copys">
+              "WE FIX FAST. YOU RELAX."<br>
+              "REPARACIÓN PROFESIONAL"<br>
+              "MICROSOLDADURA EXPERTA"<br>
+              "TU EQUIPO EN BUENAS MANOS"
+            </p>
+          </div>
+        </div>
+
+        <!-- Editor de paleta y logo de marca (editable por Marketing) -->
+        <div id="brand-palette-editor"></div>
+      </section>
+
+      <!-- ── Automatización (Marketing / IT) — flujos por sucursal ─────── -->
+      <section class="view" id="automatizacion-view" data-title="Automatización">
+        <div class="section-heading">
+          <h2>Herramientas de automatización</h2>
+          <span class="role-badge role-marketing">Marketing</span>
+        </div>
+
+        <!-- Herramientas — se renderizan dinámicamente (editables por Marketing) -->
+        <div id="auto-tools-grid" style="margin-bottom:28px"></div>
+
+        <!-- Flujos sugeridos — se renderizan dinámicamente por sucursal desde renderDiseno() -->
+        <div class="section-heading">
+          <h2>Flujos sugeridos</h2>
+        </div>
+        <div class="auto-flows-grid" id="auto-flows-grid"></div>
+
+        <!-- Mensajes rápidos (repertorio copiable) -->
+        <div id="quick-messages-manager"></div>
+        <!-- Códigos de descuento — gestionados por Marketing -->
+        <div id="discount-manager"></div>
+        <!-- Plantillas WhatsApp para tickets -->
+        <div id="wa-templates-manager"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ── Modal ────────────────────────────────────────────────────────────── -->
+  <dialog class="modal" id="record-modal">
+    <form method="dialog" id="record-form">
       <div class="modal-header">
         <div>
-          <small class="eyebrow" id="abono-modal-eyebrow">Pago parcial</small>
-          <h2 class="modal-title" id="abono-modal-title">Registrar abono</h2>
+          <p class="eyebrow" id="modal-eyebrow">Nuevo registro</p>
+          <h2 id="modal-title">Registro</h2>
         </div>
-        <button class="icon-button" type="button" id="close-abono-modal" aria-label="Cerrar">✕</button>
+        <button class="icon-button" type="button" id="close-modal" aria-label="Cerrar">✕</button>
       </div>
-      <div class="modal-body">
-        <div id="abono-summary" style="margin-bottom:20px"></div>
-        <form id="abono-form" class="form-fields">
-          <div class="field">
-            <label for="abono-amount">Monto del abono</label>
-            <input id="abono-amount" type="number" min="0.01" step="0.01" required placeholder="0.00" />
-          </div>
-          <div class="field">
-            <label for="abono-method">Método de pago</label>
-            <select id="abono-method">
-              <option>Efectivo</option>
-              <option>Transferencia</option>
-              <option>Tarjeta</option>
-              <option>Otro</option>
-            </select>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="ghost-button" id="cancel-abono">Cancelar</button>
-            <button type="submit" class="primary-action">Guardar abono</button>
-          </div>
-        </form>
-      </div>
-    </dialog>
+      <div class="form-grid" id="form-fields"></div>
+      <menu class="modal-actions">
+        <button class="ghost-button" type="button" id="cancel-record">Cancelar</button>
+        <button class="primary-action" id="save-record" value="default">Guardar</button>
+      </menu>
+    </form>
+  </dialog>
 
-    <!-- ── Confirm modal ────────────────────────────────────────────────────── -->
-    <dialog class="modal" id="confirm-modal" style="max-width:380px">
-      <div class="modal-header" style="border-bottom:none;padding-bottom:0">
-        <h2 class="modal-title" id="confirm-modal-title">Confirmar acción</h2>
-      </div>
-      <p id="confirm-modal-message" style="margin:12px 0 24px;color:rgba(255,255,255,.72);font-size:14px;line-height:1.55"></p>
-      <div style="display:flex;justify-content:flex-end;gap:10px">
-        <form method="dialog"><button class="ghost-button" type="submit">Cancelar</button></form>
-        <button class="primary-action" id="confirm-modal-ok">Confirmar</button>
-      </div>
-    </dialog>
+  <!-- ── Print area ───────────────────────────────────────────────────────── -->
+  <section class="print-receipt" id="print-receipt" aria-hidden="true"></section>
 
-    <!-- ── Help / IT modal ──────────────────────────────────────────────────── -->
-    <dialog class="modal help-modal" id="help-modal">
-      <form id="help-form">
-        <div class="modal-header">
-          <div>
-            <p class="eyebrow">Soporte interno</p>
-            <h2 id="help-modal-title">Contactar a IT</h2>
-          </div>
-          <button class="icon-button" type="button" id="close-help-modal" aria-label="Cerrar">✕</button>
+  <!-- ── Movimiento de inventario modal ───────────────────────────────────── -->
+  <dialog class="modal" id="movimiento-modal" style="max-width:420px">
+    <div class="modal-header">
+      <div><small class="eyebrow">Inventario</small>
+        <h2 class="modal-title">Registrar movimiento</h2>
+      </div>
+      <button class="icon-button" type="button" id="close-movimiento-modal" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="movimiento-form" class="form-fields">
+        <div class="field">
+          <label for="mov-product">Producto</label>
+          <select id="mov-product"></select>
         </div>
-
-        <div class="help-form-body">
-          <div class="field">
-            <label for="help-type">Tipo de solicitud</label>
-            <select id="help-type" name="help-type" required>
-              <option value="">— Selecciona un tipo —</option>
-              <option value="Problema">🐛 Reportar un problema</option>
-              <option value="Mejora">💡 Sugerir una mejora</option>
-              <option value="Acceso">🔐 Solicitud de acceso o permisos</option>
-              <option value="Capacitacion">📚 Solicitar capacitación</option>
-              <option value="Otro">💬 Otro</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="help-title">Título breve</label>
-            <input id="help-title" name="help-title" type="text"
-              placeholder="Ej: No puedo ver los tickets de Puebla" required />
-          </div>
-
-          <div class="field is-wide">
-            <label for="help-desc">Descripción</label>
-            <textarea id="help-desc" name="help-desc" rows="4"
-              placeholder="Describe el problema o sugerencia con el mayor detalle posible..."
-              required style="resize:vertical;min-height:100px"></textarea>
-          </div>
-
-          <div class="help-priority-row">
-            <label>Prioridad</label>
-            <div class="priority-options">
-              <label class="priority-chip">
-                <input type="radio" name="help-priority" value="Normal" checked />
-                <span>Normal</span>
-              </label>
-              <label class="priority-chip">
-                <input type="radio" name="help-priority" value="Media" />
-                <span>Media</span>
-              </label>
-              <label class="priority-chip">
-                <input type="radio" name="help-priority" value="Alta" />
-                <span>Alta</span>
-              </label>
-              <label class="priority-chip">
-                <input type="radio" name="help-priority" value="Urgente" />
-                <span class="urgente">Urgente</span>
-              </label>
-            </div>
-          </div>
+        <div class="field">
+          <label for="mov-type">Tipo de movimiento</label>
+          <select id="mov-type">
+            <option value="entrada">📥 Entrada (reposición)</option>
+            <option value="salida">📤 Salida (uso/venta)</option>
+            <option value="ajuste">✏️ Ajuste de inventario</option>
+            <option value="merma">🗑 Merma / pérdida</option>
+          </select>
         </div>
-
-        <menu class="modal-actions">
-          <button class="ghost-button" type="button" id="cancel-help">Cancelar</button>
-          <button class="primary-action" type="submit" id="send-help">Enviar a IT</button>
-        </menu>
+        <div class="field">
+          <label for="mov-qty">Cantidad</label>
+          <input id="mov-qty" type="number" min="0.01" step="0.01" required placeholder="1" />
+        </div>
+        <div class="field">
+          <label for="mov-note">Nota (opcional)</label>
+          <input id="mov-note" type="text" placeholder="Motivo del ajuste..." />
+        </div>
+        <div id="mov-stock-preview"
+          style="font-size:12px;padding:8px 12px;background:rgba(255,255,255,.05);border-radius:6px;margin-top:4px">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost-button" id="cancel-movimiento">Cancelar</button>
+          <button type="submit" class="primary-action">Registrar</button>
+        </div>
       </form>
-    </dialog>
+    </div>
+  </dialog>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./src/supabase-config.js"></script>
-    <script src="./src/brand-config.js"></script>
-    <script src="./src/app.js"></script>
-    <script>document.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });</script>
-  </body>
+  <!-- ── Abono modal ────────────────────────────────────────────────────────── -->
+  <dialog class="modal" id="abono-modal" style="max-width:380px">
+    <div class="modal-header">
+      <div>
+        <small class="eyebrow" id="abono-modal-eyebrow">Pago parcial</small>
+        <h2 class="modal-title" id="abono-modal-title">Registrar abono</h2>
+      </div>
+      <button class="icon-button" type="button" id="close-abono-modal" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="abono-summary" style="margin-bottom:20px"></div>
+      <form id="abono-form" class="form-fields">
+        <div class="field">
+          <label for="abono-amount">Monto del abono</label>
+          <input id="abono-amount" type="number" min="0.01" step="0.01" required placeholder="0.00" />
+        </div>
+        <div class="field">
+          <label for="abono-method">Método de pago</label>
+          <select id="abono-method">
+            <option>Efectivo</option>
+            <option>Transferencia</option>
+            <option>Tarjeta</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost-button" id="cancel-abono">Cancelar</button>
+          <button type="submit" class="primary-action">Guardar abono</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- ── Confirm modal ────────────────────────────────────────────────────── -->
+  <dialog class="modal" id="confirm-modal" style="max-width:380px">
+    <div class="modal-header" style="border-bottom:none;padding-bottom:0">
+      <h2 class="modal-title" id="confirm-modal-title">Confirmar acción</h2>
+    </div>
+    <p id="confirm-modal-message"
+      style="margin:12px 0 24px;color:rgba(255,255,255,.72);font-size:14px;line-height:1.55"></p>
+    <div style="display:flex;justify-content:flex-end;gap:10px">
+      <form method="dialog"><button class="ghost-button" type="submit">Cancelar</button></form>
+      <button class="primary-action" id="confirm-modal-ok">Confirmar</button>
+    </div>
+  </dialog>
+
+  <!-- ── Help / IT modal ──────────────────────────────────────────────────── -->
+  <dialog class="modal help-modal" id="help-modal">
+    <form id="help-form">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Soporte interno</p>
+          <h2 id="help-modal-title">Contactar a IT</h2>
+        </div>
+        <button class="icon-button" type="button" id="close-help-modal" aria-label="Cerrar">✕</button>
+      </div>
+
+      <div class="help-form-body">
+        <div class="field">
+          <label for="help-type">Tipo de solicitud</label>
+          <select id="help-type" name="help-type" required>
+            <option value="">— Selecciona un tipo —</option>
+            <option value="Problema">🐛 Reportar un problema</option>
+            <option value="Mejora">💡 Sugerir una mejora</option>
+            <option value="Acceso">🔐 Solicitud de acceso o permisos</option>
+            <option value="Capacitacion">📚 Solicitar capacitación</option>
+            <option value="Otro">💬 Otro</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="help-title">Título breve</label>
+          <input id="help-title" name="help-title" type="text" placeholder="Ej: No puedo ver los tickets de Puebla"
+            required />
+        </div>
+
+        <div class="field is-wide">
+          <label for="help-desc">Descripción</label>
+          <textarea id="help-desc" name="help-desc" rows="4"
+            placeholder="Describe el problema o sugerencia con el mayor detalle posible..." required
+            style="resize:vertical;min-height:100px"></textarea>
+        </div>
+
+        <div class="help-priority-row">
+          <label>Prioridad</label>
+          <div class="priority-options">
+            <label class="priority-chip">
+              <input type="radio" name="help-priority" value="Normal" checked />
+              <span>Normal</span>
+            </label>
+            <label class="priority-chip">
+              <input type="radio" name="help-priority" value="Media" />
+              <span>Media</span>
+            </label>
+            <label class="priority-chip">
+              <input type="radio" name="help-priority" value="Alta" />
+              <span>Alta</span>
+            </label>
+            <label class="priority-chip">
+              <input type="radio" name="help-priority" value="Urgente" />
+              <span class="urgente">Urgente</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <menu class="modal-actions">
+        <button class="ghost-button" type="button" id="cancel-help">Cancelar</button>
+        <button class="primary-action" type="submit" id="send-help">Enviar a IT</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./src/supabase-config.js"></script>
+  <script src="./src/brand-config.js"></script>
+  <script src="./src/app.js"></script>
+  <script>document.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });</script>
+</body>
 
 </html>
