@@ -619,6 +619,8 @@ async function loadSupabaseState() {
         discountAmount:Number(t.discount_amount||0),
         discountPct:Number(t.discount_pct||0),
         serviceType:t.service_type||"",
+        cotizacionRef:t.cotizacion_ref||"",
+        convertedToTicket:t.converted_to_ticket||"",
         deviceId:t.device_id||null,
         // Device fields — enable search by IMEI/serial and pre-populate edit form
         imei:dev?.imei||"",
@@ -935,8 +937,12 @@ function quoteCard(ticket, perms) {
       </div>`
     : (repair > 0 ? `<div class="ticket-detail-grid"><span>Costo estimado</span><strong>${money.format(repair)}</strong></div>` : "");
 
+  const convertedBadge = ticket.convertedToTicket
+    ? `<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(46,204,113,.15);color:#2ecc71;border:1px solid rgba(46,204,113,.3)">✓ Convertida → ${escapeHtml(ticket.convertedToTicket)}</span>`
+    : "";
+
   return `<article class="ticket-card">
-    <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span></div>
+    <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span>${convertedBadge}</div>
     <div class="ticket-topline"><strong>${escapeHtml(ticket.client)}</strong><span class="muted">${escapeHtml(ticket.createdAt)}</span></div>
     <span class="muted">${escapeHtml(ticket.productName)}</span>
     ${ticket.issue ? `<p style="margin:4px 0">${escapeHtml(ticket.issue)}</p>` : ""}
@@ -944,7 +950,7 @@ function quoteCard(ticket, perms) {
     <div class="ticket-actions">
       <button class="mini-button" data-print-cotizacion="${ticket.id}">🖨 Imprimir</button>
       <button class="mini-button" style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);color:#25d366" data-wa-quote="${ticket.id}">💬 WhatsApp</button>
-      <button class="primary-action" style="font-size:12px;padding:5px 12px;min-height:0" data-approve-quote="${ticket.id}">✓ Aprobar</button>
+      ${!ticket.convertedToTicket ? `<button class="primary-action" style="font-size:12px;padding:5px 12px;min-height:0" data-approve-quote="${ticket.id}">✓ Aprobar</button>` : ""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
     </div>
@@ -958,11 +964,27 @@ function approveQuoteToTicket(ticketId) {
       const ticket = state.tickets.find(t => t.id === ticketId);
       if (!ticket) return;
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
+
+      // Assign a new [FZ] tracking number for the ticket
+      const newTracking = nextTracking(nextTicketSequence());
+      const cotRef      = ticket.tracking; // e.g. [COT] 0003
+
       const idx = state.tickets.findIndex(t => t.id === ticketId);
-      if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Recibido" };
+      if (idx !== -1) state.tickets[idx] = {
+        ...ticket, status: "Recibido",
+        tracking: newTracking,
+        cotizacionRef: cotRef,
+        convertedToTicket: newTracking,
+      };
+
       if (dataMode === "remote" && isUUID) {
         try {
-          await updateRemoteTicket(ticketId, { ...ticket, status: "Recibido" });
+          await supabaseClient.from("service_tickets").update({
+            stage:                "Recibido",
+            tracking_number:      newTracking,
+            cotizacion_ref:       cotRef,
+            converted_to_ticket:  newTracking,
+          }).eq("id", ticketId);
           try { await reloadState(); } catch(e) { console.warn(e); }
         } catch(err) {
           if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Cotizacion" };
@@ -970,7 +992,7 @@ function approveQuoteToTicket(ticketId) {
         }
       }
       render();
-      showToast("✓ Cotización aprobada — ticket movido a Recibido");
+      showToast(`✓ Cotización ${cotRef} → Ticket ${newTracking} creado en Recibido`);
     }
   });
 }
@@ -983,7 +1005,7 @@ function ticketCard(ticket, perms) {
   return `<article class="ticket-card" draggable="true"
     ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
-    <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span></div>
+    <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span>${ticket.cotizacionRef?`<span style="font-size:10px;color:rgba(255,255,255,.4)" title="Originado de cotización ${ticket.cotizacionRef}">← ${escapeHtml(ticket.cotizacionRef)}</span>`:"" }</div>
     <div class="ticket-topline"><strong>${escapeHtml(ticket.client)}</strong><span class="status ${ticket.priority==="Urgente"||ticket.priority==="Alta"?"urgent":""}">${ticket.priority}</span></div>
     <span class="muted">${escapeHtml(ticket.productName||ticket.device)}</span>
     <p>${escapeHtml(ticket.issue)}</p>
@@ -1193,6 +1215,11 @@ function renderCotizador() {
             style="margin-top:10px;font-size:11px;padding:3px 10px;border-radius:20px;
             background:rgba(var(--fz-primary-rgb),.14);color:var(--fz-primary);min-height:20px"></div>
           <div id="cot-garantia-note" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.4)"></div>
+          <button type="button" id="cot-crear-cotizacion"
+            style="margin-top:14px;width:100%;padding:9px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;
+            border:1.5px solid rgba(var(--fz-primary-rgb),.45);background:rgba(var(--fz-primary-rgb),.12);color:var(--fz-primary)">
+            📋 Crear cotización con este precio
+          </button>
         </div>
       </div>
 
@@ -1299,6 +1326,19 @@ function renderCotizador() {
   });
 
   insumoInp?.addEventListener("input", recalc);
+
+  // ── Crear cotización desde el cotizador ─────────────────────────────────
+  el.querySelector("#cot-crear-cotizacion")?.addEventListener("click", () => {
+    const insumo = Number(insumoInp?.value) || 0;
+    if (insumo <= 0) { showErrorToast("Ingresa el costo del insumo primero"); return; }
+    const cfg2      = isPriv ? readSlidersConfig(el) : loadPricingConfig();
+    const res       = calcPrecio({ insumo, tipo: cotTipo, config: cfg2 });
+    const svcLabel  = cotTipo === "glass" ? "Cambio de glass" : "Cambio de pantalla";
+    const prefill = {
+      quoteItems: [{ type:"Servicio", description: svcLabel, qty:1, unitPrice: Math.round(res.precioFinal), insumoCost: insumo }],
+    };
+    openForm("cotizacion", prefill);
+  });
 
   if (isPriv) {
     el.querySelector("#cot-toggle-detail")?.addEventListener("click", () => {
