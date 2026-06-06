@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>FixZone — Técnico</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #085ACB;
+      --primary-dark: #0648a8;
+      --success: #16a34a;
+      --warn: #d97706;
+      --bg: #0d0f14;
+      --surface: #161922;
+      --border: #252a38;
+      --text: #f0f2f8;
+      --muted: #7a8094;
+      --radius: 14px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding-bottom: 40px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header img { height: 28px; }
+    .header-tracking {
+      font-size: 13px;
+      color: var(--muted);
+      margin-left: auto;
+      font-family: monospace;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Main layout ── */
+    main { padding: 20px 16px; max-width: 480px; margin: 0 auto; }
+
+    /* ── Info card ── */
+    .info-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 24px;
+    }
+    .info-card .client { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .info-card .device { font-size: 14px; color: var(--muted); }
+    .info-card .folio  { font-size: 11px; color: var(--muted); margin-top: 8px; font-family: monospace; letter-spacing: 0.04em; }
+
+    /* ── Stage buttons ── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .stage-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+    .stage-btn {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .stage-btn:active { transform: scale(0.96); }
+    .stage-btn .icon { font-size: 26px; line-height: 1; }
+    .stage-btn .label { font-size: 12px; font-weight: 600; text-align: center; color: var(--muted); }
+
+    .stage-btn.active {
+      border-color: var(--primary);
+      background: rgba(8, 90, 203, 0.12);
+    }
+    .stage-btn.active .label { color: var(--text); }
+
+    .stage-btn.done { border-color: var(--success); background: rgba(22, 163, 74, 0.1); }
+    .stage-btn.done .label { color: #4ade80; }
+
+    /* ── Photo section ── */
+    .photo-section { margin-bottom: 24px; }
+    .photo-upload-btn {
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      padding: 16px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      margin-bottom: 14px;
+    }
+    .photo-upload-btn:active { transform: scale(0.97); background: var(--primary-dark); }
+    .photo-upload-btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+    #photo-input { display: none; }
+
+    .uploading-indicator {
+      display: none;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 8px;
+    }
+    .uploading-indicator.visible { display: block; }
+
+    /* ── Photo grid ── */
+    .photos-by-stage { display: flex; flex-direction: column; gap: 20px; }
+    .stage-photo-group {}
+    .stage-photo-group-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stage-photo-group-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .photo-thumb {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .photo-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* ── Loading / error states ── */
+    .loading-state, .error-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .error-state { color: #f87171; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #1e2532;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 100px;
+      font-size: 14px;
+      font-weight: 500;
+      transition: transform 0.25s ease;
+      z-index: 100;
+      white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.success { border-color: var(--success); color: #4ade80; }
+    #toast.error   { border-color: #ef4444; color: #f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <img src="./assets/brand/fixzone/fixzone-logo-h.png"
+       onerror="this.style.display='none'"
+       alt="FixZone">
+  <span style="font-size:15px;font-weight:700;color:var(--text)">Técnico</span>
+  <span class="header-tracking" id="header-tracking">—</span>
+</header>
+
+<main id="app">
+  <div class="loading-state">
+    <div class="spinner"></div>
+    <p>Cargando ticket…</p>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+  const SUPABASE_URL     = 'https://zwmffnrkrrowmchluyyy.supabase.co';
+  const SUPABASE_ANON    = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3bWZmbnJrcnJvd21jaGx1eXl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NDUxODMsImV4cCI6MjA5MzUyMTE4M30.5wb9IlptMdgP5If--D9Pca5sLn0CXNKX7SZ1ifK0jew';
+  const supabase         = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  const STAGE_MAP = {
+    'Recibido':      { label: 'Recibido',    icon: '📥' },
+    'En reparacion': { label: 'En proceso',  icon: '⚙️' },
+    'Listo':         { label: 'Listo',       icon: '✅' },
+  };
+  const STAGE_ORDER = ['Recibido', 'En reparacion', 'Listo'];
+
+  const params    = new URLSearchParams(location.search);
+  const ticketId  = params.get('id');
+  const app       = document.getElementById('app');
+  const headerTracking = document.getElementById('header-tracking');
+
+  let ticket      = null;
+  let photos      = [];
+  let currentStage = null;
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, type = '') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className   = 'show ' + type;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = ''; }, 2800);
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  if (!ticketId) {
+    app.innerHTML = `<div class="error-state"><p>No se proporcionó un ticket.</p></div>`;
+  } else {
+    loadTicket();
+  }
+
+  async function loadTicket() {
+    const { data, error } = await supabase
+      .from('service_tickets')
+      .select('id, tracking_number, customer_name, product_name, stage')
+      .eq('id', ticketId)
+      .single();
+
+    if (error || !data) {
+      app.innerHTML = `<div class="error-state"><p>Ticket no encontrado.</p></div>`;
+      return;
+    }
+
+    ticket       = data;
+    currentStage = data.stage;
+    headerTracking.textContent = data.tracking_number || data.id.slice(0, 8).toUpperCase();
+
+    await loadPhotos();
+    renderPage();
+  }
+
+  async function loadPhotos() {
+    const { data } = await supabase
+      .from('attachments')
+      .select('id, file_url, file_type, stage, created_at')
+      .eq('ticket_id', ticketId)
+      .order('created_at', { ascending: true });
+    photos = data || [];
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderPage() {
+    const stageInOrder = STAGE_ORDER.indexOf(currentStage);
+
+    const stageBtns = STAGE_ORDER.map((s, i) => {
+      const isActive = s === currentStage;
+      const isDone   = i < stageInOrder;
+      const cls      = isActive ? 'active' : isDone ? 'done' : '';
+      return `
+        <button class="stage-btn ${cls}" data-stage="${s}">
+          <span class="icon">${STAGE_MAP[s].icon}</span>
+          <span class="label">${STAGE_MAP[s].label}</span>
+        </button>`;
+    }).join('');
+
+    const photosByStage = {};
+    for (const p of photos) {
+      const key = p.stage || 'Sin etapa';
+      if (!photosByStage[key]) photosByStage[key] = [];
+      photosByStage[key].push(p);
+    }
+
+    const photoGroups = Object.entries(photosByStage).map(([stage, imgs]) => {
+      const thumbs = imgs.map(img => {
+        if ((img.file_type || '').startsWith('image/') || img.file_url.match(/\.(jpe?g|png|webp|gif)(\?|$)/i)) {
+          return `<div class="photo-thumb"><img src="${img.file_url}" loading="lazy" alt="foto"></div>`;
+        }
+        return `<div class="photo-thumb" style="display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">PDF</div>`;
+      }).join('');
+      const stageLabel = STAGE_MAP[stage]?.label || stage;
+      return `
+        <div class="stage-photo-group">
+          <div class="stage-photo-group-label">${stageLabel}</div>
+          <div class="photo-grid">${thumbs}</div>
+        </div>`;
+    }).join('');
+
+    const currentStageLabel = STAGE_MAP[currentStage]?.label || currentStage;
+
+    app.innerHTML = `
+      <div class="info-card">
+        <div class="client">${esc(ticket.customer_name)}</div>
+        <div class="device">${esc(ticket.product_name)}</div>
+        <div class="folio">${esc(ticket.tracking_number || ticket.id)}</div>
+      </div>
+
+      <p class="section-label">Etapa del ticket</p>
+      <div class="stage-grid">${stageBtns}</div>
+
+      <div class="photo-section">
+        <p class="section-label">Fotos — ${currentStageLabel}</p>
+        <button class="photo-upload-btn" id="photo-btn">
+          📷 Tomar foto
+        </button>
+        <input type="file" id="photo-input" accept="image/*" capture="environment">
+        <div class="uploading-indicator" id="uploading">Subiendo foto…</div>
+      </div>
+
+      ${photos.length > 0 ? `
+        <p class="section-label">Fotos del ticket</p>
+        <div class="photos-by-stage">${photoGroups}</div>
+      ` : ''}
+    `;
+
+    // Wire stage buttons
+    app.querySelectorAll('.stage-btn').forEach(btn => {
+      btn.addEventListener('click', () => changeStage(btn.dataset.stage));
+    });
+
+    // Wire photo upload
+    document.getElementById('photo-btn').addEventListener('click', () => {
+      document.getElementById('photo-input').click();
+    });
+    document.getElementById('photo-input').addEventListener('change', handlePhotoUpload);
+  }
+
+  // ── Stage change ──────────────────────────────────────────────────────────
+  async function changeStage(newStage) {
+    if (newStage === currentStage) return;
+
+    // Optimistic UI
+    const oldStage = currentStage;
+    currentStage   = newStage;
+    renderPage();
+
+    const { error } = await supabase.rpc('update_ticket_stage_public', {
+      p_ticket_id: ticketId,
+      p_new_stage: newStage,
+    });
+
+    if (error) {
+      currentStage = oldStage;
+      renderPage();
+      showToast('Error al cambiar etapa', 'error');
+      return;
+    }
+
+    ticket.stage = newStage;
+    showToast(`Etapa actualizada: ${STAGE_MAP[newStage]?.label}`, 'success');
+  }
+
+  // ── Photo upload ──────────────────────────────────────────────────────────
+  async function handlePhotoUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const indicator = document.getElementById('uploading');
+    if (indicator) indicator.classList.add('visible');
+
+    const ext  = file.name.split('.').pop() || 'jpg';
+    const path = `tickets/${ticketId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from('ticket-photos')
+      .upload(path, file, { contentType: file.type, upsert: false });
+
+    if (upErr) {
+      if (indicator) indicator.classList.remove('visible');
+      showToast('Error al subir la foto', 'error');
+      return;
+    }
+
+    const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path);
+    const publicUrl = urlData?.publicUrl;
+
+    const { error: dbErr } = await supabase.from('attachments').insert({
+      ticket_id: ticketId,
+      file_url:  publicUrl,
+      file_type: file.type,
+      label:     file.name,
+      stage:     currentStage,
+    });
+
+    if (indicator) indicator.classList.remove('visible');
+
+    if (dbErr) {
+      showToast('Foto subida pero no registrada', 'error');
+      return;
+    }
+
+    photos.push({ file_url: publicUrl, file_type: file.type, stage: currentStage, created_at: new Date().toISOString() });
+    showToast('Foto guardada', 'success');
+    renderPage();
+  }
+
+  function esc(v) {
+    return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>
