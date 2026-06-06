@@ -5212,9 +5212,8 @@ document.querySelector("#finance-view")?.addEventListener("click", e => {
   renderFinance();
 });
 
-document.querySelector("#export-data").addEventListener("click",  () => exportWorkbook());
 document.querySelectorAll("[data-export-sheet]").forEach(btn => {
-  btn.addEventListener("click", () => exportWorkbook(btn.dataset.exportSheet));
+  btn.addEventListener("click", () => exportWorkbook(btn.dataset.exportSheet || undefined));
 });
 
 // ── POS delegated events ──────────────────────────────────────────────────────
@@ -5555,7 +5554,7 @@ window.openTransactionForm = openTransactionForm;
 // Chrome/Chromium does not evaluate var() inside @page { size }, so we inject
 // a <style> with the literal value before every print call.
 function doPrint() {
-  const w = localStorage.getItem("fixzone-receipt-width") || "58mm";
+  const w = "58mm";
   let s = document.getElementById("fz-print-size");
   if (!s) { s = document.createElement("style"); s.id = "fz-print-size"; document.head.appendChild(s); }
   s.textContent = `@media print { @page { size: ${w} auto; margin: 0; } }`;
@@ -5581,8 +5580,7 @@ function printRecibo(ticket, type) {
   const D         = "────────────────────────────────────────";
   const now       = new Date();
   const timeStr   = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
-  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "58mm";
-  document.documentElement.style.setProperty("--receipt-width", receiptWidth);
+  document.documentElement.style.setProperty("--receipt-width", "58mm");
 
   const header = `
     <div class="rct-logo"><img src="${brand.logoMonoSrc||brand.logoSrc}" alt="${brand.displayName}" onerror="this.src='${brand.logoSrc}'"/></div>
@@ -5813,19 +5811,9 @@ function printTicket(ticket) {
 
 </div>`;
 
-  // Set paper width via CSS variable before printing
-  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "58mm";
-  document.documentElement.style.setProperty("--receipt-width", receiptWidth);
+  document.documentElement.style.setProperty("--receipt-width", "58mm");
   doPrint();
-  // Show size toggle in a small floating bar before print dialog
 }
-
-// Expose receipt size toggle so it can be called from the header/receipt area
-window.setReceiptWidth = function(w) {
-  localStorage.setItem("fixzone-receipt-width", w);
-  document.documentElement.style.setProperty("--receipt-width", w);
-  showToast(`✓ Tamaño de recibo: ${w}`);
-};
 
 function printCotizacion(ticket) {
   const brand   = window.getBranchBrand(ticket.branch || activeBranchId);
@@ -5837,8 +5825,7 @@ function printCotizacion(ticket) {
   const now     = new Date();
   const timeStr = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
   const client  = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
-  const receiptWidth = localStorage.getItem("fixzone-receipt-width") || "58mm";
-  document.documentElement.style.setProperty("--receipt-width", receiptWidth);
+  document.documentElement.style.setProperty("--receipt-width", "58mm");
 
   document.querySelector("#print-receipt").innerHTML = `
 <div class="rct">

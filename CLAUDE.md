@@ -50,6 +50,9 @@ There is no test suite and no linter configured.
 | `supabase/18_discount_codes.sql` | `discount_codes` table with scope, date range, usage tracking, RLS |
 | `supabase/19_nullable_customer_device.sql` | `customer_id` DROP NOT NULL in customer_devices (walk-in tickets) |
 | `supabase/20_backfill_ticket_payments.sql` | Backfills missing Ingreso transactions for tickets with paid_amount > 0 |
+| `supabase/21_service_prices.sql` | `service_types` + `service_prices` tables — price matrix device × service, RLS |
+| `supabase/21b_dedup_service_types.sql` | Deduplicates service_types and adds UNIQUE(name) constraint |
+| `supabase/22_variant_prices.sql` | Adds `variant` column to service_prices — multiple prices per cell (e.g. screen quality) |
 
 ## Architecture
 
@@ -227,6 +230,32 @@ Repertorio de mensajes de atención al cliente, copiables con un clic. Stored in
 - `loadQuickMessages()` / `saveQuickMessages(msgs)` — read/write localStorage
 - `renderQuickMessages()` — renders the section in `#quick-messages-manager` (Automatización tab). View mode shows cards with 📋 Copiar; edit mode allows add/delete/rename/reorder + Restaurar defaults.
 
+### Tabla de Precios (vista Precios)
+
+La vista `#precios-view` tiene dos secciones: la **matriz de precios** y el **cotizador rápido**.
+
+**Tabla de precios (matrix):**
+- Filas = modelos de dispositivo; columnas = tipos de servicio (`service_types`)
+- Precios guardados en `service_prices` — `UNIQUE(device_model, service_type_id, branch_id, variant)`
+- Cada celda puede tener **un precio único** o **variantes** (ej. "Original", "Genérica") — migration 22 añade columna `variant`
+- Si hay una sola variante con precio > 0, muestra el precio directo; si hay múltiples, muestra `N precios ▾` con popover
+- Tipos de servicio se gestionan (añadir/eliminar) desde la misma vista; eliminar un tipo borra todos sus precios en cascada
+- `branchServicePrices()` filtra `state.servicePrices` por `branchId` activo
+
+**Cotizador rápido** (`#precios-cotizador`):
+- Widget flotante (glass card) que aparece también en la vista Tickets
+- Sliders de equipo y servicio, muestra precio final con −35% descuento base aplicado
+- `renderCotizadorWidget(el)` — renderiza el widget en cualquier contenedor dado; llamado desde `renderPrecios()` y desde la vista Tickets
+- Color del precio cambia por tipo de servicio (`theme` object por tipo en `renderCotizadorWidget`)
+
+**State:**
+- `state.serviceTypes` — array de `{id, name, sortOrder}`
+- `state.servicePrices` — array de `{id, deviceModel, serviceTypeId, price, branchId, notes, variant}`
+
+**Pitfalls:**
+- Migrations 21 + 21b + 22 deben estar aplicadas en este orden antes de usar la vista Precios
+- `21b_dedup_service_types.sql` solo corre si ya había duplicados de una ejecución previa de 21; es seguro correrla siempre
+
 ### Print helpers
 
 - `doPrint()` — must be used instead of `window.print()` in all print functions. Injects `<style id="fz-print-size">` with a hardcoded `@page { size: Xmm auto; margin:0 }` before printing. Chrome/Chromium does not evaluate `var()` inside `@page { size }`, so the CSS custom property `--receipt-width` is ignored without this fix — resulting in Letter/A4 paper and blank space at the bottom of every receipt.
@@ -251,6 +280,9 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 16. `18_discount_codes.sql` — `discount_codes` table with scope, date range, usage tracking, RLS
 17. `19_nullable_customer_device.sql` — `customer_id` DROP NOT NULL in customer_devices
 18. `20_backfill_ticket_payments.sql` — backfill missing Ingreso transactions for paid tickets
+19. `21_service_prices.sql` — `service_types` and `service_prices` tables with RLS
+20. `21b_dedup_service_types.sql` — deduplicate service_types and add UNIQUE(name) (run only if 21 was already applied)
+21. `22_variant_prices.sql` — add `variant` column to service_prices for multi-price cells
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -298,3 +330,5 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **`markDiscountUsed` must be called after a successful save** — not before. If the INSERT/UPDATE fails after calling it, the usage counter will be incremented with no matching transaction.
 - **`renderMarketingLinksGrid` anti-accumulation**: always call it with the same DOM node reference; it internally calls `container.cloneNode(false)` + `replaceWith()`. Do not attach external click listeners to the container after calling this function — they'll be lost on the next render.
 - **Browser cache after deploy**: Cloudflare Pages may serve cached JS/CSS. Users should hard-refresh (`Cmd+Shift+R` / `Ctrl+Shift+R`) after a new deploy if they see stale styles.
+- **Tabla de Precios requires migrations 21 + 21b + 22**: Without 21, `state.serviceTypes` and `state.servicePrices` stay `[]` and the matrix renders empty. Without 22, the `variant` column is missing and multi-price upserts will fail with a constraint error.
+- **`variant` column default is `''`** (empty string, not null): the UNIQUE constraint is `(device_model, service_type_id, branch_id, variant)`. Always pass `variant: ""` when upserting a single-price cell; omitting it causes a null vs "" mismatch that creates duplicate rows.

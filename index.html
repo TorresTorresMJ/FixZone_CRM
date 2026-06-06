@@ -113,11 +113,11 @@
               <span aria-hidden="true">⌕</span>
               <input id="global-search" type="search" placeholder="Buscar cliente, ticket, producto..." />
             </label>
-            <div title="Tamaño de recibo" style="display:flex;gap:4px;align-items:center">
-              <button class="mini-button" style="font-size:10px;padding:3px 7px" onclick="setReceiptWidth('58mm')" title="Impresora 58mm">58</button>
-              <button class="mini-button" style="font-size:10px;padding:3px 7px" onclick="setReceiptWidth('80mm')" title="Impresora 80mm">80</button>
-            </div>
-            <button class="icon-button" id="export-data" title="Exportar Excel">XLS</button>
+            <button class="icon-button notif-bell" id="notif-bell-btn" title="Notificaciones" style="position:relative;font-size:18px;padding:4px 8px;background:none;border:none;cursor:pointer">
+              🔔
+              <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:#e53e3e;color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px"></span>
+            </button>
+            <button class="icon-button" id="export-data" title="Exportar Excel" style="display:none">XLS</button>
             <div style="display:flex;gap:6px;align-items:center">
               <button class="quick-fab quick-fab-pos" id="quick-pos" title="Nueva venta POS">🛒</button>
               <button class="quick-fab quick-fab-ticket" id="quick-ticket" title="Nuevo ticket de reparación">🔧</button>
@@ -290,11 +290,12 @@
         <section class="view" id="reports-view" data-title="Reportes">
           <div class="section-heading">
             <h2>Reportes y analítica</h2>
-            <div style="display:flex;gap:8px" id="reports-date-filter">
+            <div style="display:flex;gap:8px;align-items:center" id="reports-date-filter">
               <button class="mini-button rpt-filter" data-rpt="today">Hoy</button>
               <button class="mini-button rpt-filter" data-rpt="week">7 días</button>
               <button class="mini-button rpt-filter is-active" data-rpt="month">Mes</button>
               <button class="mini-button rpt-filter" data-rpt="all">Todo</button>
+              <button class="ghost-button" id="export-data" data-export-sheet="" title="Exportar todo a Excel" style="margin-left:8px">📊 Excel</button>
             </div>
           </div>
           <div class="report-grid" id="reports-grid"></div>
