@@ -5386,7 +5386,7 @@ function showTechQrModal(ticketId) {
   if (!el) {
     el = document.createElement("dialog");
     el.id = "tech-qr-modal";
-    el.style.cssText = "border:none;border-radius:16px;padding:0;max-width:420px;width:94vw;box-shadow:0 24px 64px rgba(0,0,0,.5);background:var(--fz-surface,#1e2030)";
+    el.style.cssText = "border:none;border-radius:16px;padding:0;max-width:420px;width:94vw;box-shadow:0 24px 64px rgba(0,0,0,.5);background:var(--fz-surface,#1e2030);color:var(--fz-white,#fff);";
     el.innerHTML = `
       <div style="padding:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -5397,17 +5397,17 @@ function showTechQrModal(ticketId) {
           <button id="tqm-close" style="background:none;border:none;font-size:20px;cursor:pointer;opacity:.5;padding:4px 8px">✕</button>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div style="text-align:center;background:rgba(255,255,255,.04);border-radius:10px;padding:14px">
+          <div style="text-align:center;background:rgba(255, 255, 255, 0.04);border-radius:10px;padding:14px">
             <img id="tqm-tech-qr" style="width:100%;max-width:140px;border-radius:6px;background:#fff;padding:4px" alt="QR Técnico">
-            <p style="font-size:12px;font-weight:600;margin-top:8px">📱 Técnico</p>
+            <p style="font-size:12px;font-weight:600;margin-top:8px">Técnico</p>
             <p style="font-size:10px;opacity:.5;margin-top:2px">Cambia etapa · Sube fotos</p>
-            <a id="tqm-tech-link" href="#" target="_blank" style="font-size:10px;color:var(--fz-primary,#085ACB);display:block;margin-top:6px">Abrir ↗</a>
+            <a id="tqm-tech-link" href="#" target="_blank" style="font-size:10px;color:var(--fz-primary,#ffffff);display:block;margin-top:6px">Abrir ↗</a>
           </div>
-          <div style="text-align:center;background:rgba(255,255,255,.04);border-radius:10px;padding:14px">
+          <div style="text-align:center;background:rgba(255, 255, 255, 0.04);border-radius:10px;padding:14px">
             <img id="tqm-track-qr" style="width:100%;max-width:140px;border-radius:6px;background:#fff;padding:4px" alt="QR Cliente">
-            <p style="font-size:12px;font-weight:600;margin-top:8px">🔍 Cliente</p>
-            <p style="font-size:10px;opacity:.5;margin-top:2px">Ver estado · Solo lectura</p>
-            <a id="tqm-track-link" href="#" target="_blank" style="font-size:10px;color:var(--fz-primary,#085ACB);display:block;margin-top:6px">Abrir ↗</a>
+            <p style="font-size:12px;font-weight:600;margin-top:8px">Cliente</p>
+            <p style="font-size:10px;opacity:0.5;margin-top:2px">Ver estado · Solo lectura</p>
+            <a id="tqm-track-link" href="#" target="_blank" style="font-size:10px;color:var(--fz-primary,#ffffff);display:block;margin-top:6px">Abrir ↗</a>
           </div>
         </div>
       </div>`;
