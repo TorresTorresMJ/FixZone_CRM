@@ -1077,8 +1077,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 }
 
 @keyframes toast-in {
-  from { opacity:0; transform:translateY(12px); }
-  to   { opacity:1; transform:translateY(0); }
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 .help-toast.error-toast {
   background: rgba(231,76,60,0.18);
@@ -1668,6 +1668,78 @@ input[type=number].pv-price { -moz-appearance: textfield; appearance: textfield;
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOTION SYSTEM — product register, 150-250ms, state-driven
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Easing tokens */
+:root {
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-quart:  cubic-bezier(0.5, 0, 0.75, 0);
+}
+
+/* ── View transitions ───────────────────────────────────────────────────── */
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes view-leave {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-6px); }
+}
+.view.is-entering {
+  animation: view-enter 220ms var(--ease-out-expo) both;
+}
+.view.is-leaving {
+  display: block !important;
+  animation: view-leave 120ms var(--ease-in-quart) both;
+  pointer-events: none;
+}
+
+/* ── Card stagger — solo en vistas que entran (is-entering) ─────────────── */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+#dashboard-view.is-entering .metric {
+  animation: card-enter 380ms var(--ease-out-expo) calc(var(--i, 0) * 55ms) both;
+}
+#tickets-view.is-entering .ticket-card {
+  animation: card-enter 300ms var(--ease-out-expo) calc(var(--i, 0) * 28ms) both;
+}
+
+/* ── Modal open/close ───────────────────────────────────────────────────── */
+@keyframes modal-enter {
+  from { opacity: 0; transform: scale(0.97) translateY(14px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+@keyframes modal-leave {
+  from { opacity: 1; transform: scale(1)    translateY(0); }
+  to   { opacity: 0; transform: scale(0.97) translateY(10px); }
+}
+@keyframes backdrop-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+
+.modal[open]            { animation: modal-enter 280ms var(--ease-out-expo) both; }
+.modal[open]::backdrop  { animation: backdrop-in  280ms ease both; }
+.modal.is-closing       { animation: modal-leave  150ms var(--ease-in-quart) forwards !important; }
+.modal.is-closing::backdrop { animation: backdrop-out 150ms ease forwards !important; }
+
+/* ── Toast exit ─────────────────────────────────────────────────────────── */
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(24px); }
+}
+.help-toast.is-hiding { animation: toast-out 180ms var(--ease-in-quart) forwards; }
+
+/* ── Branch switch: workspace pulse ─────────────────────────────────────── */
+@keyframes workspace-pulse {
+  0%, 100% { opacity: 1; }
+  40%       { opacity: 0.88; }
+}
+.workspace.branch-switching { animation: workspace-pulse 380ms var(--ease-out-quart); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    POLISH PASS — visual & interaction quality

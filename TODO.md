@@ -179,6 +179,7 @@ _Última actualización: 2026-06-06_ (sesión 3)
 - [ ] Si le damos en refresh, que se haga refresh en la tab que se quedó? porque siempre se va a home 
 - [ ] Tickets estan muy grandes para la columna del kanban ![ ](image-1.png) Tipografia demasiado grande 
 - [ ] Revisar que sea excelente para la navegacion en version movil. porque con la letra y las multiples secciones no quiero que se sature. 
+- [ ] Al hacer click en la card de un ticket , no se abre para leeer su info completa, aunque sea en modo read only, pero abierto. Se tiene que hacer click en Editar para poder leerrlo completo. y estaria mejro que al hacer click se abriera solo la información que si esta. 
 
 ## Fase 14 - IT 
 - [ ] Que en cada task de IT permita la comunciacion IT <> Usuario

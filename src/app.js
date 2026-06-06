@@ -121,6 +121,19 @@ let state = loadState();
 const views      = document.querySelectorAll(".view");
 const navItems   = document.querySelectorAll(".nav-item");
 const modal      = document.querySelector("#record-modal");
+async function closeModal(dlg = modal) {
+  if (!dlg.open) return;
+  dlg.classList.add("is-closing");
+  try {
+    await dlg.animate(
+      [{ opacity:1, transform:"scale(1) translateY(0)" },
+       { opacity:0, transform:"scale(0.97) translateY(10px)" }],
+      { duration:150, easing:"cubic-bezier(0.5,0,0.75,0)", fill:"forwards" }
+    ).finished;
+  } catch(_) {}
+  dlg.classList.remove("is-closing");
+  dlg.close();
+}
 const recordForm = document.querySelector("#record-form");
 const formFields = document.querySelector("#form-fields");
 const modalTitle = document.querySelector("#modal-title");
@@ -613,7 +626,7 @@ async function loadSupabaseState() {
         repairAmount:Number(t.repair_amount||0), paymentStatus:t.payment_status, paidAmount:Number(t.paid_amount||0),
         branch:branchRows.find(b=>b.id===t.branch_id)?.name||BRANCHES[0],
         assignedTo:employeeRows.find(e=>e.id===t.assigned_employee_id)?.full_name||"",
-        createdAt:(t.created_at||t.received_at||"").slice(0,10),
+        createdAt:utcToLocalDate(t.received_at||t.created_at),
         notes:t.notes||"",
         discountCode:t.discount_code||"",
         discountAmount:Number(t.discount_amount||0),
@@ -678,10 +691,37 @@ async function loadSupabaseState() {
 function setView(name) {
   const perms = currentPerms();
   if (!perms.tabs.includes(name)) return;
-  views.forEach(v => v.classList.toggle("is-visible", v.id===`${name}-view`));
-  navItems.forEach(b => b.classList.toggle("is-active", b.dataset.view===name));
-  document.querySelector("#view-title").textContent = document.querySelector(`#${name}-view`)?.dataset.title||"Home";
-  try { sessionStorage.setItem("fz-active-view", name); } catch(_) {}
+
+  const outgoing = [...views].find(v =>
+    v.classList.contains("is-visible") && v.id !== `${name}-view`
+  );
+
+  const activate = () => {
+    views.forEach(v => v.classList.remove("is-visible","is-entering","is-leaving"));
+    const incoming = document.querySelector(`#${name}-view`);
+    if (incoming) {
+      incoming.classList.add("is-visible","is-entering");
+      incoming.addEventListener("animationend", () => incoming.classList.remove("is-entering"), { once: true });
+    }
+    navItems.forEach(b => b.classList.toggle("is-active", b.dataset.view === name));
+    const title = document.querySelector("#view-title");
+    title.textContent = document.querySelector(`#${name}-view`)?.dataset.title || "Home";
+    title.animate(
+      [{ opacity: 0, transform: "translateY(5px)" }, { opacity: 1, transform: "translateY(0)" }],
+      { duration: 200, easing: "cubic-bezier(0.16,1,0.3,1)", fill: "both" }
+    );
+    try { sessionStorage.setItem("fz-active-view", name); } catch(_) {}
+  };
+
+  if (outgoing) {
+    let done = false;
+    const finish = () => { if (done) return; done = true; outgoing.classList.remove("is-visible","is-leaving"); activate(); };
+    outgoing.classList.add("is-leaving");
+    outgoing.addEventListener("animationend", finish, { once: true });
+    setTimeout(finish, 150);
+  } else {
+    activate();
+  }
 }
 
 function restoreLastView() {
@@ -2457,33 +2497,137 @@ function renderReports() {
       const inBranch = !s.branch || s.branch === activeBranchId;
       const inPeriod = s.createdAt >= from && s.createdAt <= to;
       return inBranch && inPeriod;
-    });
-    const posTotal   = posSales.reduce((s, v) => s + Number(v.total || 0), 0);
-    const posCount   = posSales.length;
-    const byMethod   = {};
-    posSales.forEach(s => { byMethod[s.paymentMethod] = (byMethod[s.paymentMethod] || 0) + Number(s.total || 0); });
-    const methodRows = Object.entries(byMethod)
-      .sort((a, b) => b[1] - a[1])
-      .map(([m, t]) => `<tr><td>${escapeHtml(m)}</td><td style="text-align:right;color:#2ecc71">${money.format(t)}</td></tr>`)
-      .join("") || `<tr><td colspan="2" style="color:rgba(255,255,255,.4);text-align:center">Sin ventas en el período</td></tr>`;
+    }).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    const posTotal = posSales.reduce((s,v)=>s+Number(v.total||0),0);
+    const posCount = posSales.length;
+    const posAvg   = posCount > 0 ? posTotal/posCount : 0;
+    const posDisc  = posSales.reduce((s,v)=>s+Number(v.discount||0),0);
+    const byMethod = {};
+    posSales.forEach(s => { byMethod[s.paymentMethod||"Otro"] = (byMethod[s.paymentMethod||"Otro"]||0) + Number(s.total||0); });
+    const methodRows = Object.entries(byMethod).sort((a,b)=>b[1]-a[1])
+      .map(([m,t])=>`<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
+        <td style="padding:5px 8px">${escapeHtml(m)}</td>
+        <td style="padding:5px 8px;text-align:right;color:#2ecc71">${money.format(t)}</td>
+        <td style="padding:5px 8px;text-align:right;color:rgba(255,255,255,.4);font-size:11px">${posTotal>0?Math.round(t/posTotal*100):0}%</td>
+      </tr>`).join("")||`<tr><td colspan="3" style="padding:8px;color:rgba(255,255,255,.35);text-align:center">Sin ventas en el período</td></tr>`;
+    const saleRows = posSales.slice(0,30).map(s=>{
+      const clientName = state.clients.find(c=>c.id===s.clientId)?.name || s.clientName || "";
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:5px 8px;font-size:11px;color:rgba(255,255,255,.45)">${s.createdAt}</td>
+        <td style="padding:5px 8px;font-size:12px">${escapeHtml(clientName||"—")}</td>
+        <td style="padding:5px 8px;font-size:12px">${escapeHtml(s.paymentMethod||"—")}</td>
+        <td style="padding:5px 8px;text-align:right;font-size:11px;color:#ff9f43">${s.discount>0?"-"+money.format(s.discount):""}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:600;color:#2ecc71">${money.format(s.total)}</td>
+      </tr>`;
+    }).join("")||`<tr><td colspan="5" style="padding:12px;color:rgba(255,255,255,.35);text-align:center">Sin ventas en el período</td></tr>`;
 
     document.querySelector("#reports-pos").innerHTML = `
       <div class="card" style="margin-top:24px;border-left:3px solid var(--fz-secondary,#2678E8)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0;font-size:14px">🛒 Ventas POS — ${periodLabel}</h3>
-          <span style="font-size:12px;color:rgba(255,255,255,.5)">${posCount} venta${posCount!==1?"s":""}</span>
+          <span style="font-size:11px;color:rgba(255,255,255,.4)">${posCount} venta${posCount!==1?"s":""}</span>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-          <div>
-            <p style="margin:0 0 4px;font-size:11px;color:rgba(255,255,255,.5)">TOTAL VENDIDO</p>
-            <p style="margin:0;font-size:22px;font-weight:700;color:#2ecc71">${money.format(posTotal)}</p>
+        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:100px;background:rgba(46,204,113,.07);border:1px solid rgba(46,204,113,.2);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Total vendido</div>
+            <div style="font-size:18px;font-weight:700;color:#2ecc71">${money.format(posTotal)}</div>
           </div>
-          <div>
-            <p style="margin:0 0 8px;font-size:11px;color:rgba(255,255,255,.5)">POR MÉTODO DE PAGO</p>
-            <table style="width:100%;border-collapse:collapse;font-size:13px">${methodRows}</table>
+          <div style="flex:1;min-width:100px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Ticket promedio</div>
+            <div style="font-size:18px;font-weight:700">${money.format(posAvg)}</div>
           </div>
+          <div style="flex:1;min-width:100px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Ventas</div>
+            <div style="font-size:18px;font-weight:700">${posCount}</div>
+          </div>
+          ${posDisc>0?`<div style="flex:1;min-width:100px;background:rgba(255,159,67,.07);border:1px solid rgba(255,159,67,.2);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Descuentos</div>
+            <div style="font-size:18px;font-weight:700;color:#ff9f43">-${money.format(posDisc)}</div>
+          </div>`:""}
         </div>
+        <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Por método de pago</div>
+        <table style="width:260px;border-collapse:collapse;font-size:12px;margin-bottom:16px"><tbody>${methodRows}</tbody></table>
+        <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Detalle ventas (últimas 30)</div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Fecha</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Cliente</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Pago</th>
+            <th style="text-align:right;padding:5px 8px;font-size:11px">Descuento</th>
+            <th style="text-align:right;padding:5px 8px;font-size:11px">Total</th>
+          </tr></thead>
+          <tbody>${saleRows}</tbody>
+        </table></div>
       </div>`;
+  }
+
+  // ── Métricas de cotizaciones ─────────────────────────────────────────────────
+  {
+    const allCots    = branchTickets().filter(t => t.tracking?.startsWith("[COT]"));
+    const periodCots = allCots.filter(t => t.createdAt >= from && t.createdAt <= to);
+    const converted  = periodCots.filter(t => t.convertedToTicket);
+    const pending    = periodCots.filter(t => !t.convertedToTicket && t.status === "Cotizacion");
+    const lost       = periodCots.filter(t => !t.convertedToTicket && t.status !== "Cotizacion");
+    const convRate   = periodCots.length > 0 ? Math.round(converted.length/periodCots.length*100) : 0;
+    const avgAll     = periodCots.length > 0 ? periodCots.reduce((s,t)=>s+Number(t.repairAmount||0),0)/periodCots.length : 0;
+    const avgConv    = converted.length > 0 ? converted.reduce((s,t)=>s+Number(t.repairAmount||0),0)/converted.length : 0;
+    const totalConv  = converted.reduce((s,t)=>s+Number(t.repairAmount||0),0);
+    const cotRows = periodCots.slice(0,20).map(t => {
+      const sc = t.convertedToTicket ? "#2ecc71" : t.status==="Cotizacion" ? "#ff9f43" : "#ff6b6b";
+      const sl = t.convertedToTicket ? `✓ ${t.convertedToTicket}` : t.status==="Cotizacion" ? "Pendiente" : "No convertida";
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:5px 8px;font-size:11px;color:rgba(255,255,255,.45)">${t.createdAt}</td>
+        <td style="padding:5px 8px;font-size:11px;color:var(--fz-secondary)">${escapeHtml(t.tracking)}</td>
+        <td style="padding:5px 8px;font-size:12px">${escapeHtml(t.client||"—")}</td>
+        <td style="padding:5px 8px;font-size:12px">${escapeHtml(t.productName||"—")}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:600">${money.format(t.repairAmount||0)}</td>
+        <td style="padding:5px 8px;font-size:11px;color:${sc}">${sl}</td>
+      </tr>`;
+    }).join("")||`<tr><td colspan="6" style="padding:12px;color:rgba(255,255,255,.35);text-align:center">Sin cotizaciones en el período</td></tr>`;
+
+    document.querySelector("#reports-cotizaciones").innerHTML = (periodCots.length || allCots.length) ? `
+      <div class="card" style="margin-top:16px;border-left:3px solid #a855f7">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0;font-size:14px">📋 Cotizaciones — ${periodLabel}</h3>
+          <span style="font-size:11px;color:rgba(255,255,255,.4)">${periodCots.length} cotizaciones</span>
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:100px;background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.25);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Tasa de conversión</div>
+            <div style="font-size:22px;font-weight:700;color:#a855f7">${convRate}%</div>
+          </div>
+          <div style="flex:1;min-width:100px;background:rgba(46,204,113,.07);border:1px solid rgba(46,204,113,.2);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Convertidas</div>
+            <div style="font-size:18px;font-weight:700;color:#2ecc71">${converted.length}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.35)">${money.format(totalConv)}</div>
+          </div>
+          <div style="flex:1;min-width:100px;background:rgba(255,159,67,.07);border:1px solid rgba(255,159,67,.2);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Pendientes</div>
+            <div style="font-size:18px;font-weight:700;color:#ff9f43">${pending.length}</div>
+          </div>
+          <div style="flex:1;min-width:100px;background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">No convertidas</div>
+            <div style="font-size:18px;font-weight:700;color:#ff6b6b">${lost.length}</div>
+          </div>
+          <div style="flex:1;min-width:100px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Monto promedio</div>
+            <div style="font-size:16px;font-weight:700">${money.format(avgAll)}</div>
+            <div style="font-size:10px;color:rgba(46,204,113,.7)">Convertidas: ${money.format(avgConv)}</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Detalle (últimas 20 del período)</div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Fecha</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Folio</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Cliente</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Equipo</th>
+            <th style="text-align:right;padding:5px 8px;font-size:11px">Monto</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Estado</th>
+          </tr></thead>
+          <tbody>${cotRows}</tbody>
+        </table></div>
+      </div>` : "";
   }
 }
 
@@ -4588,7 +4732,7 @@ recordForm.addEventListener("submit", async e => {
       if (dataMode === "remote") await reloadState();
       else { /* local: already mutated in update functions */ saveState(); }
       render();
-      modal.close();
+      await closeModal();
       showSuccessToast("Guardado correctamente");
     } catch(err) {
       console.error(err);
@@ -4867,7 +5011,7 @@ async function createRemoteTicket(r) {
     repairAmount:Number(data.repair_amount||0), paymentStatus:data.payment_status,
     paidAmount:Number(data.paid_amount||0), branch:branchName,
     assignedTo:assignedE?.full_name||r.assignedTo||"",
-    createdAt:(data.created_at||"").slice(0,10),
+    createdAt:utcToLocalDate(data.received_at||data.created_at),
     notes:r.notes||"", deviceId,
     discountCode:r.discountCode||"", discountAmount:disc.amount, discountPct:disc.pct,
     imei:r.imei||"", color:r.color||"",
@@ -4907,6 +5051,7 @@ async function updateRemoteTicket(ticketId, r) {
     discount_amount:      Number(r.discountAmount||0),
     discount_pct:         Number(r.discountPct||0),
     service_type:         r.serviceType||null,
+    ...(r.createdAt ? { received_at: new Date(r.createdAt + "T12:00:00").toISOString() } : {}),
     ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
   }).eq("id", ticketId);
   if (error) throw error;
@@ -6396,6 +6541,11 @@ function tableEmpty(cols, text = "Sin registros.") {
 }
 function dateStamp() {
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function utcToLocalDate(isoStr) {
+  if (!isoStr) return "";
+  const d = new Date(isoStr);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 function escapeHtml(v)      { return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
