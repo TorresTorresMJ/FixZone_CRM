@@ -1008,6 +1008,7 @@ function ticketCard(ticket, perms) {
         </div>
       </div>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
+      <button class="mini-button" style="background:rgba(37,211,102,0.12);border-color:rgba(37,211,102,0.35);color:#25d366" data-wa-ticket="${ticket.id}" title="Enviar WhatsApp">💬</button>
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
     </div>
@@ -1864,12 +1865,13 @@ function renderPosHistory() {
     <div class="section-heading" style="margin-bottom:10px"><h2>Ventas recientes</h2></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Fecha</th><th>Método</th><th style="text-align:right">Total</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Método</th><th style="text-align:right">Total</th><th></th></tr></thead>
         <tbody>
           ${sales.map(s => `<tr>
             <td>${s.createdAt}</td>
             <td>${escapeHtml(s.paymentMethod)}</td>
             <td style="text-align:right"><strong>${money.format(s.total)}</strong></td>
+            <td><button class="mini-button" data-reprint-pos="${s.id}" title="Reimprimir recibo">🖨</button></td>
           </tr>`).join("")}
         </tbody>
       </table>
@@ -2365,6 +2367,41 @@ function renderReports() {
         </table>
       </div>
     </div>` : "";
+
+  // ── Reporte POS ─────────────────────────────────────────────────────────────
+  {
+    const posSales = (state.posSales || []).filter(s => {
+      const inBranch = !s.branch || s.branch === activeBranchId;
+      const inPeriod = s.createdAt >= from && s.createdAt <= to;
+      return inBranch && inPeriod;
+    });
+    const posTotal   = posSales.reduce((s, v) => s + Number(v.total || 0), 0);
+    const posCount   = posSales.length;
+    const byMethod   = {};
+    posSales.forEach(s => { byMethod[s.paymentMethod] = (byMethod[s.paymentMethod] || 0) + Number(s.total || 0); });
+    const methodRows = Object.entries(byMethod)
+      .sort((a, b) => b[1] - a[1])
+      .map(([m, t]) => `<tr><td>${escapeHtml(m)}</td><td style="text-align:right;color:#2ecc71">${money.format(t)}</td></tr>`)
+      .join("") || `<tr><td colspan="2" style="color:rgba(255,255,255,.4);text-align:center">Sin ventas en el período</td></tr>`;
+
+    document.querySelector("#reports-pos").innerHTML = `
+      <div class="card" style="margin-top:24px;border-left:3px solid var(--fz-secondary,#2678E8)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h3 style="margin:0;font-size:14px">🛒 Ventas POS — ${periodLabel}</h3>
+          <span style="font-size:12px;color:rgba(255,255,255,.5)">${posCount} venta${posCount!==1?"s":""}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <p style="margin:0 0 4px;font-size:11px;color:rgba(255,255,255,.5)">TOTAL VENDIDO</p>
+            <p style="margin:0;font-size:22px;font-weight:700;color:#2ecc71">${money.format(posTotal)}</p>
+          </div>
+          <div>
+            <p style="margin:0 0 8px;font-size:11px;color:rgba(255,255,255,.5)">POR MÉTODO DE PAGO</p>
+            <table style="width:100%;border-collapse:collapse;font-size:13px">${methodRows}</table>
+          </div>
+        </div>
+      </div>`;
+  }
 }
 
 // ── Users panel ───────────────────────────────────────────────────────────────
@@ -3592,26 +3629,42 @@ function renderQuoteItemsDraft() {
   if (!rowsEl) return;
   emptyEl && (emptyEl.style.display = quoteItemsDraft.length ? "none" : "");
   const serviceTypes = state.serviceTypes || [];
+  const INP = `border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;padding:5px 8px`;
   rowsEl.innerHTML = quoteItemsDraft.map((item, idx) => {
-    // Description field: select from service_types when Servicio, free text otherwise
+    const isGlass  = /glass/i.test(item.description || "");
+    const hasCosto = Number(item.insumoCost) > 0;
+
     const descField = item.type === "Servicio"
-      ? `<select class="qi-desc" data-idx="${idx}" style="font-size:12px;padding:5px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit">
+      ? `<select class="qi-desc" data-idx="${idx}" style="font-size:12px;padding:5px 6px;${INP}">
            <option value="">— Tipo de servicio —</option>
            ${serviceTypes.map(t=>`<option value="${escapeHtml(t.name)}" ${item.description===t.name?"selected":""}>${escapeHtml(t.name)}</option>`).join("")}
          </select>`
       : `<input class="qi-desc" data-idx="${idx}" type="text"
            placeholder="${item.type==="Producto"?"Nombre del producto…":"Descripción…"}"
-           value="${escapeHtml(item.description||"")}"
-           style="font-size:13px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;padding:5px 8px">`;
+           value="${escapeHtml(item.description||"")}" style="font-size:13px;${INP}">`;
+
+    const insumoRow = item.type === "Servicio" ? `
+      <div style="grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:2px 0 5px 8px">
+        <span style="font-size:10px;color:rgba(255,255,255,.3);white-space:nowrap">💡 Costo insumo $</span>
+        <input class="qi-insumo" data-idx="${idx}" type="number" min="0" step="1"
+          value="${item.insumoCost||""}" placeholder="0"
+          style="width:90px;font-size:12px;${INP}" title="Ingresa el costo del insumo para calcular precio automático"/>
+        <span style="font-size:10px;color:rgba(255,255,255,.25)">${hasCosto
+          ? `→ ${isGlass?"glass":"pantalla"} · precio calculado con fórmula`
+          : "0 = captura precio fijo arriba"}</span>
+      </div>` : "";
+
     return `
-    <div class="qi-row" style="display:grid;grid-template-columns:100px 1fr 52px 88px 26px;gap:6px;align-items:center;margin-bottom:4px">
-      <select class="qi-type" data-idx="${idx}" style="font-size:12px;padding:5px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit">
+    <div class="qi-row" style="display:grid;grid-template-columns:100px 1fr 52px 88px 26px;gap:6px;align-items:center;margin-bottom:2px">
+      <select class="qi-type" data-idx="${idx}" style="font-size:12px;padding:5px 6px;${INP}">
         ${["Servicio","Refacción","Producto"].map(t=>`<option ${item.type===t?"selected":""}>${t}</option>`).join("")}
       </select>
       ${descField}
-      <input class="qi-qty" data-idx="${idx}" type="number" value="${item.qty}" min="1" style="font-size:13px;text-align:center;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;padding:5px 4px">
-      <input class="qi-price" data-idx="${idx}" type="number" value="${item.unitPrice||""}" placeholder="Precio" min="0" step="1" style="font-size:13px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;padding:5px 8px">
-      <button type="button" class="qi-del" data-idx="${idx}" title="Eliminar fila" style="padding:2px 5px;font-size:13px;opacity:.5;cursor:pointer;background:none;border:none;color:inherit">✕</button>
+      <input class="qi-qty" data-idx="${idx}" type="number" value="${item.qty}" min="1" style="font-size:13px;text-align:center;${INP}">
+      <input class="qi-price" data-idx="${idx}" type="number" value="${item.unitPrice||""}" placeholder="Precio" min="0" step="1"
+        style="font-size:13px;${INP};${hasCosto?"border-color:rgba(46,204,113,.35);background:rgba(46,204,113,.06)":""}">
+      <button type="button" class="qi-del" data-idx="${idx}" title="Eliminar" style="padding:2px 5px;font-size:13px;opacity:.5;cursor:pointer;background:none;border:none;color:inherit">✕</button>
+      ${insumoRow}
     </div>`;
   }).join("");
   updateQuoteItemsHiddenInputs();
@@ -3660,9 +3713,21 @@ function initQuoteItemsBuilder(existingItems = []) {
     if (isNaN(idx) || !quoteItemsDraft[idx]) return;
     // Skip select elements — handled by change event to avoid double-firing
     if (e.target.tagName === "SELECT") return;
-    if (e.target.classList.contains("qi-desc"))       quoteItemsDraft[idx].description = e.target.value;
-    else if (e.target.classList.contains("qi-qty"))   quoteItemsDraft[idx].qty = Math.max(1, Number(e.target.value)||1);
-    else if (e.target.classList.contains("qi-price")) quoteItemsDraft[idx].unitPrice = Number(e.target.value)||0;
+    if (e.target.classList.contains("qi-desc"))        quoteItemsDraft[idx].description = e.target.value;
+    else if (e.target.classList.contains("qi-qty"))    quoteItemsDraft[idx].qty = Math.max(1, Number(e.target.value)||1);
+    else if (e.target.classList.contains("qi-price"))  quoteItemsDraft[idx].unitPrice = Number(e.target.value)||0;
+    else if (e.target.classList.contains("qi-insumo")) {
+      const costo = Number(e.target.value) || 0;
+      quoteItemsDraft[idx].insumoCost = costo;
+      if (costo > 0) {
+        const isGlass = /glass/i.test(quoteItemsDraft[idx].description || "");
+        const res = calcPrecio({ insumo: costo, tipo: isGlass ? "glass" : "pantalla" });
+        quoteItemsDraft[idx].unitPrice = Math.round(res.precioFinal);
+        // Update price input directly so user sees it without full re-render
+        const priceInputs = document.querySelectorAll(".qi-price");
+        if (priceInputs[idx]) priceInputs[idx].value = Math.round(res.precioFinal);
+      }
+    }
     updateQuoteItemsHiddenInputs();
   });
   document.querySelector("#qi-rows")?.addEventListener("change", e => {
@@ -5021,9 +5086,84 @@ function waLink(phone, message) {
 function showWhatsAppToast(ticket, msgText) {
   const client = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone  = ticket.phone || client?.phone || "";
-  if (!phone) return; // no phone — no toast
+  if (!phone) return;
   const link = waLink(phone, msgText);
   showToast(`✓ Avisa al cliente:`, link);
+}
+
+function showWAPanel(ticketId) {
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+  const client = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const phone  = ticket.phone || client?.phone || "";
+  const brand  = window.getBranchBrand(ticket.branch || activeBranchId);
+
+  const vars = {
+    cliente:   ticket.client || "",
+    equipo:    ticket.productName || ticket.device || "",
+    sucursal:  brand.displayName || activeBranchId,
+    folio:     ticket.tracking || "",
+    monto:     money.format(Number(ticket.repairAmount || ticket.total || 0)),
+    saldo:     money.format(Math.max(0, Number(ticket.repairAmount || ticket.total || 0) - Number(ticket.paidAmount || 0))),
+    total:     money.format(Number(ticket.repairAmount || ticket.total || 0)),
+    items:     "",
+  };
+
+  const messages = [
+    { key: "listo",    emoji: "✅", label: "Equipo listo" },
+    { key: "abono",    emoji: "💵", label: "Confirmar abono" },
+    { key: "pagado",   emoji: "🎉", label: "Pago completado" },
+    { key: "garantia", emoji: "🛡", label: "Garantía activa" },
+  ];
+
+  const makeBtn = ({ key, emoji, label }) => {
+    const msg = fillWATemplate(key, vars);
+    if (!msg) return "";
+    if (phone) {
+      const clean = phone.replace(/\D/g, "");
+      const num   = clean.startsWith("52") ? clean : `52${clean}`;
+      return `<a href="https://wa.me/${num}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener"
+        style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.25);color:#25d366;text-decoration:none;font-size:13px;font-weight:600">
+        <span style="font-size:18px">${emoji}</span><span>${label}</span>
+        <span style="margin-left:auto;font-size:10px;opacity:.6">Abrir ↗</span>
+      </a>`;
+    } else {
+      return `<button onclick="navigator.clipboard.writeText(${JSON.stringify(msg)}).then(()=>showToast('✓ Mensaje copiado'))"
+        style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-weight:600;cursor:pointer">
+        <span style="font-size:18px">${emoji}</span><span>${label}</span>
+        <span style="margin-left:auto;font-size:10px;opacity:.6">📋 Copiar</span>
+      </button>`;
+    }
+  };
+
+  const btns = messages.map(makeBtn).filter(Boolean).join("");
+
+  const noPhone = !phone ? `
+    <div style="background:rgba(255,153,0,.1);border:1px solid rgba(255,153,0,.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#ff9f43;margin-bottom:12px">
+      ⚠ Sin teléfono registrado — los mensajes se copiarán al portapapeles.
+    </div>` : `
+    <div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:12px">
+      📱 ${phone} · <strong style="color:#25d366">${escapeHtml(ticket.client)}</strong>
+    </div>`;
+
+  const existing = document.getElementById("wa-panel-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "wa-panel-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)";
+  overlay.innerHTML = `
+    <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:15px">💬 WhatsApp — ${escapeHtml(ticket.tracking)}</h3>
+        <button onclick="document.getElementById('wa-panel-overlay').remove()"
+          style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
+      </div>
+      ${noPhone}
+      <div style="display:flex;flex-direction:column;gap:8px">${btns || '<p style="color:rgba(255,255,255,.4);font-size:13px">Sin plantillas configuradas. Edítalas en Automatización.</p>'}</div>
+    </div>`;
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -5185,9 +5325,7 @@ document.querySelectorAll("[data-open-form]").forEach(btn => {
 
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
 document.querySelector("#quick-pos").addEventListener("click", () => setView("pos"));
-document.querySelector("#notif-bell-btn")?.addEventListener("click", () => {
-  showToast("🔔 Centro de notificaciones — próximamente");
-});
+document.querySelector("#notif-bell-btn")?.addEventListener("click", () => openNotifPanel());
 document.querySelector("#new-quote-btn")?.addEventListener("click", () => {
   openForm("cotizacion");
 });
@@ -5319,6 +5457,22 @@ document.addEventListener("click", e => {
   // Checkout
   if (e.target.closest("#pos-checkout-btn")) { checkoutPos(); return; }
 
+  // Reprint POS receipt from history
+  const reprintPos = e.target.closest("[data-reprint-pos]");
+  if (reprintPos) {
+    const saleId = reprintPos.dataset.reprintPos;
+    const sale = (state.posSales || []).find(s => s.id === saleId);
+    if (!sale) { showErrorToast("Venta no encontrada"); return; }
+    lastPosSale = {
+      items: sale.items || [],
+      total: sale.total, method: sale.paymentMethod,
+      discount: sale.discount || 0, discountCode: sale.discountCode || "",
+      clientName: sale.clientName || "", date: sale.createdAt,
+    };
+    printPosRecibo();
+    return;
+  }
+
   // Clear cart
   if (e.target.closest("#pos-clear-cart")) {
     posCart = []; posDiscount = 0; posDiscountCode = ""; posCustomerId = null;
@@ -5382,6 +5536,9 @@ document.addEventListener("click", async e => {
   // Share cotización via WhatsApp
   const waCot = e.target.closest("[data-wa-quote]");
   if (waCot) { shareQuoteWhatsApp(waCot.dataset.waQuote); return; }
+
+  const waTicketBtn = e.target.closest("[data-wa-ticket]");
+  if (waTicketBtn) { showWAPanel(waTicketBtn.dataset.waTicket); return; }
 
   const approveBtn = e.target.closest("[data-approve-quote]");
   if (approveBtn) { approveQuoteToTicket(approveBtn.dataset.approveQuote); return; }
@@ -5906,6 +6063,105 @@ function printCotizacion(ticket) {
   doPrint();
 }
 
+// ── Centro de notificaciones internas ────────────────────────────────────────
+const NOTIF_KEY = "fixzone-internal-notifs-v1";
+
+function loadNotifs() {
+  try { return JSON.parse(localStorage.getItem(NOTIF_KEY) || "[]"); } catch { return []; }
+}
+function saveNotifs(arr) { localStorage.setItem(NOTIF_KEY, JSON.stringify(arr)); }
+
+function addNotif({ type = "aviso", text, author, ticketId = null }) {
+  const notifs = loadNotifs();
+  notifs.unshift({ id: Date.now().toString(), type, text, author: author || currentEmployee?.name || "Sistema", ticketId, ts: new Date().toISOString(), read: false });
+  saveNotifs(notifs);
+  renderNotifBadge();
+}
+
+function markAllNotifsRead() {
+  const notifs = loadNotifs().map(n => ({ ...n, read: true }));
+  saveNotifs(notifs);
+  renderNotifBadge();
+}
+
+function renderNotifBadge() {
+  const badge = document.getElementById("notif-badge");
+  if (!badge) return;
+  const unread = loadNotifs().filter(n => !n.read).length;
+  badge.textContent = unread > 9 ? "9+" : unread;
+  badge.style.display = unread > 0 ? "" : "none";
+}
+
+function openNotifPanel() {
+  const notifs = loadNotifs();
+  markAllNotifsRead();
+
+  const existing = document.getElementById("notif-panel-overlay");
+  if (existing) { existing.remove(); return; }
+
+  const isAdmin = ["admin","it","owner"].includes(currentEmployee?.role);
+
+  const rows = notifs.length ? notifs.map(n => {
+    const ticket = n.ticketId ? state.tickets.find(t => t.id === n.ticketId) : null;
+    const ticketRef = ticket ? `<span style="font-size:10px;color:var(--fz-primary,#085ACB);margin-left:6px">${escapeHtml(ticket.tracking)}</span>` : "";
+    const typeIcon = n.type === "broadcast" ? "📢" : n.ticketId ? "🎫" : "💬";
+    const ts = n.ts ? new Date(n.ts).toLocaleString("es-MX",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
+    return `<div style="padding:12px;border-bottom:1px solid rgba(255,255,255,.07)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span>${typeIcon}</span>
+        <strong style="font-size:12px">${escapeHtml(n.author)}</strong>
+        ${ticketRef}
+        <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,.35)">${ts}</span>
+      </div>
+      <p style="margin:0;font-size:13px;color:rgba(255,255,255,.8)">${escapeHtml(n.text)}</p>
+    </div>`;
+  }).join("") : `<p style="padding:24px;text-align:center;color:rgba(255,255,255,.4);font-size:13px">Sin notificaciones</p>`;
+
+  const broadcastForm = isAdmin ? `
+    <div style="border-top:1px solid rgba(255,255,255,.1);padding:14px">
+      <p style="margin:0 0 8px;font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px">📢 Aviso al equipo</p>
+      <div style="display:flex;gap:8px">
+        <input id="notif-broadcast-input" type="text" placeholder="Escribe un aviso para todos…"
+          style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px" />
+        <button id="notif-broadcast-send" class="primary-action" style="white-space:nowrap;font-size:13px">Enviar</button>
+      </div>
+    </div>` : "";
+
+  const overlay = document.createElement("div");
+  overlay.id = "notif-panel-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;justify-content:flex-end;background:rgba(0,0,0,.4)";
+  overlay.innerHTML = `
+    <div style="width:360px;max-width:95vw;height:100%;background:var(--fz-surface,#1e1e2e);display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.4)">
+      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:space-between">
+        <h3 style="margin:0;font-size:15px">🔔 Notificaciones</h3>
+        <button onclick="document.getElementById('notif-panel-overlay').remove()"
+          style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
+      </div>
+      <div style="flex:1;overflow-y:auto">${rows}</div>
+      ${broadcastForm}
+    </div>`;
+
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  overlay.querySelector("#notif-broadcast-send")?.addEventListener("click", () => {
+    const input = overlay.querySelector("#notif-broadcast-input");
+    const text  = input?.value?.trim();
+    if (!text) return;
+    addNotif({ type: "broadcast", text, author: currentEmployee?.name || "Admin" });
+    input.value = "";
+    overlay.remove();
+    openNotifPanel();
+    showToast("✓ Aviso enviado al equipo");
+  });
+  overlay.querySelector("#notif-broadcast-input")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") overlay.querySelector("#notif-broadcast-send")?.click();
+  });
+}
+
+// Inicializar badge al cargar
+renderNotifBadge();
+
 function shareQuoteWhatsApp(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
@@ -5949,6 +6205,7 @@ function shareQuoteWhatsApp(ticketId) {
   window.open(url, "_blank", "noopener");
 }
 window.shareQuoteWhatsApp = shareQuoteWhatsApp;
+window.addNotif = addNotif;
 
 function receiptQrTarget() {
   try {
