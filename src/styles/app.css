@@ -793,25 +793,173 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
 .field option { color: #101217; }
 
-/* ── Responsive ──────────────────────────────────────────────────────────── */
-@media (max-width: 980px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; }
-  .nav-list { grid-template-columns: repeat(4,minmax(0,1fr)); }
-  .topbar, .split-layout { align-items: stretch; flex-direction: column; grid-template-columns: 1fr; }
-  .topbar-actions { align-items: stretch; flex-direction: column; }
-  .search-box { width: 100%; }
-  .metric-grid, .inventory-grid, .report-grid, .finance-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .marketing-grid { grid-template-columns: 1fr; }
-  .brand-tokens-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .auto-flows-grid { grid-template-columns: 1fr; }
+/* ── Kanban: columnas compactas, acciones revelan en hover ───────────────── */
+.kanban-column { min-width: 240px; width: 240px; padding: 12px 10px; }
+
+.ticket-card .ticket-actions {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  transition: max-height .2s ease, opacity .15s ease, margin-top .15s ease;
+}
+.ticket-card:hover .ticket-actions,
+.ticket-card:focus-within .ticket-actions {
+  max-height: 80px;
+  opacity: 1;
+  margin-top: 8px;
 }
 
-@media (max-width: 620px) {
-  .workspace, .sidebar { padding: 16px; }
-  .nav-list, .metric-grid, .inventory-grid, .report-grid, .finance-summary, .form-grid { grid-template-columns: 1fr; }
-  .nav-item { min-width: 0; }
-  .brand-tokens-grid { grid-template-columns: 1fr 1fr; }
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+/* ── Tablet (≤ 980px) ───────────────────────────────────────────────────── */
+@media (max-width: 980px) {
+  /* Layout: sidebar queda arriba como barra horizontal */
+  .app-shell { grid-template-columns: 1fr; }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 90;
+    height: auto;
+    flex-direction: column;
+    padding: 10px 12px 6px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    gap: 6px;
+  }
+
+  /* Brand más compacto */
+  .brand img  { width: 28px; height: 28px; }
+  .brand span { display: none; }
+
+  /* Nav: scroll horizontal en una sola fila */
+  .nav-list {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 2px;
+    scrollbar-width: none;
+  }
+  .nav-list::-webkit-scrollbar { display: none; }
+  .nav-divider { display: none; }
+
+  .nav-item {
+    flex-direction: row;
+    flex-shrink: 0;
+    min-width: auto;
+    min-height: 32px;
+    padding: 0 10px;
+    white-space: nowrap;
+    font-size: 12px;
+    border-radius: 6px;
+  }
+
+  .sidebar-footer { display: none; }
+
+  /* Topbar más compacto */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .topbar-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+    align-items: center;
+  }
+  .search-box {
+    width: 100%;
+    order: 10;
+  }
+  .auth-box { min-height: 36px; padding: 0 8px 0 10px; }
+
+  /* Workspace */
+  .workspace {
+    padding: 16px 14px;
+    background: var(--fz-black-base);
+  }
+
+  /* Grids */
+  .split-layout { grid-template-columns: 1fr; }
+  .metric-grid, .inventory-grid, .report-grid, .finance-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .marketing-grid    { grid-template-columns: 1fr; }
+  .brand-tokens-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .auto-flows-grid   { grid-template-columns: 1fr; }
+
+  /* Kanban en tablet: scroll horizontal más visible */
+  .kanban { gap: 10px; }
+  .kanban-column { min-width: 220px; width: 220px; }
+}
+
+/* ── Mobile (≤ 640px) ───────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .workspace { padding: 12px 10px; }
+
+  /* Nav aún más compacta — solo iconos con texto */
+  .nav-item { font-size: 11px; padding: 0 8px; }
+  .nav-item span { width: 20px; height: 20px; font-size: 10px; }
+
+  /* Brand mínimo */
+  .brand strong { font-size: 12px; letter-spacing: 0.06em; }
+
+  /* Topbar: H1 más chico, acciones compactas */
+  .topbar h1 { font-size: 17px; }
+  .branch-tabs { display: none; } /* Ocultar branch tabs en mobile, visible en sidebar footer */
+  .auth-info span { max-width: 100px; font-size: 12px; }
+  .auth-info small { display: none; }
+  .quick-fab { width: 34px; height: 34px; }
+
+  /* Métricas: 2 columnas en mobile */
+  .metric-grid, .inventory-grid, .finance-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .metric strong { font-size: 20px; }
+  .report-grid { grid-template-columns: 1fr; }
+
+  /* Kanban: cards más angostas, scroll cómodo */
+  .kanban-column { min-width: calc(85vw); width: calc(85vw); }
+
+  /* Siempre mostrar acciones en mobile (no hay hover) */
+  .ticket-card .ticket-actions {
+    max-height: 80px;
+    opacity: 1;
+    margin-top: 8px;
+  }
+
+  /* Action rows */
+  .action-row { flex-wrap: wrap; justify-content: flex-start; gap: 6px; }
+
+  /* Modal full-width en mobile */
+  #record-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92dvh !important;
+    margin: auto 0 0 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    border-left: 0 !important;
+    border-right: 0 !important;
+    border-bottom: 0 !important;
+  }
+  dialog::backdrop { background: rgba(0,0,0,0.6); }
+
+  /* Grids de forms */
+  .form-grid { grid-template-columns: 1fr !important; }
+
+  /* Tables: font más pequeño */
+  td, th { padding: 10px 10px; font-size: 12px; }
+}
+
+/* ── Mobile pequeño (≤ 400px) ───────────────────────────────────────────── */
+@media (max-width: 400px) {
+  .sidebar { padding: 6px 8px 4px; }
+  .brand { display: none; }
+  .nav-item { font-size: 10px; padding: 0 7px; }
 }
 
 /* ── Help button ─────────────────────────────────────────────────────────── */
