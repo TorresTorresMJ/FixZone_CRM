@@ -6234,7 +6234,17 @@ function printRecibo(ticket, type) {
       <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE ENTREGA CONFORME</p></div>`;
   }
 
-  document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}<p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p><p class="rct-dash">${D}</p></div>`;
+  const qrUrl   = receiptQrTarget(ticket.id);
+  const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=6&data=${encodeURIComponent(qrUrl)}`;
+  const qrBlock = `
+    <p class="rct-dash">${D}</p>
+    <div class="rct-qr">
+      <p class="rct-center">ESCANEA PARA VER EL ESTADO</p>
+      <img src="${qrImage}" alt="QR" />
+      <p class="rct-center" style="font-size:9px;opacity:.6;margin-top:4px">Seguimiento en tiempo real de tu reparación</p>
+    </div>`;
+
+  document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}${qrBlock}<p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p><p class="rct-dash">${D}</p></div>`;
   doPrint();
 }
 
