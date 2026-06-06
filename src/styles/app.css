@@ -461,7 +461,15 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 .ticket-detail-grid strong { font-size: 11px; }
 .paid-amount { color: #7af0b1; }
 
-.ticket-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.ticket-actions { display: flex; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+
+/* Botones de acción más compactos dentro del kanban */
+.kanban-column .mini-button {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  border-radius: 6px;
+}
 
 .mini-button {
   min-height: 30px;
@@ -827,7 +835,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .ticket-card:hover .ticket-actions,
 .ticket-card:focus-within .ticket-actions {
   overflow: visible;
-  max-height: 80px;
+  max-height: 68px;
   opacity: 1;
   margin-top: 8px;
 }
