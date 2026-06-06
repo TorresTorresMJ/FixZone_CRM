@@ -3710,6 +3710,34 @@ function initQuoteItemsBuilder(existingItems = []) {
     renderQuoteItemsDraft();
   });
 
+  // When device field changes, re-run price lookup for all existing Servicio rows
+  const qiDeviceInput = document.querySelector("#productName");
+  if (qiDeviceInput) {
+    const refillPricesFromDevice = () => {
+      const deviceName = qiDeviceInput.value.trim();
+      if (!deviceName) return;
+      const branchId = (state.branches||[]).find(b=>b.name===activeBranchId)?.id;
+      let anyFilled = false;
+      quoteItemsDraft.forEach((item, idx) => {
+        if (item.type !== "Servicio" || !item.description) return;
+        const stype = (state.serviceTypes||[]).find(t=>t.name===item.description);
+        if (!stype) return;
+        const rec = (state.servicePrices||[]).find(p =>
+          p.deviceModel.toLowerCase() === deviceName.toLowerCase() &&
+          p.serviceTypeId === stype.id &&
+          (!p.branchId || p.branchId === branchId)
+        );
+        if (rec && rec.price > 0) {
+          quoteItemsDraft[idx].unitPrice = rec.price;
+          anyFilled = true;
+        }
+      });
+      if (anyFilled) { renderQuoteItemsDraft(); showToast("💡 Precios actualizados desde la tabla"); }
+    };
+    qiDeviceInput.addEventListener("change", refillPricesFromDevice);
+    qiDeviceInput.addEventListener("blur",   () => setTimeout(refillPricesFromDevice, 200));
+  }
+
   document.querySelector("#qi-apply-code")?.addEventListener("click", () => {
     const code = (document.querySelector("#qi-code-input")?.value || "").trim().toUpperCase();
     const statusEl = document.querySelector("#qi-code-status");
