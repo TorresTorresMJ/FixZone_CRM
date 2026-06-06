@@ -999,29 +999,46 @@ function approveQuoteToTicket(ticketId) {
 
 function ticketCard(ticket, perms) {
   perms = perms || currentPerms();
-  const paid   = ticket.paymentStatus==="Pagado";
-  const repair = Number(ticket.repairAmount??ticket.total??0);
-  const paidAmt= Number(ticket.paidAmount??(paid?repair:0));
+  const paid    = ticket.paymentStatus === "Pagado";
+  const repair  = Number(ticket.repairAmount ?? ticket.total ?? 0);
+  const total   = Math.max(0, repair - (ticket.discountAmount || 0));
+  const paidAmt = Number(ticket.paidAmount ?? (paid ? repair : 0));
+  const stClass = ticket.status==="Listo"||ticket.status==="Entregado" ? "ready"
+                : ticket.status==="Cotizacion" ? "waiting"
+                : ticket.status==="Garantia"   ? "warranty" : "";
+
+  // Truncate issue to 2 lines via CSS
+  const issueHtml = ticket.issue
+    ? `<p style="margin:3px 0 0;font-size:12px;color:rgba(255,255,255,.65);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(ticket.issue)}</p>`
+    : "";
+
+  // Compact price row — single line
+  const priceHtml = repair > 0 ? `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:12px">
+      <span class="muted">${paid ? "Pagado" : escapeHtml(ticket.paymentStatus)}</span>
+      <strong style="font-size:13px${paid?" color:#2ecc71":""}">
+        ${paid ? money.format(paidAmt) : money.format(total)}
+        ${ticket.discountAmount>0 ? `<span style="font-size:10px;color:#ff9f43;margin-left:3px">-${money.format(ticket.discountAmount)}</span>` : ""}
+      </strong>
+    </div>` : "";
+
   return `<article class="ticket-card" draggable="true"
     ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
-    <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span>${ticket.cotizacionRef?`<span style="font-size:10px;color:rgba(255,255,255,.4)" title="Originado de cotización ${ticket.cotizacionRef}">← ${escapeHtml(ticket.cotizacionRef)}</span>`:"" }</div>
-    <div class="ticket-topline"><strong>${escapeHtml(ticket.client)}</strong><span class="status ${ticket.priority==="Urgente"||ticket.priority==="Alta"?"urgent":""}">${ticket.priority}</span></div>
-    <span class="muted">${escapeHtml(ticket.productName||ticket.device)}</span>
-    <p>${escapeHtml(ticket.issue)}</p>
-    <div class="ticket-detail-grid">
-      <span>Reparacion</span><strong>${money.format(repair)}</strong>
-      ${ticket.discountAmount>0?`<span style="color:#ff9f43">Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</span><strong style="color:#ff9f43">-${money.format(ticket.discountAmount)}</strong>`:""}
-      <span>Total</span><strong>${money.format(Math.max(0,repair-(ticket.discountAmount||0)))}</strong>
-      <span>Pago</span><strong class="${paid?"paid-amount":""}">${paid?money.format(paidAmt):escapeHtml(ticket.paymentStatus)}</strong>
-    </div>
     <div class="ticket-topline">
-      <span class="status ${ticket.status==="Listo"||ticket.status==="Entregado"?"ready":ticket.status==="Cotizacion"?"waiting":ticket.status==="Garantia"?"warranty":""}">${ticket.status}</span>
-      <small class="muted">${escapeHtml(ticket.assignedTo)}</small>
+      <span class="tracking-code">${escapeHtml(ticket.tracking)}</span>
+      <span class="status ${stClass}" style="font-size:10px">${ticket.status}</span>
     </div>
-    <div class="ticket-actions">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:2px">
+      <strong style="font-size:13px">${escapeHtml(ticket.client)}</strong>
+      <small class="muted" style="font-size:10px">${escapeHtml(ticket.assignedTo)}</small>
+    </div>
+    <span class="muted" style="font-size:11px">${escapeHtml(ticket.productName||ticket.device)}</span>
+    ${issueHtml}
+    ${priceHtml}
+    <div class="ticket-actions" style="margin-top:8px">
       <div style="position:relative;display:inline-block">
-        <button class="mini-button" data-print-ticket="${ticket.id}" title="Imprimir ticket">🖨 Imprimir ▾</button>
+        <button class="mini-button" data-print-ticket="${ticket.id}" title="Imprimir">🖨 ▾</button>
         <div class="print-menu" style="display:none;position:absolute;bottom:110%;left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:190px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
           <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:2px" data-print-auto="${ticket.id}">⚡ Auto (según estado)</button>
           <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-recepcion="${ticket.id}">📋 Recibo de recepción</button>
@@ -1030,9 +1047,8 @@ function ticketCard(ticket, perms) {
         </div>
       </div>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
-      <button class="mini-button" style="background:rgba(37,211,102,0.12);border-color:rgba(37,211,102,0.35);color:#25d366" data-wa-ticket="${ticket.id}" title="Enviar WhatsApp">💬</button>
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
-      ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">Eliminar</button>`:""}
+      ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">✕</button>`:""}
     </div>
   </article>`;
 }
