@@ -162,7 +162,7 @@ const formSchemas = {
   ticket: {
     title: "Ticket", collection: "tickets",
     fields: [
-      ["client","Cliente","text",null,false,true],["productName","Producto / equipo","device-autocomplete"],
+      ["client","Cliente","text",null,false,true],["clientPhone","Teléfono cliente","tel",null,false,true],["productName","Producto / equipo","device-autocomplete"],
       // Device detail fields
       ["imei","IMEI / No. Serie","text",null,false,true],
       ["color","Color","text"],
@@ -782,7 +782,7 @@ function renderMetrics() {
     ["Tickets abiertos",openTickets,""],
     ["Ingresos hoy",money.format(income),"type-income"],
     ["Egresos hoy",money.format(expenses),"type-expense"],
-  ].map(([l,v,cls])=>`<article class="metric"><span>${l}</span><strong class="${cls}">${v}</strong></article>`).join("");
+  ].map(([l,v,cls],i)=>`<article class="metric" style="--i:${i}"><span>${l}</span><strong class="${cls}">${v}</strong></article>`).join("");
 
   // Stock-low alert banner
   const banner = document.querySelector("#stock-alert-banner");
@@ -917,7 +917,7 @@ function renderTickets() {
       ondrop="handleKanbanDrop(event,'${status}');this.classList.remove('drag-over')"
       data-stage="${status}">
       <h3>${status} <span>${tickets.length}</span></h3>
-      <div class="ticket-stack">${tickets.map(t=>ticketCard(t,perms)).join("")||emptyMessage("Sin tickets.")}</div>
+      <div class="ticket-stack">${tickets.map((t,i)=>ticketCard(t,perms,i)).join("")||emptyMessage("Sin tickets.")}</div>
     </section>`;
   }).join("");
 }
@@ -1046,7 +1046,7 @@ function approveQuoteToTicket(ticketId) {
   });
 }
 
-function ticketCard(ticket, perms) {
+function ticketCard(ticket, perms, idx = 0) {
   perms = perms || currentPerms();
   const paid    = ticket.paymentStatus === "Pagado";
   const repair  = Number(ticket.repairAmount ?? ticket.total ?? 0);
@@ -1071,7 +1071,7 @@ function ticketCard(ticket, perms) {
       </strong>
     </div>` : "";
 
-  return `<article class="ticket-card" draggable="true"
+  return `<article class="ticket-card" style="--i:${idx}" draggable="true"
     ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
     <div class="ticket-topline">
@@ -4747,7 +4747,7 @@ recordForm.addEventListener("submit", async e => {
       await updateRemoteSupportTask(editingTaskId, data);
       if (dataMode === "remote") await reloadState();
       render();
-      modal.close();
+      await closeModal();
     } catch(err) {
       console.error(err);
       showErrorToast(`No se pudo guardar: ${err.message}`);
@@ -4760,7 +4760,7 @@ recordForm.addEventListener("submit", async e => {
     data.estimatedTime = Number(data.estimatedTime||0);
     data.priority     = data.priority||"";
           render();
-      modal.close();
+      await closeModal();
     try {
       const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTaskId);
       if (dataMode==="remote" && isRealUUID) {
@@ -4797,7 +4797,7 @@ recordForm.addEventListener("submit", async e => {
         if (dataMode !== "remote") saveState();
       }
       render();
-      modal.close();
+      await closeModal();
     } catch(err) {
       console.error(err);
       showErrorToast(`No se pudo guardar: ${err.message}`);
@@ -4859,7 +4859,7 @@ recordForm.addEventListener("submit", async e => {
       saveState();
     }
     render();
-    modal.close();
+    await closeModal();
   } catch(err) {
     console.error(err);
     showErrorToast(`No se pudo guardar: ${err.message}`);
@@ -4968,7 +4968,26 @@ async function createRemoteProduct(r) {
 }
 
 async function createRemoteTicket(r) {
-  const customer  = lookups.customersByName.get(r.client);
+  let customer = lookups.customersByName.get(r.client);
+  // Auto-register client if name + phone provided and no existing record
+  if (!customer && r.client && r.clientPhone) {
+    const { data: newCust } = await supabaseClient.from("customers").insert({
+      full_name: r.client,
+      phone: r.clientPhone,
+      branch_id: await branchIdByName(r.branch||activeBranchId),
+    }).select().single();
+    if (newCust) {
+      customer = { id: newCust.id };
+      lookups.customersByName.set(r.client, customer);
+      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId });
+      showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
+    }
+  } else if (customer && r.clientPhone && !state.clients.find(c=>c.id===customer.id)?.phone) {
+    // Update phone if client exists but has no phone
+    await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+    const idx = state.clients.findIndex(c=>c.id===customer.id);
+    if (idx>=0) state.clients[idx].phone = r.clientPhone;
+  }
   const assignedE = lookups.employeesByName.get(r.assignedTo);
   const branchId  = await branchIdByName(r.branch||activeBranchId);
   // Auto-apply discount code if provided
@@ -5299,17 +5318,24 @@ function showToast(message, html = "") {
   if (html) toast.innerHTML = `${message} ${html}`;
   else toast.textContent = message;
   document.body.appendChild(toast);
-  if (!html) setTimeout(() => toast.remove(), 3500);
+  if (!html) _dismissToast(toast, 3500);
   else {
-    // Toasts with links stay until closed
     toast.style.cursor = "default";
     const close = document.createElement("span");
     close.textContent = " ✕";
     close.style.cssText = "cursor:pointer;margin-left:10px;opacity:.7";
-    close.onclick = () => toast.remove();
+    close.onclick = () => _dismissToast(toast, 0);
     toast.appendChild(close);
-    setTimeout(() => toast.remove(), 12000);
+    _dismissToast(toast, 12000);
   }
+}
+
+function _dismissToast(t, delay) {
+  setTimeout(() => {
+    t.classList.add("is-hiding");
+    t.addEventListener("animationend", () => t.remove(), { once: true });
+    setTimeout(() => t.remove(), 250); // fallback
+  }, delay);
 }
 
 function showErrorToast(msg) {
@@ -5319,7 +5345,7 @@ function showErrorToast(msg) {
   toast.className = "help-toast error-toast";
   toast.textContent = msg;
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 4500);
+  _dismissToast(toast, 4500);
 }
 
 function showSuccessToast(msg) {
@@ -5329,7 +5355,7 @@ function showSuccessToast(msg) {
   toast.className = "help-toast success-toast";
   toast.textContent = msg;
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
+  _dismissToast(toast, 3000);
 }
 
 const _confirmModal = document.querySelector("#confirm-modal");
@@ -5601,8 +5627,8 @@ document.querySelector("#notif-bell-btn")?.addEventListener("click", () => openN
 document.querySelector("#new-quote-btn")?.addEventListener("click", () => {
   openForm("cotizacion");
 });
-document.querySelector("#close-modal").addEventListener("click",  () => modal.close());
-document.querySelector("#cancel-record").addEventListener("click",() => modal.close());
+document.querySelector("#close-modal").addEventListener("click",  () => closeModal());
+document.querySelector("#cancel-record").addEventListener("click",() => closeModal());
 
 async function performLogout() {
   if (supabaseClient) await supabaseClient.auth.signOut();
@@ -6014,6 +6040,13 @@ function setActiveBranch(name) {
     btn.classList.toggle("is-active", btn.textContent.trim()===name);
   });
   applyBranchBrand(name);
+  const ws = document.querySelector(".workspace");
+  if (ws) {
+    ws.classList.remove("branch-switching");
+    void ws.offsetWidth; // reflow para re-trigger
+    ws.classList.add("branch-switching");
+    ws.addEventListener("animationend", () => ws.classList.remove("branch-switching"), { once: true });
+  }
   render();
 }
 window.setActiveBranch = setActiveBranch;
