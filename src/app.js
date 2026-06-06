@@ -195,6 +195,7 @@ const formSchemas = {
     fields: [
       ["date","Fecha","date"],["type","Tipo","select",["Ingreso","Egreso"]],
       ["concept","Concepto","text",null,true],["category","Categoria","select",TX_CATEGORIES_ALL],["amount","Monto","number"],
+      ["paymentMethod","Método de pago","select",["","Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"],false,true],
     ],
   },
   employee: {
@@ -656,6 +657,7 @@ async function loadSupabaseState() {
     transactions: (txRes.data||[]).map(t => ({
       id:t.id, date:t.transaction_date, type:t.type, concept:t.concept,
       category:t.category, amount:Number(t.amount||0),
+      paymentMethod:t.payment_method||"",
       branch:branchRows.find(b=>b.id===t.branch_id)?.name||BRANCHES[0],
     })),
     supportTasks: (stRes.data||[]).map(t => ({
@@ -2155,7 +2157,7 @@ function renderFinance() {
     <tr>
       <td style="white-space:nowrap">${i.date}</td>
       <td><span class="type-pill ${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type}</span></td>
-      <td>${escapeHtml(i.concept)}</td>
+      <td>${escapeHtml(i.concept)}${i.paymentMethod?`<span style="display:block;font-size:10px;color:rgba(255,255,255,.35);margin-top:2px">${escapeHtml(i.paymentMethod)}</span>`:""}</td>
       <td><span class="muted">${escapeHtml(i.category)}</span></td>
       <td style="text-align:right"><strong class="${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type==="Ingreso"?"+":"-"}${money.format(i.amount)}</strong></td>
       <td>
@@ -2588,6 +2590,8 @@ function renderReports() {
       </tr>`;
     }).join("")||`<tr><td colspan="6" style="padding:12px;color:rgba(255,255,255,.35);text-align:center">Sin cotizaciones en el período</td></tr>`;
 
+    const pmEl = document.querySelector("#reports-payment-methods");
+    if (pmEl) pmEl.innerHTML = "";
     document.querySelector("#reports-cotizaciones").innerHTML = (periodCots.length || allCots.length) ? `
       <div class="card" style="margin-top:16px;border-left:3px solid #a855f7">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
@@ -2631,6 +2635,44 @@ function renderReports() {
           <tbody>${cotRows}</tbody>
         </table></div>
       </div>` : "";
+  }
+
+  // ── Ingresos por método de pago ──────────────────────────────────────────────
+  {
+    const pmEl = document.querySelector("#reports-payment-methods");
+    if (pmEl) {
+      const ingresos = branchTransactions().filter(t => {
+        return t.type === "Ingreso" && t.date >= from && t.date <= to;
+      });
+      const totalIngresos = ingresos.reduce((s,t)=>s+Number(t.amount||0),0);
+      const byMethod = {};
+      ingresos.forEach(t => {
+        const m = t.paymentMethod || "Sin registrar";
+        byMethod[m] = (byMethod[m]||0) + Number(t.amount||0);
+      });
+      const ORDER = ["Efectivo","Transferencia","Terminal TC","Terminal TD","Link de pago","Otro","Sin registrar"];
+      const sorted = Object.entries(byMethod).sort((a,b) => {
+        const oa = ORDER.indexOf(a[0]), ob = ORDER.indexOf(b[0]);
+        return (oa===-1?99:oa) - (ob===-1?99:ob) || b[1]-a[1];
+      });
+      const methodCards = sorted.map(([m,t]) => {
+        const pct = totalIngresos > 0 ? Math.round(t/totalIngresos*100) : 0;
+        const isSin = m === "Sin registrar";
+        return `<div style="flex:1;min-width:120px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,${isSin?".05":".1"});border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;color:rgba(255,255,255,${isSin?".3":".5"});margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m)}</div>
+          <div style="font-size:16px;font-weight:700;color:${isSin?"rgba(255,255,255,.25)":"#2ecc71"}">${money.format(t)}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:2px">${pct}% del total</div>
+        </div>`;
+      }).join("");
+      pmEl.innerHTML = sorted.length ? `
+        <div class="card" style="margin-top:16px;border-left:3px solid var(--fz-primary)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0;font-size:14px">💳 Ingresos por método de pago — ${periodLabel}</h3>
+            <span style="font-size:11px;color:rgba(255,255,255,.4)">${ingresos.length} movimiento${ingresos.length!==1?"s":""} · ${money.format(totalIngresos)} total</span>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">${methodCards}</div>
+        </div>` : "";
+    }
   }
 }
 
@@ -3843,6 +3885,7 @@ async function updateRemoteTransaction(txId, data) {
     concept:          data.concept,
     category:         data.category,
     amount:           Number(data.amount || 0),
+    payment_method:   data.paymentMethod || null,
   }).eq("id", txId);
   if (error) throw error;
 }
@@ -5274,14 +5317,16 @@ async function createRemoteTransaction(r) {
   const { data, error } = await supabaseClient.from("transactions").insert({
     branch_id:branchId,
     transaction_date:r.date, type:r.type, concept:r.concept,
-    category:r.category, amount:r.amount, created_by:currentEmployeeId()
+    category:r.category, amount:r.amount, created_by:currentEmployeeId(),
+    payment_method: r.paymentMethod || null,
   }).select().single();
   if (error) throw error;
   // Add the DB-created transaction to state immediately so it appears in the dashboard.
   const branchName = [...lookups.branchesByName.values()].find(b=>b.id===branchId)?.name || BRANCHES[0];
   const mapped = {
     id:data.id, date:data.transaction_date, type:data.type, concept:data.concept,
-    category:data.category, amount:Number(data.amount||0), branch:branchName,
+    category:data.category, amount:Number(data.amount||0),
+    paymentMethod:data.payment_method||"", branch:branchName,
   };
   state.transactions = [mapped, ...state.transactions.filter(t=>t.id!==data.id)];
 }
@@ -5679,11 +5724,12 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
       if (error) throw error;
 
       await createRemoteTransaction({
-        date:     dateStamp(),
-        type:     "Ingreso",
-        concept:  `Abono ${ticket.tracking} (${method})`,
-        category: "Servicio",
+        date:          dateStamp(),
+        type:          "Ingreso",
+        concept:       `Abono ${ticket.tracking}`,
+        category:      "Servicio",
         amount,
+        paymentMethod: method,
       });
 
       try { await reloadState(); } catch(re) { console.warn("reload:", re); }

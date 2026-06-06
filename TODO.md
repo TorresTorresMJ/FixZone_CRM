@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-06_ (sesión 3)
+_Última actualización: 2026-06-06_ (sesión 4)
 
 ## Fase 1: Definir operacion interna
 
@@ -46,7 +46,7 @@ _Última actualización: 2026-06-06_ (sesión 3)
 - [x] Permitir abonos, saldo pendiente y pagos parciales.
 - [x] Pagos de tickets se registran automáticamente como Ingresos en Finanzas (backfill migration 20).
 - [x] Agregar historial de eventos por ticket (detecta cambio de stage, timeline en modal de edición).
-- [ ] Agregar fotos de evidencia antes y despues del dispositivo.
+- [x] Agregar fotos de evidencia antes y despues del dispositivo. * Se soluciona con mWR de etapas * 
 - [x] Modificar el tamaño del recibo — botones 58mm/80mm en el header, persiste en localStorage.
 - [x] Impresión automática según estado del ticket (⚡ Auto en dropdown).
 - [x] Clientes e IMEI opcionales en tickets walk-in — `supabase/19_nullable_customer_device.sql` aplicado.
@@ -82,6 +82,9 @@ _Última actualización: 2026-06-06_ (sesión 3)
 - [ ] Exportar reportes a Excel.
 - [ ] Ver y descargar reportes de períodos anteriores o rangos personalizados.
 - [ ] Considerar gastos de movilidad / gasolina como categoría de egreso (traslados a proveedor, entregas a domicilio).
+- Integracion de metricas y assurance de traceabilidad bidireccional entre cotizaciones <> clientes <> tickets <> cotizaciones - Prioridad media
+- [x] Registrar método de pago interno — efectivo, transferencia, link de pago, terminal TC, terminal TD. Campo en form de transacción manual + abono guarda método como campo separado en DB (`payment_method`). Se muestra en tabla Finanzas bajo el concepto.
+- [x] Métricas de método de pago — sección "💳 Ingresos por método de pago" en Reportes, filtrada por período y sucursal, con tarjeta por canal y % del total.
 
 ## Fase 7: Marketing
 
@@ -89,7 +92,7 @@ _Última actualización: 2026-06-06_ (sesión 3)
 - [x] Plantillas de mensaje WhatsApp editables — tab Automatización (ahora incluye plantilla de Cotización).
 - [x] Códigos de descuento en Supabase (`discount_codes`) — válidos en Cotización, Ticket y POS, con scope, fecha de vigencia, máx. usos, activo/inactivo, tipo fijo o porcentaje.
 - [x] Marketing UI — cards compactas, links editables inline sin ticket a IT (add/edit/delete, con icono, nombre, URL y descripción).
-- [ ] Integración WhatsApp Business Cloud API — envío automático al cliente cuando cambia el estado del ticket (Listo, Pagado, Garantía). Prerequisito: Meta Business verificado + número dedicado registrado en la API. Programación lista en 1 sprint una vez que estén los accesos.
+- [ ] Integración WhatsApp Business Cloud API — envío automático al cliente cuando cambia el estado del ticket (Listo, Pagado, Garantía). Prerequisito: Meta Business verificado + número dedicado registrado en la API. Programación lista en 1 sprint una vez que estén los accesos. - Priority
 - [ ] Función para enviar recordatorios de garantía o promociones por WhatsApp / email.
 - [ ] Crear sección de plantillas de email para clientes, editable.
 - [ ] Permitir subir/gestionar imágenes y documentos desde la UI.
@@ -109,7 +112,7 @@ _Última actualización: 2026-06-06_ (sesión 3)
 
 - [ ] Agregar notificaciones por WhatsApp o email automáticas (ticket listo, garantía por vencer).
 - [ ] Agregar lector de códigos QR para consulta de tickets.
-- [ ] Agregar integración contable si se requiere facturación formal.
+- [ ] Agregar integración contable si se requiere facturación formal. Prioridad media
 - [ ] Actualizar logos en `assets/brand/` — los actuales son versiones antiguas.
 - [x] Recibo de impresión de largo dinámico — alto del papel se ajusta al contenido real, sin espacio en blanco al final (`doPrint()` inyecta `@page { size: Xmm auto }` antes de cada impresión, evitando el bug de `var()` en `@page` de Chrome).
 - [x] Autocomplete de equipo en tickets y cotizaciones — lista base ~100 modelos (iPhone/Samsung/Motorola/Xiaomi/Huawei), filtrado substring, opción agregar modelo nuevo.
@@ -119,7 +122,9 @@ _Última actualización: 2026-06-06_ (sesión 3)
 - [x] Botón de perfil de usuario para cambiar contraseña.
 - [x] Drag & drop en KANBANs (tickets + soporte IT).
 - [x] Tooltips de sección al hacer hover en el nav.
-- [ ] Que exista un QR interno, en el ticket para que lo escanee el tecnico y ahi le aprezcan tres opciones: recibido | Proceso | Listo y en cada seccion que escoja pues sea para que pueda tomar las fotos y esas se suben y llegan al ticket al QR ahora si del cliente y se ven esas etapas tambien conforme el ticket se mueve.. 
+- [x] Que exista un QR interno, en el ticket para que lo escanee el tecnico y ahi le aprezcan tres opciones: recibido | Proceso | Listo y en cada seccion que escoja pues sea para que pueda tomar las fotos y esas se suben y llegan al ticket al QR ahora si del cliente y se ven esas etapas tambien conforme el ticket se mueve.. 
+- [ ] Para el area de insumos, agragar el escaneo de tickets con la camara y que al leerlo , escanee y detecte los campos para un prellenado,  y asi aparezzca el formulario antes de guardar, donde se verifiquen o corrihan los campos y al guardar se guarde la foto Y el llenado del formulario porfavor. Esto para mantener mas facil el registro para los reportes. Asi que sea "Agregar" -> aparezcan las opciones : manual | escanear ; Y manual se abre el formulario asi tal cual esta y para adjuntar el archivo del ticket, y si ponen escanear se abra la camara , tomen la foto y haga el prellenado adjuntando esa foto.  Priority 
+- [ ] Opc para Ordenar columnas del kanban : fecha asc, descendiente. alfabetica, etc. 
 
 ## Fase 10: Fixes 
 
@@ -131,14 +136,14 @@ _Última actualización: 2026-06-06_ (sesión 3)
 - [x] IMEI/color/accesorios se borran al editar — Fix: device record persiste con `customer_id` nullable.
 - [x] Pagos de tickets crean transacción en Finanzas — backfill migration 20 aplicado.
 - [x] dateStamp usa hora local (no UTC) — corrige "Ingresos hoy" después de las 7pm.
-- [ ] Tickets — carga de fotos existe solo al editar, no al crear (diseño intencional por ahora).
+- [x] Tickets — carga de fotos existe solo al editar, no al crear (diseño intencional por ahora). * Se arregló con los QR de etapas* 
 - [ ] El logo de la entrada , de home, para iniciar sesion, es el equivocado. 
-- [ ] No hay donde poner los datos de contacto del cliente en la creacion del ticket. 
-- [ ]Que al tener datos de contacto de un cliente ese cliente se registre automaticamente 
-- [ ] Poner que se peuda adjuntar fotos en los tickets para IT que crean los usuarios. 
-- [ ] En el ticket, cuando el texto de la descripcióm es largo, se corta, no esta delimitado al ancho del ticket, mira: ![alt text](image-2.png)
+- [x] Teléfono del cliente en ticket — campo `clientPhone` opcional en el form; al editar se pre-llena del registro existente.
+- [x] Auto-registrar cliente cuando hay nombre + teléfono al crear o editar un ticket (también actualiza teléfono si el cliente existe sin uno).
+- [x] Texto largo de descripción en cards — `word-break:break-word` + `-webkit-line-clamp:2` en ticket card y cotización card.
 - [ ](image-3.png)Que en el chat de notificaciones , cuando IT manda mensaje diga IT. O mejor, como hay roles repetidos, que se muestr el nombre del usuario plis, solo primer nombre. 
 - [ ] Mande mensaje en el centro de notificaciones y no le llegó a nadie, abrieron su centro de campanita y no aparecia nunfun mensaje de los que habia enviado. 
+- [ ] .photo-stage-group {} /* se usa?*/ si no, borrar la regla vacia. 
 
 ## Fase 11: Cotizaciones
 
@@ -183,6 +188,8 @@ _Última actualización: 2026-06-06_ (sesión 3)
 - [ ] Kanban tipo Hubspot — expandir card al click para leer info completa (read-only). Actualmente hay que ir a Editar.
 - [ ] Revisar mobile en celular real (responsive implementado, pendiente QA).
 - [ ] Centro de notificaciones en tiempo real — ticket asignado, cambio de stage, comentarios IT.
+- [ ] Desborde fuera del margen de los tickets y texto . Prioridad medai. 
 
 ## Fase 14 - IT 
 - [ ] Que en cada task de IT permita la comunciacion IT <> Usuario
+- [ ] Poner que se peuda adjuntar fotos en los tickets para IT que crean los usuarios. 
