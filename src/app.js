@@ -641,8 +641,9 @@ async function loadSupabaseState() {
         color:dev?.color||"",
         accessories:dev?.accessories_received||"",
         physicalCondition:dev?.physical_condition||"",
-        // Customer phone — enable search by phone number
+        // Customer phone — enable search by phone number and pre-populate edit form
         phone:cust?.phone||"",
+        clientPhone:cust?.phone||"",
         quoteItems: Array.isArray(t.quote_items) ? t.quote_items : (t.quote_items ? JSON.parse(t.quote_items) : []),
       };
     }),
@@ -994,7 +995,7 @@ function quoteCard(ticket, perms) {
     <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span>${convertedBadge}</div>
     <div class="ticket-topline"><strong>${escapeHtml(ticket.client)}</strong><span class="muted">${escapeHtml(ticket.createdAt)}</span></div>
     <span class="muted">${escapeHtml(ticket.productName)}</span>
-    ${ticket.issue ? `<p style="margin:4px 0">${escapeHtml(ticket.issue)}</p>` : ""}
+    ${ticket.issue ? `<p style="margin:4px 0;font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;overflow-wrap:break-word">${escapeHtml(ticket.issue)}</p>` : ""}
     ${itemsHtml}
     <div class="ticket-actions">
       <button class="mini-button" data-print-cotizacion="${ticket.id}">🖨 Imprimir</button>
@@ -1058,7 +1059,7 @@ function ticketCard(ticket, perms, idx = 0) {
 
   // Truncate issue to 2 lines via CSS
   const issueHtml = ticket.issue
-    ? `<p style="margin:3px 0 0;font-size:12px;color:rgba(255,255,255,.65);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(ticket.issue)}</p>`
+    ? `<p style="margin:3px 0 0;font-size:12px;color:rgba(255,255,255,.65);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;overflow-wrap:break-word">${escapeHtml(ticket.issue)}</p>`
     : "";
 
   // Compact price row — single line
@@ -1072,6 +1073,7 @@ function ticketCard(ticket, perms, idx = 0) {
     </div>` : "";
 
   return `<article class="ticket-card" style="--i:${idx}" draggable="true"
+    onclick="viewTicketDetail('${ticket.id}')"
     ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
     <div class="ticket-topline">
@@ -1085,7 +1087,7 @@ function ticketCard(ticket, perms, idx = 0) {
     <span class="muted" style="font-size:11px">${escapeHtml(ticket.productName||ticket.device)}</span>
     ${issueHtml}
     ${priceHtml}
-    <div class="ticket-actions">
+    <div class="ticket-actions" onclick="event.stopPropagation()">
       <div style="position:relative;display:inline-block">
         <button class="mini-button" data-print-ticket="${ticket.id}" title="Imprimir">🖨 ▾</button>
         <div class="print-menu" style="display:none;position:absolute;bottom:110%;left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:190px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
@@ -5068,6 +5070,32 @@ async function createRemoteTicket(r) {
 
 async function updateRemoteTicket(ticketId, r) {
   const oldTicket = state.tickets.find(t => t.id === ticketId);
+
+  // Auto-register or update customer phone when editing
+  if (r.client) {
+    let customer = lookups.customersByName.get(r.client);
+    if (!customer && r.clientPhone) {
+      const { data: newCust } = await supabaseClient.from("customers").insert({
+        full_name: r.client,
+        phone: r.clientPhone,
+        branch_id: await branchIdByName(r.branch||activeBranchId),
+      }).select().single();
+      if (newCust) {
+        customer = { id: newCust.id };
+        lookups.customersByName.set(r.client, customer);
+        state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId });
+        showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
+      }
+    } else if (customer && r.clientPhone) {
+      const existing = state.clients.find(c=>c.id===customer.id);
+      if (!existing?.phone) {
+        await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+        const idx = state.clients.findIndex(c=>c.id===customer.id);
+        if (idx>=0) state.clients[idx].phone = r.clientPhone;
+      }
+    }
+  }
+
   const assignedE = lookups.employeesByName.get(r.assignedTo);
   const { error } = await supabaseClient.from("service_tickets").update({
     customer_name:        r.client,
@@ -6120,6 +6148,7 @@ function setActiveBranch(name) {
 }
 window.setActiveBranch = setActiveBranch;
 window.openTransactionForm = openTransactionForm;
+window.viewTicketDetail = viewTicketDetail;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // PRINT / EXPORT
@@ -6905,6 +6934,91 @@ function setupDogCursor() {
   if (quickPos)    quickPos.title    = "Punto de Venta (P)";
   if (searchEl)    searchEl.placeholder = "Buscar… (/)";
 })();
+
+// ──────────────────────────────────────────────────────────────────────────────
+// TICKET DETAIL VIEW — modal read-only al hacer click en una card
+// ──────────────────────────────────────────────────────────────────────────────
+function viewTicketDetail(ticketId) {
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+
+  const perms = currentPerms();
+  const paid  = ticket.paymentStatus === "Pagado";
+  const repair = Number(ticket.repairAmount ?? ticket.total ?? 0);
+  const disc   = Number(ticket.discountAmount ?? 0);
+  const total  = Math.max(0, repair - disc);
+  const paid_amt = Number(ticket.paidAmount ?? (paid ? repair : 0));
+  const balance  = Math.max(0, total - paid_amt);
+
+  const stClass = ticket.status === "Listo" || ticket.status === "Entregado" ? "ready"
+                : ticket.status === "Cotizacion" ? "waiting"
+                : ticket.status === "Garantia"   ? "warranty" : "";
+
+  const row = (label, val) => val
+    ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
+    : "";
+
+  activeForm = null;
+  editingTicketId = null;
+  modalTitle.textContent = ticket.tracking;
+  document.querySelector("#modal-eyebrow").textContent = "Detalle de ticket";
+
+  formFields.innerHTML = `
+    <div class="ticket-detail-view">
+      <div class="tdv-header">
+        <span class="tracking-code" style="font-size:16px">${escapeHtml(ticket.tracking)}</span>
+        <span class="status ${stClass}">${escapeHtml(ticket.status)}</span>
+      </div>
+      <div class="tdv-grid">
+        ${row("Cliente",        ticket.client)}
+        ${row("Equipo",         ticket.productName || ticket.device)}
+        ${row("IMEI / serie",   ticket.imei)}
+        ${row("Técnico",        ticket.assignedTo)}
+        ${row("Sucursal",       ticket.branch)}
+        ${row("Fecha entrada",  ticket.date)}
+        ${row("Fecha entrega",  ticket.deliveryDate)}
+        ${row("Servicio",       ticket.serviceType)}
+        ${row("Precio reparación", repair > 0 ? money.format(repair) : null)}
+        ${disc > 0 ? row("Descuento",    "−" + money.format(disc)) : ""}
+        ${row("Total",          total > 0 ? money.format(total) : null)}
+        ${row("Pagado",         paid_amt > 0 ? money.format(paid_amt) : null)}
+        ${balance > 0 ? `<div class="detail-row"><span>Saldo pendiente</span><strong style="color:#ffd18c">${money.format(balance)}</strong></div>` : ""}
+        ${row("Estado de pago", ticket.paymentStatus)}
+      </div>
+      ${ticket.issue ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
+      ${ticket.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas internas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(ticket.notes)}</p></div>` : ""}
+    </div>`;
+
+  // Ocultar botón Guardar, mostrar solo Cerrar + Editar
+  const saveBtn = document.querySelector("#save-record");
+  if (saveBtn) saveBtn.style.display = "none";
+  const cancelBtn = document.querySelector("#cancel-record");
+  if (cancelBtn) cancelBtn.textContent = "Cerrar";
+
+  // Botón Editar en el footer del modal
+  const actions = document.querySelector(".modal-actions");
+  if (actions && perms.canEditTickets && !actions.querySelector("#tdv-edit-btn")) {
+    const editBtn = document.createElement("button");
+    editBtn.id = "tdv-edit-btn";
+    editBtn.className = "primary-action";
+    editBtn.textContent = "Editar";
+    editBtn.style.cssText = "padding:0 20px";
+    editBtn.onclick = async () => { await closeModal(); openEditTicket(ticketId); };
+    actions.prepend(editBtn);
+  }
+
+  modal.showModal();
+}
+
+// Limpiar botón Editar temporal al cerrar modal
+modal.addEventListener("close", () => {
+  const tdvBtn = document.querySelector("#tdv-edit-btn");
+  if (tdvBtn) tdvBtn.remove();
+  const saveBtn = document.querySelector("#save-record");
+  if (saveBtn) saveBtn.style.display = "";
+  const cancelBtn = document.querySelector("#cancel-record");
+  if (cancelBtn) cancelBtn.textContent = "Cancelar";
+});
 
 async function initializeApp() {
   loadSavedPermissions();

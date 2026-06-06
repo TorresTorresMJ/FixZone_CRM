@@ -424,7 +424,7 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
   background: rgba(255,255,255,0.04);
 }
 
-.ticket-card { display: grid; gap: 5px; font-size: 12px; }
+.ticket-card { display: grid; gap: 5px; font-size: 12px; overflow: hidden; cursor: pointer; }
 
 .ticket-card p { margin: 0; font-size: 12px; }
 .ticket-card strong { font-size: 12px; }
@@ -460,6 +460,28 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 .ticket-detail-grid span { color: var(--fz-gray-light); font-size: 11px; }
 .ticket-detail-grid strong { font-size: 11px; }
 .paid-amount { color: #7af0b1; }
+
+/* ── Ticket detail view (read-only modal) ───────────────────────────────── */
+.ticket-detail-view { display: flex; flex-direction: column; gap: 16px; }
+.tdv-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tdv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.detail-row { display: flex; flex-direction: column; gap: 2px; }
+.detail-row span { font-size: 11px; color: var(--fz-gray-light); text-transform: uppercase; letter-spacing: 0.04em; }
+.detail-row strong { font-size: 13px; font-weight: 600; }
+.tdv-issue {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.07);
+}
 
 .ticket-actions { display: flex; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
 
@@ -825,17 +847,21 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 /* ── Kanban: columnas compactas, acciones revelan en hover ───────────────── */
 .kanban-column { min-width: 240px; width: 240px; padding: 12px 10px; }
 
-/* Acciones siempre en el DOM, se revelan con fade — sin overflow ni max-height */
+/* Acciones: se expanden en hover via max-height, overflow:hidden en card las contiene */
 .ticket-card .ticket-actions {
-  margin-top: 8px;
+  max-height: 0;
   opacity: 0;
   pointer-events: none;
-  transition: opacity .15s ease;
+  overflow: hidden;
+  transition: max-height .22s ease, opacity .15s ease;
 }
 .ticket-card:hover .ticket-actions,
-.ticket-card:focus-within .ticket-actions {
+.ticket-card:focus-within .ticket-actions,
+.ticket-card.is-expanded .ticket-actions {
+  max-height: 72px;
   opacity: 1;
   pointer-events: auto;
+  overflow: visible;
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
