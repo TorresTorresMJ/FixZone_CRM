@@ -661,7 +661,7 @@ async function loadSupabaseState() {
       scope:Array.isArray(d.scope)?d.scope:["pos","cotizacion","ticket"],
       active:d.active, branchId:d.branch_id||null,
     })),
-    serviceTypes: (stypRes.data||[]).map(s => ({ id:s.id, name:s.name, sortOrder:Number(s.sort_order||0) })),
+    serviceTypes: (stypRes.data||[]).map(s => ({ id:s.id, name:s.name, sortOrder:Number(s.sort_order||0), defaultPrice:Number(s.default_price||0) })),
     servicePrices: (spRes.data||[]).map(p => ({
       id:p.id, deviceModel:p.device_model, serviceTypeId:p.service_type_id,
       price:Number(p.price||0), branchId:p.branch_id||null, notes:p.notes||"",
@@ -1345,14 +1345,19 @@ function renderPrecios() {
         <button class="mini-button" id="precio-add-type-btn" style="font-size:11px;padding:3px 10px">+ Agregar</button>
       </div>
       <div id="precio-stype-body" style="display:none">
-        <div style="padding:10px 14px 4px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px">
+        <div style="padding:10px 14px 4px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">
           ${types.map((t,i)=>`
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.04);font-size:12px">
-              <span style="color:rgba(255,255,255,.45);margin-right:6px;font-size:10px">${i+1}</span>
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.04);font-size:12px">
+              <span style="color:rgba(255,255,255,.35);font-size:10px;min-width:14px">${i+1}</span>
               <span style="flex:1">${escapeHtml(t.name)}</span>
-              ${supabaseClient?`<button data-del-stype="${t.id}" style="background:none;border:none;color:rgba(255,100,100,.5);cursor:pointer;padding:0 0 0 6px;font-size:11px;line-height:1" title="Eliminar">✕</button>`:""}
+              <input class="stype-default-price" data-stid="${t.id}"
+                type="number" min="0" step="1" value="${t.defaultPrice||""}" placeholder="—"
+                title="Precio base (aplica cuando no hay precio específico por equipo)"
+                style="width:64px;font-size:11px;padding:3px 5px;border-radius:4px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:inherit;text-align:right"/>
+              ${supabaseClient?`<button data-del-stype="${t.id}" style="background:none;border:none;color:rgba(255,100,100,.4);cursor:pointer;padding:0;font-size:11px;line-height:1" title="Eliminar">✕</button>`:""}
             </div>`).join("")}
         </div>
+        <div style="padding:4px 14px 8px;font-size:10px;color:rgba(255,255,255,.25)">Precio base $ — aplica automáticamente en cotizaciones cuando no hay precio específico por equipo (ej. Diagnóstico $350 para todos)</div>
         <div id="precio-add-type-form" style="display:none;padding:10px 14px 12px">
           <div style="display:flex;gap:8px;align-items:center">
             <input id="precio-new-type-input" type="text" placeholder="Nombre del servicio"
@@ -1402,6 +1407,19 @@ function renderPrecios() {
       state.serviceTypes = state.serviceTypes.filter(t=>t.id!==id);
       state.servicePrices = state.servicePrices.filter(p=>p.serviceTypeId!==id);
       renderPrecios();
+    });
+  });
+
+  // Save default price on blur
+  stEl.querySelectorAll(".stype-default-price").forEach(inp => {
+    inp.addEventListener("change", async () => {
+      if (!supabaseClient) return;
+      const id    = inp.dataset.stid;
+      const price = Number(inp.value) || 0;
+      await supabaseClient.from("service_types").update({ default_price: price }).eq("id", id);
+      const st = state.serviceTypes.find(t=>t.id===id);
+      if (st) st.defaultPrice = price;
+      showToast(`✓ Precio base guardado: ${price>0?money.format(price):"sin precio base"}`);
     });
   });
 
@@ -3745,23 +3763,26 @@ function initQuoteItemsBuilder(existingItems = []) {
     if (e.target.classList.contains("qi-desc") && quoteItemsDraft[idx].type === "Servicio") {
       const svcName = e.target.value;
       quoteItemsDraft[idx].description = svcName;
-      // Auto price lookup from service_prices
+      quoteItemsDraft[idx].insumoCost  = 0; // reset insumo when service changes
       if (svcName) {
         const deviceName = document.querySelector("#productName")?.value?.trim();
         const branchId   = (state.branches||[]).find(b=>b.name===activeBranchId)?.id;
         const stype      = (state.serviceTypes||[]).find(t=>t.name===svcName);
-        if (stype && deviceName) {
-          const rec = (state.servicePrices||[]).find(p =>
+        if (stype) {
+          // 1. Try device-specific price
+          const rec = deviceName ? (state.servicePrices||[]).find(p =>
             p.deviceModel.toLowerCase() === deviceName.toLowerCase() &&
             p.serviceTypeId === stype.id &&
             (!p.branchId || p.branchId === branchId)
-          );
-          if (rec && rec.price > 0) {
-            quoteItemsDraft[idx].unitPrice = rec.price;
-            // Update price input directly without full re-render
+          ) : null;
+          // 2. Fall back to service default price
+          const finalPrice = (rec && rec.price > 0) ? rec.price
+            : (stype.defaultPrice > 0 ? stype.defaultPrice : 0);
+          if (finalPrice > 0) {
+            quoteItemsDraft[idx].unitPrice = finalPrice;
             const priceInputs = document.querySelectorAll(".qi-price");
-            if (priceInputs[idx]) priceInputs[idx].value = rec.price;
-            showToast(`💡 Precio sugerido: ${money.format(rec.price)}`);
+            if (priceInputs[idx]) priceInputs[idx].value = finalPrice;
+            showToast(`💡 Precio: ${money.format(finalPrice)}${stype.defaultPrice>0&&!rec?" (base del servicio)":""}`);
           }
         }
       }
@@ -3792,8 +3813,9 @@ function initQuoteItemsBuilder(existingItems = []) {
           p.serviceTypeId === stype.id &&
           (!p.branchId || p.branchId === branchId)
         );
-        if (rec && rec.price > 0) {
-          quoteItemsDraft[idx].unitPrice = rec.price;
+        const finalPrice = (rec && rec.price > 0) ? rec.price : (stype.defaultPrice > 0 ? stype.defaultPrice : 0);
+        if (finalPrice > 0) {
+          quoteItemsDraft[idx].unitPrice = finalPrice;
           anyFilled = true;
         }
       });
