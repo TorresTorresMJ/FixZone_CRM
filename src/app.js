@@ -1092,7 +1092,7 @@ function ticketCard(ticket, perms, idx = 0) {
     <div class="ticket-actions">
       <div style="position:relative;display:inline-block">
         <button class="mini-button" data-print-ticket="${ticket.id}" title="Imprimir">🖨 ▾</button>
-        <div class="print-menu" style="display:none;position:absolute;bottom:110%;left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:190px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+        <div class="print-menu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:190px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
           <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:2px" data-print-auto="${ticket.id}">⚡ Auto (según estado)</button>
           <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-recepcion="${ticket.id}">📋 Recibo de recepción</button>
           <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-pago="${ticket.id}">💳 Comprobante de pago</button>
