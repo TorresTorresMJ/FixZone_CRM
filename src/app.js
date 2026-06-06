@@ -6936,20 +6936,19 @@ function setupDogCursor() {
 })();
 
 // ──────────────────────────────────────────────────────────────────────────────
-// TICKET DETAIL VIEW — modal read-only al hacer click en una card
+// ──────────────────────────────────────────────────────────────────────────────
+// TICKET DETAIL VIEW — dialog independiente (no usa recordForm ni activeForm)
 // ──────────────────────────────────────────────────────────────────────────────
 function viewTicketDetail(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
 
-  const perms = currentPerms();
-  const paid  = ticket.paymentStatus === "Pagado";
-  const repair = Number(ticket.repairAmount ?? ticket.total ?? 0);
-  const disc   = Number(ticket.discountAmount ?? 0);
-  const total  = Math.max(0, repair - disc);
-  const paid_amt = Number(ticket.paidAmount ?? (paid ? repair : 0));
-  const balance  = Math.max(0, total - paid_amt);
-
+  const perms   = currentPerms();
+  const repair  = Number(ticket.repairAmount ?? ticket.total ?? 0);
+  const disc    = Number(ticket.discountAmount ?? 0);
+  const total   = Math.max(0, repair - disc);
+  const paidAmt = Number(ticket.paidAmount ?? (ticket.paymentStatus === "Pagado" ? repair : 0));
+  const balance = Math.max(0, total - paidAmt);
   const stClass = ticket.status === "Listo" || ticket.status === "Entregado" ? "ready"
                 : ticket.status === "Cotizacion" ? "waiting"
                 : ticket.status === "Garantia"   ? "warranty" : "";
@@ -6958,67 +6957,65 @@ function viewTicketDetail(ticketId) {
     ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
     : "";
 
-  activeForm = null;
-  editingTicketId = null;
-  modalTitle.textContent = ticket.tracking;
-  document.querySelector("#modal-eyebrow").textContent = "Detalle de ticket";
+  // Eliminar instancia previa si existe
+  document.querySelector("#tdv-dialog")?.remove();
 
-  formFields.innerHTML = `
-    <div class="ticket-detail-view">
-      <div class="tdv-header">
-        <span class="tracking-code" style="font-size:16px">${escapeHtml(ticket.tracking)}</span>
-        <span class="status ${stClass}">${escapeHtml(ticket.status)}</span>
+  const dlg = document.createElement("dialog");
+  dlg.id    = "tdv-dialog";
+  dlg.className = "modal";
+  dlg.innerHTML = `
+    <div style="padding:20px 22px 0">
+      <div class="modal-header" style="margin-bottom:16px">
+        <div>
+          <p class="eyebrow" style="margin:0 0 4px">Detalle de ticket</p>
+          <span class="tracking-code" style="font-size:17px">${escapeHtml(ticket.tracking)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="status ${stClass}">${escapeHtml(ticket.status)}</span>
+          <button type="button" class="icon-button" id="tdv-close" aria-label="Cerrar" style="font-size:16px">✕</button>
+        </div>
       </div>
-      <div class="tdv-grid">
-        ${row("Cliente",        ticket.client)}
-        ${row("Equipo",         ticket.productName || ticket.device)}
-        ${row("IMEI / serie",   ticket.imei)}
-        ${row("Técnico",        ticket.assignedTo)}
-        ${row("Sucursal",       ticket.branch)}
-        ${row("Fecha entrada",  ticket.date)}
-        ${row("Fecha entrega",  ticket.deliveryDate)}
-        ${row("Servicio",       ticket.serviceType)}
-        ${row("Precio reparación", repair > 0 ? money.format(repair) : null)}
-        ${disc > 0 ? row("Descuento",    "−" + money.format(disc)) : ""}
-        ${row("Total",          total > 0 ? money.format(total) : null)}
-        ${row("Pagado",         paid_amt > 0 ? money.format(paid_amt) : null)}
-        ${balance > 0 ? `<div class="detail-row"><span>Saldo pendiente</span><strong style="color:#ffd18c">${money.format(balance)}</strong></div>` : ""}
+      <div class="tdv-grid" style="margin-bottom:14px">
+        ${row("Cliente",      ticket.client)}
+        ${row("Equipo",       ticket.productName || ticket.device)}
+        ${row("IMEI / serie", ticket.imei)}
+        ${row("Técnico",      ticket.assignedTo)}
+        ${row("Sucursal",     ticket.branch)}
+        ${row("Fecha entrada",ticket.date)}
+        ${row("Fecha entrega",ticket.deliveryDate)}
+        ${row("Servicio",     ticket.serviceType)}
+        ${repair > 0 ? row("Precio reparación", money.format(repair)) : ""}
+        ${disc   > 0 ? row("Descuento", "−" + money.format(disc))     : ""}
+        ${total  > 0 ? row("Total",     money.format(total))           : ""}
+        ${paidAmt> 0 ? row("Pagado",    money.format(paidAmt))         : ""}
+        ${balance> 0 ? `<div class="detail-row"><span>Saldo pendiente</span><strong style="color:#ffd18c">${money.format(balance)}</strong></div>` : ""}
         ${row("Estado de pago", ticket.paymentStatus)}
       </div>
-      ${ticket.issue ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
+      ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${ticket.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas internas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(ticket.notes)}</p></div>` : ""}
-    </div>`;
+    </div>
+    <menu class="modal-actions" style="padding:16px 22px">
+      <button type="button" class="ghost-button" id="tdv-close2">Cerrar</button>
+      ${perms.canEditTickets ? `<button type="button" class="primary-action" id="tdv-edit" style="padding:0 20px">Editar</button>` : ""}
+    </menu>`;
 
-  // Ocultar botón Guardar, mostrar solo Cerrar + Editar
-  const saveBtn = document.querySelector("#save-record");
-  if (saveBtn) saveBtn.style.display = "none";
-  const cancelBtn = document.querySelector("#cancel-record");
-  if (cancelBtn) cancelBtn.textContent = "Cerrar";
+  document.body.appendChild(dlg);
 
-  // Botón Editar en el footer del modal
-  const actions = document.querySelector(".modal-actions");
-  if (actions && perms.canEditTickets && !actions.querySelector("#tdv-edit-btn")) {
-    const editBtn = document.createElement("button");
-    editBtn.id = "tdv-edit-btn";
-    editBtn.className = "primary-action";
-    editBtn.textContent = "Editar";
-    editBtn.style.cssText = "padding:0 20px";
-    editBtn.onclick = async () => { await closeModal(); openEditTicket(ticketId); };
-    actions.prepend(editBtn);
-  }
+  // Cierre en backdrop click
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  // Cierre en botones
+  dlg.querySelector("#tdv-close").addEventListener("click",  () => dlg.close());
+  dlg.querySelector("#tdv-close2").addEventListener("click", () => dlg.close());
+  // Ir a edición
+  dlg.querySelector("#tdv-edit")?.addEventListener("click", () => {
+    dlg.close();
+    openEditTicket(ticketId);
+  });
+  // Cleanup al cerrar
+  dlg.addEventListener("close", () => dlg.remove(), { once: true });
 
-  modal.showModal();
+  dlg.showModal();
 }
-
-// Limpiar botón Editar temporal al cerrar modal
-modal.addEventListener("close", () => {
-  const tdvBtn = document.querySelector("#tdv-edit-btn");
-  if (tdvBtn) tdvBtn.remove();
-  const saveBtn = document.querySelector("#save-record");
-  if (saveBtn) saveBtn.style.display = "";
-  const cancelBtn = document.querySelector("#cancel-record");
-  if (cancelBtn) cancelBtn.textContent = "Cancelar";
-});
 
 async function initializeApp() {
   loadSavedPermissions();
