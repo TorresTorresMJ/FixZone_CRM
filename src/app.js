@@ -493,6 +493,7 @@ function showApp() {
   applyBranchBrand(activeBranchId);
   applyRolePermissions();
   updateAuthBar();
+  restoreLastView();
 }
 
 function updateAuthBar() {
@@ -680,6 +681,14 @@ function setView(name) {
   views.forEach(v => v.classList.toggle("is-visible", v.id===`${name}-view`));
   navItems.forEach(b => b.classList.toggle("is-active", b.dataset.view===name));
   document.querySelector("#view-title").textContent = document.querySelector(`#${name}-view`)?.dataset.title||"Home";
+  try { sessionStorage.setItem("fz-active-view", name); } catch(_) {}
+}
+
+function restoreLastView() {
+  try {
+    const last = sessionStorage.getItem("fz-active-view");
+    if (last && last !== "dashboard") setView(last);
+  } catch(_) {}
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -755,7 +764,7 @@ function renderMetrics() {
   document.querySelector("#recent-activity").innerHTML = branchTxs
     .slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6)
     .map(item=>`
-      <div class="activity-item">
+      <div class="activity-item" data-open-tx="${item.id}" style="cursor:pointer" title="Ver en Finanzas">
         <div><strong>${escapeHtml(item.concept)}</strong><br><span class="muted">${item.date} · ${escapeHtml(item.category)}</span></div>
         <span class="type-pill ${item.type==="Ingreso"?"type-income":"type-expense"}">${item.type==="Ingreso"?"+":"-"}${money.format(item.amount)}</span>
       </div>`).join("")||emptyMessage("Sin movimientos recientes.");
@@ -5741,6 +5750,18 @@ document.addEventListener("click", async e => {
   // View navigation from dashboard
   const viewBtn = e.target.closest("[data-view-target]");
   if (viewBtn) { setView(viewBtn.dataset.viewTarget); return; }
+
+  // Click on recent activity item → open Finanzas and edit that transaction
+  const openTx = e.target.closest("[data-open-tx]");
+  if (openTx) {
+    setView("finance");
+    const txId = openTx.dataset.openTx;
+    setTimeout(() => {
+      const btn = document.querySelector(`[data-edit-tx="${txId}"]`);
+      if (btn) btn.click();
+    }, 150);
+    return;
+  }
 });
 
 function handleDeleteTicket(id) {

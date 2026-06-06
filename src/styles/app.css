@@ -418,17 +418,20 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 .ticket-stack, .activity-list { display: grid; gap: 10px; }
 
 .ticket-card, .activity-item {
-  padding: 13px;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 8px;
-  background: rgba(255,255,255,0.045);
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 7px;
+  background: rgba(255,255,255,0.04);
 }
 
-.ticket-card { display: grid; gap: 8px; }
+.ticket-card { display: grid; gap: 5px; font-size: 12px; }
+
+.ticket-card p { margin: 0; font-size: 12px; }
+.ticket-card strong { font-size: 12px; }
 
 .tracking-code {
   color: var(--fz-secondary, #2678E8);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   font-family: var(--fz-font-heading);
 }
@@ -448,13 +451,14 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 .ticket-detail-grid {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 6px 10px;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(255,255,255,0.045);
+  gap: 3px 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.035);
 }
 
-.ticket-detail-grid span { color: var(--fz-gray-light); font-size: 12px; }
+.ticket-detail-grid span { color: var(--fz-gray-light); font-size: 11px; }
+.ticket-detail-grid strong { font-size: 11px; }
 .paid-amount { color: #7af0b1; }
 
 .ticket-actions { display: flex; justify-content: flex-end; gap: 6px; }
