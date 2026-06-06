@@ -1075,7 +1075,7 @@ function ticketCard(ticket, perms, idx = 0) {
     </div>` : "";
 
   return `<article class="ticket-card" style="--i:${idx}" draggable="true"
-    onclick="viewTicketDetail('${ticket.id}')"
+    onclick="if(!event.target.closest('.ticket-actions'))viewTicketDetail('${ticket.id}')"
     ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
     <div class="ticket-topline">
@@ -1089,7 +1089,7 @@ function ticketCard(ticket, perms, idx = 0) {
     <span class="muted" style="font-size:11px">${escapeHtml(ticket.productName||ticket.device)}</span>
     ${issueHtml}
     ${priceHtml}
-    <div class="ticket-actions" onclick="event.stopPropagation()">
+    <div class="ticket-actions">
       <div style="position:relative;display:inline-block">
         <button class="mini-button" data-print-ticket="${ticket.id}" title="Imprimir">🖨 ▾</button>
         <div class="print-menu" style="display:none;position:absolute;bottom:110%;left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:190px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
