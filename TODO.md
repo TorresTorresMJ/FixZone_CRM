@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-05_ (sesión 2)
+_Última actualización: 2026-06-06_ (sesión 3)
 
 ## Fase 1: Definir operacion interna
 
@@ -120,7 +120,7 @@ _Última actualización: 2026-06-05_ (sesión 2)
 - [x] Drag & drop en KANBANs (tickets + soporte IT).
 - [x] Tooltips de sección al hacer hover en el nav.
 
-## Fase 10: Fixes completados
+## Fase 10: Fixes 
 
 - [x] Finanzas: RLS y aparición en dashboard de nuevas transacciones.
 - [x] Soporte IT: formulario, permisos y botón eliminar.
@@ -132,6 +132,10 @@ _Última actualización: 2026-06-05_ (sesión 2)
 - [x] dateStamp usa hora local (no UTC) — corrige "Ingresos hoy" después de las 7pm.
 - [ ] Tickets — carga de fotos existe solo al editar, no al crear (diseño intencional por ahora).
 - [ ] El logo de la entrada , de home, para iniciar sesion, es el equivocado. 
+- [ ] No hay donde poner los datos de contacto del cliente en la creacion del ticket. 
+- [ ]Que al tener datos de contacto de un cliente ese cliente se registre automaticamente 
+- [ ] Poner que se peuda adjuntar fotos en los tickets para IT que crean los usuarios. 
+- [ ] En el ticket, cuando el texto de la descripcióm es largo, se corta, no esta delimitado al ancho del ticket, mira: ![alt text](image-2.png)
 
 ## Fase 11: Cotizaciones
 
@@ -164,9 +168,10 @@ _Última actualización: 2026-06-05_ (sesión 2)
 
 - [x] Sidebar compacto 220px, nav items 34px, entra completo en 100% de zoom.
 - [x] Navegación por grupos con divisores: Operaciones / Inventario / Finanzas / Admin.
-- [x] Botones circulares 🔧 Ticket y 🛒 POS en el header para acceso rápido.
+- [x] Botones circulares Ticket y POS en el header para acceso rápido (iconos Lucide SVG).
 - [x] Cards de marketing compactas (padding reducido, fuente más pequeña).
 - [x] Toasts de éxito/error y confirm modal reemplazando alert/confirm nativos.
+- [x] **Sprint 3 — Design polish:** tipografía Outfit (body) + Orbitron solo brand mark, H1/H2 sin uppercase, iconografía unificada con Lucide, ghost-card shadows removidos, status badges con tokens de marca, marcatextos en finanzas corregido, atajos de teclado (N/P/D//, Escape), validación inline de formularios, empty states con CTAs, success toast, focus rings, scrollbar custom, reduced-motion.
 - [ ] Revisar y simplificar opciones de impresión de tickets — actualmente hay múltiples botones/modalidades que pueden confundir el proceso o generar impresiones redundantes. Definir flujo claro: qué imprime qué y cuándo.
 - [ ] Centro de notificaciones — avisos en tiempo real para: ticket asignado, cambio de stage, respuesta en ticket IT. Tickets de Soporte IT con hilo de comentarios y seguimiento de estado visible para quien lo levantó.
 - [ ] Definir que se hará cuando ya haya muchos tickets en las columnas del KANBAN , tal vez hacer las cards mas chicas o acortar lo que hay visible a menos que se abra y se desgloce lo demas, tipo Hubspot. 
@@ -174,3 +179,6 @@ _Última actualización: 2026-06-05_ (sesión 2)
 - [ ] Si le damos en refresh, que se haga refresh en la tab que se quedó? porque siempre se va a home 
 - [ ] Tickets estan muy grandes para la columna del kanban ![ ](image-1.png) Tipografia demasiado grande 
 - [ ] Revisar que sea excelente para la navegacion en version movil. porque con la letra y las multiples secciones no quiero que se sature. 
+
+## Fase 14 - IT 
+- [ ] Que en cada task de IT permita la comunciacion IT <> Usuario

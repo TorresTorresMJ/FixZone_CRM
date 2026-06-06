@@ -6,7 +6,8 @@
     <title>FixZone CRM</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Roboto:ital,wght@0,400;0,500;1,400;1,500&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <link rel="stylesheet" href="./src/styles/brand-tokens.css" />
     <link rel="stylesheet" href="./src/styles/app.css" />
   </head>
@@ -32,7 +33,7 @@
             <span aria-hidden="true">✦</span> Tickets
           </button>
           <button class="nav-item" data-view="cotizaciones" title="Cotizaciones">
-            <span aria-hidden="true">📋</span> Cotizaciones
+            <span aria-hidden="true"><i data-lucide="clipboard-list"></i></span> Cotizaciones
           </button>
           <button class="nav-item" data-view="pos" title="Punto de Venta">
             <span aria-hidden="true">⊞</span> POS
@@ -62,7 +63,7 @@
           <hr class="nav-divider">
           <!-- Admin / roles específicos -->
           <button class="nav-item" data-view="users" title="Usuarios">
-            <span aria-hidden="true">👥</span> Usuarios
+            <span aria-hidden="true"><i data-lucide="users"></i></span> Usuarios
           </button>
           <button class="nav-item" data-view="soporte" title="Soporte IT">
             <span aria-hidden="true">⚙</span> Soporte
@@ -88,7 +89,6 @@
       <main class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">WE FIX FAST. YOU RELAX.</p>
             <h1 id="view-title">Home</h1>
             <div class="branch-tabs">
               <button class="branch-tab is-active" onclick="setActiveBranch('Puerto Vallarta')">Puerto Vallarta</button>
@@ -102,7 +102,7 @@
                 <small id="auth-user-role" class="muted"></small>
               </div>
               <div id="user-profile-menu" style="display:none;position:absolute;top:100%;right:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;min-width:180px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)">
-                <button class="ghost-button" id="change-pw-trigger" style="width:100%;text-align:left;padding:8px 12px;font-size:13px">🔑 Cambiar contraseña</button>
+                <button class="ghost-button" id="change-pw-trigger" style="width:100%;text-align:left;padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px"><i data-lucide="key-round" style="width:13px;height:13px;flex-shrink:0;"></i> Cambiar contraseña</button>
                 <hr style="border:0;border-top:1px solid rgba(255,255,255,0.08);margin:4px 0">
                 <button class="ghost-button" id="logout-from-menu" style="width:100%;text-align:left;padding:8px 12px;font-size:13px;color:#ff6b6b">Salir</button>
               </div>
@@ -113,13 +113,13 @@
               <span aria-hidden="true">⌕</span>
               <input id="global-search" type="search" placeholder="Buscar cliente, ticket, producto..." />
             </label>
-            <button class="icon-button notif-bell" id="notif-bell-btn" title="Notificaciones" style="position:relative;font-size:18px;padding:4px 8px;background:none;border:none;cursor:pointer">
-              🔔
+            <button class="icon-button notif-bell" id="notif-bell-btn" title="Notificaciones" aria-label="Notificaciones" style="position:relative;padding:0;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">
+              <i data-lucide="bell" style="width:18px;height:18px;"></i>
               <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:#e53e3e;color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px"></span>
             </button>
             <div style="display:flex;gap:6px;align-items:center">
-              <button class="quick-fab quick-fab-pos" id="quick-pos" title="Nueva venta POS">🛒</button>
-              <button class="quick-fab quick-fab-ticket" id="quick-ticket" title="Nuevo ticket de reparación">🔧</button>
+              <button class="quick-fab quick-fab-pos" id="quick-pos" title="Nueva venta POS" aria-label="Nueva venta POS"><i data-lucide="shopping-cart" style="width:16px;height:16px;"></i></button>
+              <button class="quick-fab quick-fab-ticket" id="quick-ticket" title="Nuevo ticket de reparación" aria-label="Nuevo ticket"><i data-lucide="wrench" style="width:16px;height:16px;"></i></button>
             </div>
           </div>
         </header>
@@ -601,6 +601,7 @@
     <script src="./src/supabase-config.js"></script>
     <script src="./src/brand-config.js"></script>
     <script src="./src/app.js"></script>
+    <script>document.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });</script>
   </body>
 
 </html>

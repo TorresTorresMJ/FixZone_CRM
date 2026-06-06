@@ -7,8 +7,8 @@
   --fz-white: #ffffff;
   --fz-gray-light: #bfbfbf;
 
-  --fz-font-heading: "Orbitron", "Montserrat", system-ui, sans-serif;
-  --fz-font-body:    "Roboto", "Inter", system-ui, sans-serif;
+  --fz-font-heading: "Orbitron", monospace;
+  --fz-font-body:    "Outfit", "Inter", system-ui, sans-serif;
 
   --fz-glow-blue: 0 0 32px rgba(47, 111, 255, 0.42);
   --fz-shadow-deep: 0 18px 48px rgba(31, 79, 204, 0.28);

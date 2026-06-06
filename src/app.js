@@ -749,7 +749,8 @@ function renderMetrics() {
   }
 
   document.querySelector("#active-ticket-list").innerHTML = branchTickets()
-    .filter(t=>t.status!=="Entregado").slice(0,5).map(ticketCard).join("")||emptyMessage("No hay tickets activos.");
+    .filter(t=>t.status!=="Entregado").slice(0,5).map(ticketCard).join("")
+    ||emptyMessage("No hay tickets activos.", {label:"+ Nuevo ticket", onclick:"openForm('ticket')"});
 
   document.querySelector("#recent-activity").innerHTML = branchTxs
     .slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6)
@@ -915,7 +916,7 @@ function renderCotizaciones() {
   if (!el) return;
   el.innerHTML = quotes.length
     ? quotes.map(t => quoteCard(t, perms)).join("")
-    : emptyMessage("No hay cotizaciones pendientes. Crea una con el botón + Cotización.");
+    : emptyMessage("No hay cotizaciones pendientes.", {label:"+ Nueva cotización", onclick:"openForm('cotizacion')"});
 }
 
 function quoteCard(ticket, perms) {
@@ -4523,8 +4524,33 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
   </div>`;
 }
 
+function validateFormFields(formEl) {
+  formEl.querySelectorAll(".is-invalid").forEach(f => f.classList.remove("is-invalid"));
+  formEl.querySelectorAll(".field-error").forEach(e => e.remove());
+  const invalid = [...formEl.querySelectorAll("[required]")].filter(f =>
+    f.type === "checkbox" ? !f.checked : !f.value.trim()
+  );
+  invalid.forEach(field => {
+    field.classList.add("is-invalid");
+    field.addEventListener("input", () => {
+      field.classList.remove("is-invalid");
+      field.closest(".field")?.querySelector(".field-error")?.remove();
+    }, { once: true });
+    const wrap = field.closest(".field");
+    if (wrap && !wrap.querySelector(".field-error")) {
+      const err = document.createElement("span");
+      err.className = "field-error";
+      err.textContent = "Requerido";
+      wrap.appendChild(err);
+    }
+  });
+  if (invalid.length) { invalid[0].focus(); return false; }
+  return true;
+}
+
 recordForm.addEventListener("submit", async e => {
   e.preventDefault();
+  if (!validateFormFields(recordForm)) { setLoading(false); return; }
   setLoading(true, "Guardando…");
   const schema = formSchemas[activeForm];
   const data   = Object.fromEntries(new FormData(recordForm).entries());
@@ -4554,6 +4580,7 @@ recordForm.addEventListener("submit", async e => {
       else { /* local: already mutated in update functions */ saveState(); }
       render();
       modal.close();
+      showSuccessToast("Guardado correctamente");
     } catch(err) {
       console.error(err);
       showErrorToast(`No se pudo guardar: ${err.message}`);
@@ -5139,6 +5166,16 @@ function showErrorToast(msg) {
   toast.textContent = msg;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 4500);
+}
+
+function showSuccessToast(msg) {
+  const existing = document.querySelector(".help-toast");
+  if (existing) existing.remove();
+  const toast = document.createElement("div");
+  toast.className = "help-toast success-toast";
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
 }
 
 const _confirmModal = document.querySelector("#confirm-modal");
@@ -6327,8 +6364,15 @@ function downloadFile(content, filename, type) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function emptyMessage(text) { return `<p class="muted">${text}</p>`; }
-function tableEmpty(cols)   { return `<tr><td colspan="${cols}" class="muted">Sin registros.</td></tr>`; }
+function emptyMessage(text, action) {
+  const btn = action
+    ? `<button class="ghost-button" style="margin-top:6px;font-size:12px" onclick="${action.onclick}">${action.label}</button>`
+    : "";
+  return `<div class="empty-state"><p class="muted">${text}</p>${btn}</div>`;
+}
+function tableEmpty(cols, text = "Sin registros.") {
+  return `<tr><td colspan="${cols}" style="padding:32px;text-align:center" class="muted">${text}</td></tr>`;
+}
 function dateStamp() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -6524,6 +6568,47 @@ function setupDogCursor() {
   document.addEventListener('mousedown', applyPooping);
   document.addEventListener('mouseup',   applyNormal);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// KEYBOARD SHORTCUTS
+// H7: Flexibility & Efficiency — atajos para usuarios expertos
+// ──────────────────────────────────────────────────────────────────────────────
+(function initKeyboardShortcuts() {
+  const SHORTCUTS = [
+    { key: "n",   desc: "Nuevo ticket",  action: () => openForm("ticket") },
+    { key: "p",   desc: "Ir a POS",      action: () => setView("pos") },
+    { key: "d",   desc: "Dashboard",     action: () => setView("dashboard") },
+    { key: "/",   desc: "Buscar",        action: () => document.querySelector("#global-search")?.focus() },
+    { key: "?",   desc: "Ayuda",         action: () => document.querySelector("#help-button")?.click() },
+  ];
+
+  function isEditing() {
+    const el = document.activeElement;
+    return el && (
+      el.tagName === "INPUT" || el.tagName === "TEXTAREA" ||
+      el.tagName === "SELECT" || el.contentEditable === "true"
+    );
+  }
+
+  document.addEventListener("keydown", e => {
+    // Escape: cierra el dialog abierto más reciente
+    if (e.key === "Escape") {
+      const open = [...document.querySelectorAll("dialog[open]")];
+      if (open.length) { open[open.length - 1].close(); e.preventDefault(); return; }
+    }
+    if (isEditing() || e.ctrlKey || e.metaKey || e.altKey) return;
+    const shortcut = SHORTCUTS.find(s => s.key === e.key.toLowerCase());
+    if (shortcut) { e.preventDefault(); shortcut.action(); }
+  });
+
+  // Muestra tooltips de atajos en los botones principales
+  const quickTicket = document.querySelector("#quick-ticket");
+  const quickPos    = document.querySelector("#quick-pos");
+  const searchEl    = document.querySelector("#global-search");
+  if (quickTicket) quickTicket.title = "Nuevo ticket (N)";
+  if (quickPos)    quickPos.title    = "Punto de Venta (P)";
+  if (searchEl)    searchEl.placeholder = "Buscar… (/)";
+})();
 
 async function initializeApp() {
   loadSavedPermissions();

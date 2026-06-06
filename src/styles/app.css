@@ -5,7 +5,7 @@
 * { box-sizing: border-box; }
 
 body {
-  margin: 12px;
+  margin: 0;
   min-height: 100vh;
   background: var(--fz-black-base);
   color: var(--fz-white);
@@ -135,14 +135,10 @@ button { cursor: pointer; }
   box-shadow: var(--fz-glow-blue);
 }
 
-.brand strong, h1, h2 {
+.brand strong {
   font-family: var(--fz-font-heading);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
 }
-
-/* Orbitron looks best with some letter-spacing at display sizes */
-h1, .brand strong { letter-spacing: 0.08em; }
-h2 { letter-spacing: 0.04em; }
 
 .brand strong { display: block; font-size: 15px; }
 .brand span, .eyebrow, .sidebar-footer span {
@@ -160,7 +156,6 @@ h2 { letter-spacing: 0.04em; }
   width: 40px; height: 40px;
   border-radius: 50%;
   border: 0;
-  font-size: 19px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
@@ -243,9 +238,9 @@ h2 { letter-spacing: 0.04em; }
 }
 
 .eyebrow { margin: 0 0 8px; }
-h1, h2 { margin: 0; text-transform: uppercase; }
-h1 { font-size: clamp(20px,3vw,32px); line-height: 1; }
-h2 { font-size: 16px; }
+h1, h2 { margin: 0; }
+h1 { font-size: 22px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter-spacing: 0; }
 
 .topbar-actions {
   display: flex;
@@ -379,12 +374,12 @@ h2 { font-size: 16px; }
   border: 1px solid rgba(255,255,255,0.09);
   border-radius: 8px;
   background: rgba(28,28,28,0.82);
-  box-shadow: 0 20px 42px rgba(0,0,0,0.22);
+  box-shadow: none;
 }
 
 .metric, .product-card, .report-card { padding: 18px; }
 .metric span, .product-card span, .report-card span, .muted { color: var(--fz-gray-light); }
-.metric strong { display: block; margin-top: 8px; font-size: 28px; }
+.metric strong { display: block; margin-top: 8px; font-size: 26px; background: none; }
 
 .split-layout {
   display: grid;
@@ -485,9 +480,13 @@ h2 { font-size: 16px; }
   font-weight: 700;
 }
 
-.status { background: rgba(47,111,255,0.15); color: #8eb5ff; }
-.status.ready, .type-income { background: rgba(44,185,120,0.16); color: #7af0b1; }
-.status.waiting, .type-expense { background: rgba(255,185,80,0.16); color: #ffd18c; }
+.status { background: rgba(var(--fz-primary-rgb),0.15); color: var(--fz-secondary); }
+/* color standalone (texto plano, números en métricas) */
+.type-income { color: #7af0b1; }
+.type-expense { color: #ffd18c; }
+/* color + background solo en pills y status badges */
+.status.ready, .type-pill.type-income { background: rgba(44,185,120,0.16); color: #7af0b1; }
+.status.waiting, .type-pill.type-expense { background: rgba(255,185,80,0.16); color: #ffd18c; }
 .status.warranty { background: rgba(166,126,255,0.16); color: #c8b4ff; }
 .status.urgent, .low-stock { background: rgba(255,83,83,0.16); color: #ff9b9b; }
 
@@ -1486,3 +1485,216 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 input[type=number].pv-price::-webkit-inner-spin-button,
 input[type=number].pv-price::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type=number].pv-price { -moz-appearance: textfield; appearance: textfield; }
+
+/* ── Lucide icon sizing ──────────────────────────────────────────────────── */
+.nav-item span svg { width: 12px; height: 12px; stroke-width: 2; display: block; }
+.quick-fab svg { width: 16px; height: 16px; stroke-width: 2; }
+.notif-bell svg { width: 18px; height: 18px; stroke-width: 1.75; }
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   POLISH PASS — visual & interaction quality
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Global scrollbar ────────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+*::-webkit-scrollbar { width: 5px; height: 5px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 99px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.26); }
+
+/* ── Focus rings — accesibilidad + branding ──────────────────────────────── */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid rgba(var(--fz-primary-rgb), 0.7);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.search-box:focus-within {
+  border-color: rgba(var(--fz-primary-rgb), 0.5);
+  box-shadow: 0 0 0 3px rgba(var(--fz-primary-rgb), 0.12);
+}
+.search-box input:focus-visible { outline: none; }
+
+/* ── Auth-box: fix double-border del botón Salir ─────────────────────────── */
+.auth-box > .ghost-button {
+  border: 0;
+  background: transparent;
+  color: var(--fz-gray-light);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 6px;
+  min-height: auto;
+  transition: color .15s;
+}
+.auth-box > .ghost-button:hover { color: #ff9b9b; }
+
+/* ── Topbar spacing ─────────────────────────────────────────────────────── */
+.topbar { padding-bottom: 4px; }
+.topbar h1 { font-size: 20px; letter-spacing: -0.02em; color: var(--fz-white); }
+
+/* ── Loading bar: usa color de marca ────────────────────────────────────── */
+#loading-bar {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--fz-primary-rgb), 0.9) 40%,
+    rgba(var(--fz-primary-rgb), 0.9) 60%,
+    transparent 100%
+  ) !important;
+  background-size: 200% 100% !important;
+}
+
+/* ── Transiciones consistentes ──────────────────────────────────────────── */
+.nav-item, .ghost-button, .icon-button, .primary-action,
+.mini-button, .branch-tab, .quick-fab {
+  transition: background .15s ease, color .15s ease,
+              border-color .15s ease, filter .15s ease, transform .1s ease;
+}
+
+/* ── Card hover states ──────────────────────────────────────────────────── */
+.ticket-card {
+  transition: border-color .15s ease, background .15s ease;
+  cursor: default;
+}
+.ticket-card:hover {
+  border-color: rgba(var(--fz-primary-rgb), 0.3);
+  background: rgba(var(--fz-primary-rgb), 0.04);
+}
+.activity-item {
+  transition: border-color .15s ease, background .15s ease;
+}
+.activity-item:hover {
+  border-color: rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.04);
+}
+
+/* ── Metric card: hover sutil ────────────────────────────────────────────── */
+.metric {
+  transition: border-color .15s ease;
+}
+.metric:hover {
+  border-color: rgba(var(--fz-primary-rgb), 0.28);
+}
+
+/* ── Active nav item: indicador más claro ────────────────────────────────── */
+.nav-item.is-active {
+  background: rgba(var(--fz-primary-rgb), 0.14);
+  color: var(--fz-white);
+  font-weight: 600;
+}
+.nav-item.is-active span {
+  border-color: rgba(var(--fz-primary-rgb), 0.55);
+  background: rgba(var(--fz-primary-rgb), 0.18);
+  color: var(--fz-primary);
+}
+
+/* ── Form inputs: mejor estado focus ────────────────────────────────────── */
+.field input:not([type=checkbox]):not([type=radio]),
+.field select,
+.field textarea {
+  transition: border-color .15s, box-shadow .15s;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: rgba(var(--fz-primary-rgb), 0.6) !important;
+  box-shadow: 0 0 0 3px rgba(var(--fz-primary-rgb), 0.12) !important;
+  outline: none !important;
+}
+
+/* ── Login card: padding del logo más ajustado en Outfit ─────────────────── */
+.login-brand h1 { letter-spacing: 2px; font-size: 20px; }
+
+/* ── Sidebar brand: Orbitron solo aquí ───────────────────────────────────── */
+.brand strong {
+  font-size: 14px;
+  letter-spacing: 0.1em;
+}
+
+/* ── Branch tabs: separación visual del H1 ───────────────────────────────── */
+.branch-tabs { margin-top: 8px; }
+
+/* ── Table: zebra stripe suave para lectura ─────────────────────────────── */
+tbody tr:nth-child(even) td {
+  background: rgba(255,255,255,0.015);
+}
+tbody tr:hover td {
+  background: rgba(var(--fz-primary-rgb), 0.05);
+}
+
+/* ── Select nativo: arrow visible en dark mode ───────────────────────────── */
+.field select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23bfbfbf' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px !important;
+}
+
+/* ── Inline form validation ─────────────────────────────────────────────── */
+.field input.is-invalid,
+.field select.is-invalid,
+.field textarea.is-invalid {
+  border-color: rgba(255,83,83,0.7) !important;
+  box-shadow: 0 0 0 2px rgba(255,83,83,0.18) !important;
+  animation: shake 0.25s ease;
+}
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  25%      { transform: translateX(-4px); }
+  75%      { transform: translateX(4px); }
+}
+.field-error {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #ff9b9b;
+  font-weight: 500;
+}
+
+/* ── Empty states ───────────────────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  gap: 10px;
+  text-align: center;
+}
+.empty-state p { margin: 0; font-size: 13px; }
+.empty-state .ghost-button { font-size: 12px; }
+
+/* ── Keyboard shortcut badges ────────────────────────────────────────────── */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--fz-gray-light);
+  background: rgba(255,255,255,0.06);
+  line-height: 1.4;
+}
+
+/* ── Success toast ───────────────────────────────────────────────────────── */
+.success-toast {
+  background: rgba(44,185,120,0.18) !important;
+  border-color: rgba(44,185,120,0.4) !important;
+  color: #7af0b1 !important;
+}
