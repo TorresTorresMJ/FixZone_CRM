@@ -1096,6 +1096,7 @@ function ticketCard(ticket, perms, idx = 0) {
         </div>
       </div>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
+      ${/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticket.id)?`<button class="mini-button" data-qr-ticket="${ticket.id}" title="QR Técnico">📱</button>`:""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">✕</button>`:""}
     </div>
@@ -4312,6 +4313,8 @@ function buildPhotoUploadSection(ticketId) {
       <label>Fotos del equipo</label>
       <p class="muted" style="font-size:12px;margin:4px 0 0">Disponible solo en tickets guardados en Supabase.</p>
     </div>`;
+  const techUrl = techQrTarget(ticketId);
+  const techQrImg = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&margin=4&data=${encodeURIComponent(techUrl)}`;
   return `
     <div class="field is-wide photo-upload-section" style="margin-top:8px">
       <label>Fotos del equipo</label>
@@ -4321,6 +4324,16 @@ function buildPhotoUploadSection(ticketId) {
         <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none" />
       </label>
       <span id="photo-upload-status" class="muted" style="font-size:12px;margin-left:8px"></span>
+    </div>
+    <div class="field is-wide" style="margin-top:4px;padding:14px;background:var(--fz-surface-alt,#f8f9fb);border-radius:10px;border:1px solid var(--fz-border)">
+      <label style="margin-bottom:8px;display:block">📱 QR para técnico</label>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <img src="${techQrImg}" alt="QR Técnico" style="width:70px;height:70px;border-radius:6px;background:#fff;padding:2px" />
+        <div>
+          <p style="font-size:12px;color:var(--fz-text-muted,#888);margin-bottom:4px">El técnico escanea este QR para cambiar la etapa del ticket y subir fotos desde su celular.</p>
+          <a href="${escapeHtml(techUrl)}" target="_blank" rel="noopener" style="font-size:11px;color:var(--fz-primary,#085ACB)">Abrir página del técnico ↗</a>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -4347,12 +4360,14 @@ async function initPhotoUpload(ticketId) {
         if (upErr) throw upErr;
         const { data: urlData } = supabaseClient.storage
           .from("ticket-photos").getPublicUrl(path);
+        const currentTicket = state.tickets.find(t => t.id === ticketId);
         await supabaseClient.from("attachments").insert({
           ticket_id:  ticketId,
           file_url:   urlData.publicUrl,
           file_type:  file.type,
           label:      file.name,
           created_by: currentEmployeeId(),
+          stage:      currentTicket?.status || null,
         });
       } catch(err) {
         status.textContent = `Error: ${err.message}`;
@@ -5359,6 +5374,56 @@ function showSuccessToast(msg) {
 }
 
 const _confirmModal = document.querySelector("#confirm-modal");
+function showTechQrModal(ticketId) {
+  const ticket   = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+  const techUrl  = techQrTarget(ticketId);
+  const trackUrl = receiptQrTarget(ticketId);
+  const techQr   = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=6&data=${encodeURIComponent(techUrl)}`;
+  const trackQr  = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=6&data=${encodeURIComponent(trackUrl)}`;
+
+  let el = document.getElementById("tech-qr-modal");
+  if (!el) {
+    el = document.createElement("dialog");
+    el.id = "tech-qr-modal";
+    el.style.cssText = "border:none;border-radius:16px;padding:0;max-width:420px;width:94vw;box-shadow:0 24px 64px rgba(0,0,0,.5);background:var(--fz-surface,#1e2030)";
+    el.innerHTML = `
+      <div style="padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <p style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.5;margin-bottom:2px">Códigos QR</p>
+            <p id="tqm-title" style="font-size:15px;font-weight:700"></p>
+          </div>
+          <button id="tqm-close" style="background:none;border:none;font-size:20px;cursor:pointer;opacity:.5;padding:4px 8px">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="text-align:center;background:rgba(255,255,255,.04);border-radius:10px;padding:14px">
+            <img id="tqm-tech-qr" style="width:100%;max-width:140px;border-radius:6px;background:#fff;padding:4px" alt="QR Técnico">
+            <p style="font-size:12px;font-weight:600;margin-top:8px">📱 Técnico</p>
+            <p style="font-size:10px;opacity:.5;margin-top:2px">Cambia etapa · Sube fotos</p>
+            <a id="tqm-tech-link" href="#" target="_blank" style="font-size:10px;color:var(--fz-primary,#085ACB);display:block;margin-top:6px">Abrir ↗</a>
+          </div>
+          <div style="text-align:center;background:rgba(255,255,255,.04);border-radius:10px;padding:14px">
+            <img id="tqm-track-qr" style="width:100%;max-width:140px;border-radius:6px;background:#fff;padding:4px" alt="QR Cliente">
+            <p style="font-size:12px;font-weight:600;margin-top:8px">🔍 Cliente</p>
+            <p style="font-size:10px;opacity:.5;margin-top:2px">Ver estado · Solo lectura</p>
+            <a id="tqm-track-link" href="#" target="_blank" style="font-size:10px;color:var(--fz-primary,#085ACB);display:block;margin-top:6px">Abrir ↗</a>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    document.getElementById("tqm-close").addEventListener("click", () => el.close());
+    el.addEventListener("click", e => { if (e.target === el) el.close(); });
+  }
+
+  document.getElementById("tqm-title").textContent = `${ticket.tracking} — ${ticket.client}`;
+  document.getElementById("tqm-tech-qr").src   = techQr;
+  document.getElementById("tqm-track-qr").src  = trackQr;
+  document.getElementById("tqm-tech-link").href  = techUrl;
+  document.getElementById("tqm-track-link").href = trackUrl;
+  el.showModal();
+}
+
 function showConfirmModal(message, { label = "Confirmar", danger = false, onConfirm } = {}) {
   _confirmModal.querySelector("#confirm-modal-message").textContent = message;
   const oldOk = _confirmModal.querySelector("#confirm-modal-ok");
@@ -5780,6 +5845,10 @@ document.addEventListener("click", e => {
 
 // Delegated clicks
 document.addEventListener("click", async e => {
+  // QR modal (tech + client)
+  const qrTicket = e.target.closest("[data-qr-ticket]");
+  if (qrTicket) { showTechQrModal(qrTicket.dataset.qrTicket); return; }
+
   // Edit ticket
   const editTicket = e.target.closest("[data-edit-ticket]");
   if (editTicket) { openEditTicket(editTicket.dataset.editTicket); return; }
@@ -6216,7 +6285,7 @@ function printTicket(ticket) {
   const change    = Number(ticket.changeAmount ?? 0);
   const now       = new Date();
   const timeStr   = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-  const qrTarget  = receiptQrTarget();
+  const qrTarget  = receiptQrTarget(ticket.id);
   const qrImage   = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(qrTarget)}`;
   const D         = "----------------------------------------";
 
@@ -6292,8 +6361,9 @@ function printTicket(ticket) {
   <p class="rct-dash">${D}</p>
 
   <div class="rct-qr">
-    <p class="rct-center">ESCANEA PARA SEGUIMIENTO</p>
+    <p class="rct-center">ESCANEA PARA VER EL ESTADO</p>
     <img src="${qrImage}" alt="QR" />
+    <p class="rct-center" style="font-size:9px;opacity:.6;margin-top:4px">Seguimiento en tiempo real de tu reparación</p>
   </div>
 
   <p class="rct-dash">${D}</p>
@@ -6524,16 +6594,28 @@ function shareQuoteWhatsApp(ticketId) {
 window.shareQuoteWhatsApp = shareQuoteWhatsApp;
 window.addNotif = addNotif;
 
-function receiptQrTarget() {
+function receiptQrTarget(ticketId) {
   try {
     const base =
       location.protocol === "file:"
         ? "https://fixzone-crm.pages.dev"
         : window.location.origin;
-
-    return `${base}/detente-jochis.html`;
+    if (ticketId) return `${base}/ticket-track.html?id=${encodeURIComponent(ticketId)}`;
+    return `${base}/ticket-track.html`;
   } catch (err) {
-    return "https://fixzone-crm.pages.dev/detente-jochis.html";
+    return "https://fixzone-crm.pages.dev/ticket-track.html";
+  }
+}
+
+function techQrTarget(ticketId) {
+  try {
+    const base =
+      location.protocol === "file:"
+        ? "https://fixzone-crm.pages.dev"
+        : window.location.origin;
+    return `${base}/ticket-tech.html?id=${encodeURIComponent(ticketId)}`;
+  } catch (err) {
+    return `https://fixzone-crm.pages.dev/ticket-tech.html?id=${encodeURIComponent(ticketId)}`;
   }
 }
 

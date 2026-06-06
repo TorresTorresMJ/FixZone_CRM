@@ -826,6 +826,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 }
 .ticket-card:hover .ticket-actions,
 .ticket-card:focus-within .ticket-actions {
+  overflow: visible;
   max-height: 80px;
   opacity: 1;
   margin-top: 8px;

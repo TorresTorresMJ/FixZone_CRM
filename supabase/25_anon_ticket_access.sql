@@ -4,12 +4,14 @@
 
 -- ── Read access ───────────────────────────────────────────────────────────────
 
-CREATE POLICY IF NOT EXISTS "anon can read tickets"
+DROP POLICY IF EXISTS "anon can read tickets" ON public.service_tickets;
+CREATE POLICY "anon can read tickets"
   ON public.service_tickets
   FOR SELECT TO anon
   USING (true);
 
-CREATE POLICY IF NOT EXISTS "anon can read attachments"
+DROP POLICY IF EXISTS "anon can read attachments" ON public.attachments;
+CREATE POLICY "anon can read attachments"
   ON public.attachments
   FOR SELECT TO anon
   USING (true);
@@ -17,7 +19,8 @@ CREATE POLICY IF NOT EXISTS "anon can read attachments"
 -- ── Write access for tech page ─────────────────────────────────────────────────
 
 -- Anon can insert photos from the tech page (stage is tagged at upload time)
-CREATE POLICY IF NOT EXISTS "anon can insert attachments"
+DROP POLICY IF EXISTS "anon can insert attachments" ON public.attachments;
+CREATE POLICY "anon can insert attachments"
   ON public.attachments
   FOR INSERT TO anon
   WITH CHECK (true);

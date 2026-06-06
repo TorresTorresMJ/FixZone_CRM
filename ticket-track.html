@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FixZone — Estado de tu reparación</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #085ACB;
+      --primary-rgb: 8, 90, 203;
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --border: #e4e8f0;
+      --text: #131620;
+      --muted: #6b7284;
+      --radius: 16px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding-bottom: 48px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--primary);
+      padding: 20px 20px 28px;
+      text-align: center;
+      color: #fff;
+    }
+    header img { height: 32px; filter: brightness(0) invert(1); margin-bottom: 6px; }
+    header .brand-text {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      display: block;
+    }
+    header .subtitle {
+      font-size: 13px;
+      opacity: 0.75;
+      margin-top: 2px;
+    }
+
+    /* ── Main ── */
+    main {
+      max-width: 480px;
+      margin: -16px auto 0;
+      padding: 0 16px;
+    }
+
+    /* ── Ticket card ── */
+    .ticket-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    .ticket-folio {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+    .ticket-client {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .ticket-device {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .ticket-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(var(--primary-rgb), 0.1);
+      color: var(--primary);
+      border-radius: 100px;
+      padding: 5px 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .ticket-badge.listo {
+      background: rgba(22, 163, 74, 0.1);
+      color: #16a34a;
+    }
+    .ticket-badge.entregado {
+      background: rgba(107, 114, 128, 0.12);
+      color: #6b7280;
+    }
+
+    /* ── Timeline ── */
+    .section-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    .timeline { position: relative; }
+    .timeline-item {
+      display: flex;
+      gap: 16px;
+      padding-bottom: 24px;
+      position: relative;
+    }
+    .timeline-item:last-child { padding-bottom: 0; }
+
+    .tl-left { display: flex; flex-direction: column; align-items: center; width: 32px; flex-shrink: 0; }
+    .tl-dot {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tl-dot.done {
+      background: rgba(var(--primary-rgb), 0.1);
+      border-color: var(--primary);
+    }
+    .tl-dot.current {
+      background: var(--primary);
+      border-color: var(--primary);
+      animation: pulse-ring 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse-ring {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0.3); }
+      50%       { box-shadow: 0 0 0 8px rgba(var(--primary-rgb), 0); }
+    }
+    .tl-line {
+      flex: 1;
+      width: 2px;
+      margin-top: 4px;
+      background: var(--border);
+    }
+    .tl-line.done { background: var(--primary); }
+    .timeline-item:last-child .tl-line { display: none; }
+
+    .tl-content { padding-top: 4px; }
+    .tl-label {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .tl-label.done    { color: var(--primary); }
+    .tl-label.current { color: var(--text); }
+    .tl-sublabel {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ── Photos ── */
+    .photos-section { display: flex; flex-direction: column; gap: 20px; }
+    .photo-stage-group {}
+    .photo-stage-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .photo-stage-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .photo-thumb {
+      aspect-ratio: 1;
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .photo-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.2s;
+    }
+    .photo-thumb:active img { transform: scale(0.97); }
+
+    /* ── Lightbox ── */
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.92);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img {
+      max-width: 100%;
+      max-height: 90dvh;
+      border-radius: 10px;
+      object-fit: contain;
+    }
+    #lightbox-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(255,255,255,0.15);
+      border: none;
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Footer ── */
+    footer {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 0 16px;
+      text-align: center;
+    }
+    .contact-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #25d366;
+      color: #fff;
+      border-radius: 100px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .contact-btn:active { transform: scale(0.97); background: #1db954; }
+    footer p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 12px;
+    }
+
+    /* ── Loading / error ── */
+    .loading-state, .error-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .error-state { color: #dc2626; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Refresh badge ── */
+    .refresh-hint {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      margin-top: -8px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <img src="./assets/brand/fixzone/fixzone-logo-h.png"
+       onerror="this.style.display='none'"
+       alt="FixZone">
+  <span class="brand-text" id="brand-name">FixZone</span>
+  <span class="subtitle">Seguimiento de tu reparación</span>
+</header>
+
+<main id="app">
+  <div style="height:16px"></div>
+  <div class="loading-state">
+    <div class="spinner"></div>
+    <p>Cargando estado…</p>
+  </div>
+</main>
+
+<footer id="footer" style="display:none">
+  <a class="contact-btn" id="wa-link" href="#" target="_blank">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.890-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+    Contactar al taller
+  </a>
+  <p id="footer-hours">Lunes a sábado · 10am – 8pm</p>
+</footer>
+
+<div id="lightbox">
+  <button id="lightbox-close" aria-label="Cerrar">✕</button>
+  <img id="lightbox-img" src="" alt="Foto">
+</div>
+
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+  const SUPABASE_URL  = 'https://zwmffnrkrrowmchluyyy.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3bWZmbnJrcnJvd21jaGx1eXl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NDUxODMsImV4cCI6MjA5MzUyMTE4M30.5wb9IlptMdgP5If--D9Pca5sLn0CXNKX7SZ1ifK0jew';
+  const supabase      = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  const STAGES = ['Recibido', 'En reparacion', 'Listo', 'Entregado'];
+  const STAGE_LABELS = {
+    'Recibido':      'Recibido',
+    'En reparacion': 'En reparación',
+    'Listo':         'Listo para recoger',
+    'Entregado':     'Entregado',
+  };
+  const STAGE_ICONS = {
+    'Recibido':      '📥',
+    'En reparacion': '⚙️',
+    'Listo':         '✅',
+    'Entregado':     '🎉',
+  };
+  const STAGE_SUB = {
+    'Recibido':      'Tu equipo fue recibido en el taller',
+    'En reparacion': 'Nuestro técnico está trabajando en él',
+    'Listo':         'Tu equipo está listo — ven a recogerlo',
+    'Entregado':     'Tu equipo fue entregado',
+  };
+  // Stages that technician tags on photos (subset for photo display grouping)
+  const TECH_STAGE_LABELS = {
+    'Recibido':      'Recibido',
+    'En reparacion': 'En reparación',
+    'Listo':         'Listo',
+  };
+
+  const params   = new URLSearchParams(location.search);
+  const ticketId = params.get('id');
+  const app      = document.getElementById('app');
+
+  let ticket = null;
+  let photos = [];
+
+  // ── Lightbox ──────────────────────────────────────────────────────────────
+  const lightbox     = document.getElementById('lightbox');
+  const lightboxImg  = document.getElementById('lightbox-img');
+  document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+  lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
+  function openLightbox(src) { lightboxImg.src = src; lightbox.classList.add('open'); }
+  function closeLightbox()   { lightbox.classList.remove('open'); lightboxImg.src = ''; }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  if (!ticketId) {
+    app.innerHTML = `<div style="height:16px"></div><div class="error-state"><p>No se encontró el ticket.</p></div>`;
+  } else {
+    loadData();
+    // Refresh every 30 seconds
+    setInterval(loadData, 30_000);
+  }
+
+  async function loadData() {
+    const [ticketRes, photosRes] = await Promise.all([
+      supabase
+        .from('service_tickets')
+        .select('id, tracking_number, customer_name, product_name, stage')
+        .eq('id', ticketId)
+        .single(),
+      supabase
+        .from('attachments')
+        .select('id, file_url, file_type, stage, created_at')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true }),
+    ]);
+
+    if (ticketRes.error || !ticketRes.data) {
+      app.innerHTML = `<div style="height:16px"></div><div class="error-state"><p>Ticket no encontrado.</p></div>`;
+      return;
+    }
+
+    ticket = ticketRes.data;
+    photos = photosRes.data || [];
+    renderPage();
+  }
+
+  function renderPage() {
+    const currentStageIdx = STAGES.indexOf(ticket.stage);
+
+    // Timeline
+    const timelineItems = STAGES.map((s, i) => {
+      const isDone    = i < currentStageIdx;
+      const isCurrent = i === currentStageIdx;
+      const dotCls    = isDone ? 'done' : isCurrent ? 'current' : '';
+      const lineCls   = isDone ? 'done' : '';
+      const labelCls  = isDone ? 'done' : isCurrent ? 'current' : '';
+      return `
+        <div class="timeline-item">
+          <div class="tl-left">
+            <div class="tl-dot ${dotCls}">${isCurrent || isDone ? STAGE_ICONS[s] : ''}</div>
+            <div class="tl-line ${lineCls}"></div>
+          </div>
+          <div class="tl-content">
+            <div class="tl-label ${labelCls}">${STAGE_LABELS[s]}</div>
+            ${isCurrent ? `<div class="tl-sublabel">${STAGE_SUB[s]}</div>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+
+    // Photos by stage
+    const photosByStage = {};
+    for (const p of photos) {
+      if (!p.file_url) continue;
+      const isImg = (p.file_type || '').startsWith('image/') || /\.(jpe?g|png|webp|gif)/i.test(p.file_url);
+      if (!isImg) continue;
+      const key = p.stage || 'Sin etapa';
+      if (!photosByStage[key]) photosByStage[key] = [];
+      photosByStage[key].push(p);
+    }
+
+    const photoGroupsHtml = Object.entries(photosByStage).map(([stage, imgs]) => {
+      const thumbs = imgs.map(img => `
+        <div class="photo-thumb" data-src="${img.file_url}">
+          <img src="${img.file_url}" loading="lazy" alt="Foto">
+        </div>`).join('');
+      return `
+        <div class="photo-stage-group">
+          <div class="photo-stage-label">${TECH_STAGE_LABELS[stage] || stage}</div>
+          <div class="photo-grid">${thumbs}</div>
+        </div>`;
+    }).join('');
+
+    const badgeCls  = ticket.stage === 'Listo' ? 'listo' : ticket.stage === 'Entregado' ? 'entregado' : '';
+    const badgeIcon = STAGE_ICONS[ticket.stage] || '';
+    const badgeText = STAGE_LABELS[ticket.stage] || ticket.stage;
+
+    app.innerHTML = `
+      <div style="height:16px"></div>
+
+      <div class="ticket-card">
+        <div class="ticket-folio">${esc(ticket.tracking_number || ticket.id.slice(0,8).toUpperCase())}</div>
+        <div class="ticket-client">${esc(ticket.customer_name)}</div>
+        <div class="ticket-device">${esc(ticket.product_name)}</div>
+        <span class="ticket-badge ${badgeCls}">${badgeIcon} ${badgeText}</span>
+      </div>
+
+      <p class="refresh-hint">Se actualiza cada 30 segundos</p>
+
+      <div class="section-card">
+        <p class="section-title">Progreso de la reparación</p>
+        <div class="timeline">${timelineItems}</div>
+      </div>
+
+      ${Object.keys(photosByStage).length > 0 ? `
+        <div class="section-card">
+          <p class="section-title">Fotos del técnico</p>
+          <div class="photos-section">${photoGroupsHtml}</div>
+        </div>
+      ` : ''}
+
+      <div style="height:24px"></div>
+    `;
+
+    // Wire lightbox
+    app.querySelectorAll('.photo-thumb[data-src]').forEach(el => {
+      el.addEventListener('click', () => openLightbox(el.dataset.src));
+    });
+
+    // Show footer
+    document.getElementById('footer').style.display = 'block';
+
+    // WhatsApp link — generic taller number, update as needed
+    const waNumber = '523221234567'; // TODO: replace with actual shop number
+    document.getElementById('wa-link').href =
+      `https://wa.me/${waNumber}?text=${encodeURIComponent(`Hola, quiero consultar el estado de mi reparación: ${ticket.tracking_number || ticket.id}`)}`;
+  }
+
+  function esc(v) {
+    return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>
