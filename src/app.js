@@ -4453,23 +4453,27 @@ function initPriceAutofill() {
   const lookupPrice = () => {
     const device  = deviceInput.value.trim();
     const svcName = serviceSelect.value;
-    if (!device || !svcName) return;
+    if (!svcName) return;
     const branchId = (state.branches||[]).find(b=>b.name===activeBranchId)?.id;
     const stype = (state.serviceTypes||[]).find(t=>t.name===svcName);
     if (!stype) return;
-    const rec = (state.servicePrices||[]).find(p =>
+    // 1. Device-specific price from matrix
+    const rec = device ? (state.servicePrices||[]).find(p =>
       p.deviceModel.toLowerCase() === device.toLowerCase() &&
       p.serviceTypeId === stype.id &&
       (!p.branchId || p.branchId === branchId)
-    );
-    if (rec && rec.price > 0) {
-      amountInput.value = rec.price;
-      showToast(`💡 Precio sugerido: ${money.format(rec.price)} — puedes modificarlo`);
+    ) : null;
+    // 2. Fallback: default price for this service type (e.g. Diagnóstico $350)
+    const finalPrice = (rec && rec.price > 0) ? rec.price
+      : (stype.defaultPrice > 0 ? stype.defaultPrice : 0);
+    if (finalPrice > 0) {
+      amountInput.value = finalPrice;
+      const label = (rec && rec.price > 0) ? "Precio de la tabla" : "Precio base del servicio";
+      showToast(`💡 ${label}: ${money.format(finalPrice)} — puedes modificarlo`);
     }
   };
 
   serviceSelect.addEventListener("change", lookupPrice);
-  // Also trigger when device field loses focus
   deviceInput.addEventListener("blur", () => setTimeout(lookupPrice, 200));
 }
 
