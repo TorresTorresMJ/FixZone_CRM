@@ -1090,15 +1090,7 @@ function ticketCard(ticket, perms, idx = 0) {
     ${issueHtml}
     ${priceHtml}
     <div class="ticket-actions">
-      <div style="position:relative;display:inline-block">
-        <button class="mini-button" data-print-ticket="${ticket.id}" title="Imprimir">🖨 ▾</button>
-        <div class="print-menu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--fz-surface,#1e1e2e);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px;min-width:190px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)">
-          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:2px" data-print-auto="${ticket.id}">⚡ Auto (según estado)</button>
-          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-recepcion="${ticket.id}">📋 Recibo de recepción</button>
-          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-pago="${ticket.id}">💳 Comprobante de pago</button>
-          <button class="ghost-button" style="width:100%;text-align:left;padding:6px 10px;font-size:12px" data-print-garantia="${ticket.id}">🛡 Certificado de garantía</button>
-        </div>
-      </div>
+      <button class="mini-button" data-print-auto="${ticket.id}" title="Imprimir recibo">🖨</button>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
       ${/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticket.id)?`<button class="mini-button" data-qr-ticket="${ticket.id}" title="QR Técnico">📱</button>`:""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
@@ -5932,20 +5924,8 @@ document.addEventListener("click", async e => {
   if (editTask) { openEditSupportTask(editTask.dataset.editTask); return; }
 
   // Print ticket
-  const printBtn = e.target.closest("[data-print-ticket]");
-  if (printBtn) {
-    // Toggle dropdown
-    const menu = printBtn.nextElementSibling;
-    if (menu?.classList.contains("print-menu")) {
-      const isOpen = menu.style.display === "block";
-      document.querySelectorAll(".print-menu").forEach(m => m.style.display="none");
-      menu.style.display = isOpen ? "none" : "block";
-    }
-    return;
-  }
   const printAuto = e.target.closest("[data-print-auto]");
   if (printAuto) {
-    document.querySelectorAll(".print-menu").forEach(m=>m.style.display="none");
     const t = state.tickets.find(i=>i.id===printAuto.dataset.printAuto);
     if (t) {
       let type = "recepcion";
@@ -6168,11 +6148,6 @@ document.addEventListener("input", e => {
     }).join("") || `<p class="muted" style="padding:18px 0;text-align:center;font-size:13px">Sin resultados.</p>`;
   }
 });
-document.addEventListener("click", e => {
-  if (!e.target.closest("[data-print-ticket]")) {
-    document.querySelectorAll(".print-menu").forEach(m => m.style.display = "none");
-  }
-}, true);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // BRANCH TABS

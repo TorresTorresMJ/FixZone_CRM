@@ -180,7 +180,7 @@ _Última actualización: 2026-06-06_ (sesión 4)
 - [x] Cards de marketing compactas (padding reducido, fuente más pequeña).
 - [x] Toasts de éxito/error y confirm modal reemplazando alert/confirm nativos.
 - [x] **Sprint 3 — Design polish:** tipografía Outfit (body) + Orbitron solo brand mark, H1/H2 sin uppercase, iconografía unificada con Lucide, ghost-card shadows removidos, status badges con tokens de marca, marcatextos en finanzas corregido, atajos de teclado (N/P/D//, Escape), validación inline de formularios, empty states con CTAs, success toast, focus rings, scrollbar custom, reduced-motion.
-- [ ] Revisar y simplificar opciones de impresión de tickets — actualmente hay múltiples botones/modalidades que pueden confundir el proceso o generar impresiones redundantes. Definir flujo claro: qué imprime qué y cuándo.
+- [x] Simplificar impresión de tickets — un solo botón 🖨 por card que imprime automáticamente el recibo correcto según el estado (recepción / pago / garantía). Opciones específicas disponibles desde el detalle del ticket.
 - [ ] Centro de notificaciones — avisos en tiempo real para: ticket asignado, cambio de stage, respuesta en ticket IT. Tickets de Soporte IT con hilo de comentarios y seguimiento de estado visible para quien lo levantó.
 - [x] Kanban compacto — columnas 240px, acciones ocultas/hover-reveal, tipografía reducida.
 - [x] Click en movimiento reciente en Home → abre vista Finanzas con el registro.
