@@ -825,19 +825,17 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 /* ── Kanban: columnas compactas, acciones revelan en hover ───────────────── */
 .kanban-column { min-width: 240px; width: 240px; padding: 12px 10px; }
 
+/* Acciones siempre en el DOM, se revelan con fade — sin overflow ni max-height */
 .ticket-card .ticket-actions {
-  overflow: hidden;
-  max-height: 0;
+  margin-top: 8px;
   opacity: 0;
-  margin-top: 0;
-  transition: max-height .2s ease, opacity .15s ease, margin-top .15s ease;
+  pointer-events: none;
+  transition: opacity .15s ease;
 }
 .ticket-card:hover .ticket-actions,
 .ticket-card:focus-within .ticket-actions {
-  overflow: visible;
-  max-height: 68px;
   opacity: 1;
-  margin-top: 8px;
+  pointer-events: auto;
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
