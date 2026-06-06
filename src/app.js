@@ -1156,7 +1156,7 @@ function updateCotBreakdown(container, res) {
     row("Comisión MP 4.06%", money.format(res.mpCosto), "color:rgba(255,180,0,.7)"),
   ];
   if (res.esGlass) {
-    rows.push(row("Precio pantalla (base)", money.format(res.precioPantalla)));
+    rows.push(row("Precio pieza (base)", money.format(res.precioPantalla)));
     rows.push(row(`Descuento glass (${((res.descuento/res.precioPantalla)*100).toFixed(0)}%)`,
       `-${money.format(res.descuento)}`, "color:#f59e0b"));
   }
@@ -1179,7 +1179,7 @@ function renderCotizador() {
     <div class="card" style="margin-bottom:16px">
       <div style="margin-bottom:14px">
         <h3 style="margin:0 0 3px;font-size:14px">Cotizador rápido</h3>
-        <p class="muted" style="font-size:11px;margin:0">Pantalla: Insumo × (1+margen) × 1.16 × 1.0406 &nbsp;·&nbsp; Glass: precio pantalla × (1 − descuento)</p>
+        <p class="muted" style="font-size:11px;margin:0">Pieza: Insumo × (1+margen) × 1.16 × 1.0406 &nbsp;·&nbsp; Glass: precio pieza × (1 − descuento)</p>
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
         <div style="flex:1;min-width:240px">
@@ -1189,7 +1189,7 @@ function renderCotizador() {
               <button type="button" class="cot-tipo-btn" data-tipo="pantalla"
                 style="flex:1;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;
                 border:1.5px solid rgba(var(--fz-primary-rgb),.5);background:rgba(var(--fz-primary-rgb),.15);color:inherit">
-                Pantalla<br><span style="font-weight:400;font-size:10px;opacity:.6">30 días garantía</span>
+                Pieza / Refacción<br><span style="font-weight:400;font-size:10px;opacity:.6">Pantalla, batería, puerto, etc.</span>
               </button>
               <button type="button" class="cot-tipo-btn" data-tipo="glass"
                 style="flex:1;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;
@@ -1301,7 +1301,7 @@ function renderCotizador() {
         ? `Margen ${pct}% (≥ $${cfg2.umbral.toLocaleString("es-MX")})${glPart}`
         : `Margen ${pct}% (< $${cfg2.umbral.toLocaleString("es-MX")})${glPart}`;
     }
-    if (nota) nota.textContent = cotTipo === "glass" ? "Sin garantía" : "30 días en mano de obra";
+    if (nota) nota.textContent = cotTipo === "glass" ? "Sin garantía" : "30 días de garantía en mano de obra";
     if (isPriv) updateCotBreakdown(el, res);
   };
 
@@ -1349,7 +1349,7 @@ function renderCotizador() {
     if (insumo <= 0) { showErrorToast("Ingresa el costo del insumo primero"); return; }
     const cfg2      = isPriv ? readSlidersConfig(el) : loadPricingConfig();
     const res       = calcPrecio({ insumo, tipo: cotTipo, config: cfg2 });
-    const svcLabel  = cotTipo === "glass" ? "Cambio de glass" : "Cambio de pantalla";
+    const svcLabel  = cotTipo === "glass" ? "Cambio de glass" : "Pieza / Refacción";
     const prefill = {
       quoteItems: [{ type:"Servicio", description: svcLabel, qty:1, unitPrice: Math.round(res.precioFinal), insumoCost: insumo }],
     };
