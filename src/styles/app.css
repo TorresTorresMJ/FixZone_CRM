@@ -425,8 +425,9 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 }
 
 .ticket-card { display: grid; gap: 5px; font-size: 12px; overflow: hidden; cursor: pointer; }
+.ticket-card > * { min-width: 0; }
 
-.ticket-card p { margin: 0; font-size: 12px; }
+.ticket-card p { margin: 0; font-size: 12px; min-width: 0; }
 .ticket-card strong { font-size: 12px; }
 
 .tracking-code {

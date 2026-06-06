@@ -1061,7 +1061,7 @@ function ticketCard(ticket, perms, idx = 0) {
 
   // Truncate issue to 2 lines via CSS
   const issueHtml = ticket.issue
-    ? `<p style="margin:3px 0 0;font-size:12px;color:rgba(255,255,255,.65);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;overflow-wrap:break-word">${escapeHtml(ticket.issue)}</p>`
+    ? `<p style="margin:3px 0 0;font-size:12px;color:rgba(255,255,255,.65);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;overflow-wrap:break-word;min-width:0;width:100%">${escapeHtml(ticket.issue)}</p>`
     : "";
 
   // Compact price row — single line
