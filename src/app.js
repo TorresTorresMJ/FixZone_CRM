@@ -5157,6 +5157,9 @@ document.querySelectorAll("[data-open-form]").forEach(btn => {
 
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
 document.querySelector("#quick-pos").addEventListener("click", () => setView("pos"));
+document.querySelector("#notif-bell-btn")?.addEventListener("click", () => {
+  showToast("🔔 Centro de notificaciones — próximamente");
+});
 document.querySelector("#new-quote-btn")?.addEventListener("click", () => {
   openForm("cotizacion");
 });
