@@ -872,45 +872,54 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   /* Layout: sidebar queda arriba como barra horizontal */
   .app-shell { grid-template-columns: 1fr; }
 
+  /* Sidebar horizontal: logo a la izquierda, nav scrollable a la derecha */
   .sidebar {
     position: sticky;
     top: 0;
     z-index: 90;
     height: auto;
-    flex-direction: column;
-    padding: 10px 12px 6px;
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 10px;
+    gap: 8px;
     border-right: 0;
     border-bottom: 1px solid rgba(255,255,255,0.08);
-    gap: 6px;
   }
 
-  /* Brand más compacto */
-  .brand img  { width: 28px; height: 28px; }
+  /* Brand: solo icono, flex-shrink:0 para no aplastarse */
+  .brand {
+    flex-shrink: 0;
+    align-items: center;
+  }
+  .brand img  { width: 36px !important; height: 36px !important; max-height: 36px !important; }
   .brand span { display: none; }
+  .brand strong { display: none; }
 
-  /* Nav: scroll horizontal en una sola fila */
+  /* Nav: ocupa el espacio restante, scroll horizontal */
   .nav-list {
     display: flex;
+    flex: 1;
+    min-width: 0;
     flex-direction: row;
     flex-wrap: nowrap;
     overflow-x: auto;
     gap: 2px;
     scrollbar-width: none;
-    /* fade que indica scroll */
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
-    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 32px), transparent 100%);
   }
   .nav-list::-webkit-scrollbar { display: none; }
   .nav-divider { display: none; }
 
   .nav-item {
+    width: auto;
     flex-direction: row;
     flex-shrink: 0;
     min-width: auto;
-    min-height: 32px;
-    padding: 0 10px;
+    min-height: 36px;
+    padding: 0 12px;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 13px;
     border-radius: 6px;
   }
 
@@ -958,9 +967,9 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 @media (max-width: 640px) {
   .workspace { padding: 12px 10px; }
 
-  /* Nav aún más compacta — solo iconos con texto */
-  .nav-item { font-size: 11px; padding: 0 8px; }
-  .nav-item span { width: 20px; height: 20px; font-size: 10px; }
+  /* Nav aún más compacta */
+  .nav-item { font-size: 11px; padding: 0 9px; min-height: 34px; }
+  .nav-item span { width: 18px; height: 18px; font-size: 10px; }
 
   /* Brand mínimo */
   .brand strong { font-size: 12px; letter-spacing: 0.06em; }
