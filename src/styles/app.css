@@ -896,6 +896,9 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     overflow-x: auto;
     gap: 2px;
     scrollbar-width: none;
+    /* fade que indica scroll */
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
   }
   .nav-list::-webkit-scrollbar { display: none; }
   .nav-divider { display: none; }

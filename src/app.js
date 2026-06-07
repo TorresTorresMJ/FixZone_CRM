@@ -714,6 +714,13 @@ function setView(name) {
       { duration: 200, easing: "cubic-bezier(0.16,1,0.3,1)", fill: "both" }
     );
     try { sessionStorage.setItem("fz-active-view", name); } catch(_) {}
+    // Scroll to top on mobile so the new section is visible below the sticky nav
+    if (window.innerWidth <= 980) {
+      window.scrollTo({ top: 0, behavior: "instant" });
+      // Scroll the active nav item into view inside the horizontal nav bar
+      const activeBtn = document.querySelector(`.nav-item[data-view="${name}"]`);
+      activeBtn?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "center" });
+    }
   };
 
   if (outgoing) {
