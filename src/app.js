@@ -3389,6 +3389,10 @@ function renderBrandEditor() {
 function renderWATemplates() {
   const el = document.querySelector("#wa-templates-manager");
   if (!el) return;
+
+  // Skip re-render if the user is actively editing any textarea
+  if (el.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA") return;
+
   const tpls = getWATemplates();
   const LABELS = { cotizacion:"📋 Cotización", listo:"✅ Equipo Listo", abono:"💳 Abono recibido", pagado:"✅ Pago completo", garantia:"🛡 Garantía" };
   const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo} {total} {items}";
@@ -3406,18 +3410,26 @@ function renderWATemplates() {
           </div>
           <textarea id="wt-${k}" rows="3" style="width:100%;resize:vertical;font-size:12px;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;font-family:inherit">${escapeHtml(tpls[k]||"")}</textarea>
         </div>`).join("")}
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">
+        <span id="wt-autosave-status" class="muted" style="font-size:11px"></span>
         <button class="ghost-button" id="wt-reset-btn">Restaurar predeterminados</button>
-        <button class="primary-action" id="wt-save-btn">Guardar plantillas</button>
       </div>
     </div>`;
 
-  el.querySelector("#wt-save-btn")?.addEventListener("click", () => {
+  const statusEl = el.querySelector("#wt-autosave-status");
+
+  const doSave = () => {
     const saved = {};
     Object.keys(LABELS).forEach(k => { saved[k] = el.querySelector(`#wt-${k}`)?.value||""; });
     saveWATemplates(saved);
-    showToast("✓ Plantillas de WhatsApp guardadas");
+    if (statusEl) { statusEl.textContent = "✓ Guardado"; setTimeout(() => { statusEl.textContent = ""; }, 2000); }
+  };
+
+  // Auto-save on every change — no manual save button needed
+  Object.keys(LABELS).forEach(k => {
+    el.querySelector(`#wt-${k}`)?.addEventListener("input", doSave);
   });
+
   el.querySelector("#wt-reset-btn")?.addEventListener("click", () => {
     localStorage.removeItem(WA_TEMPLATES_KEY);
     renderWATemplates();
