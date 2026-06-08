@@ -5,11 +5,12 @@
 const storageKey   = "fixzone-crm-v1";
 const money        = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entregado", "Garantia"];
+let kanbanSort = "fecha_desc"; // "fecha_desc" | "fecha_asc" | "cliente_az" | "prioridad"
 const supportStages = ["Pendiente", "En progreso", "Resuelto"];
 const BRANCHES     = ["Puerto Vallarta", "Puebla"];
 const ROLES        = ["it", "admin", "standard", "marketing"];
 const TX_CATEGORIES_INCOME  = ["Servicio","Venta","Anticipo","Garantia","Otro"];
-const TX_CATEGORIES_EXPENSE = ["Inventario","Insumos","Renta","Nomina","Servicios","Herramientas","Operacion","Otro"];
+const TX_CATEGORIES_EXPENSE = ["Inventario","Insumos","Renta","Nomina","Servicios","Herramientas","Operacion","Gasolina","Movilidad","Otro"];
 const TX_CATEGORIES_ALL     = [...new Set([...TX_CATEGORIES_INCOME, ...TX_CATEGORIES_EXPENSE])];
 const PRODUCT_CATEGORIES    = ["Refaccion","Bateria","Pantalla","Accesorio","Microsoldadura","Cable","Cargador","Otro"];
 const POS_PAYMENT_METHODS   = ["Efectivo","Tarjeta","Transferencia","Otro"];
@@ -920,10 +921,35 @@ document.querySelector("#product-type-bar")?.addEventListener("click", e => {
   renderProducts();
 });
 
+const PRIORITY_ORDER = { "Urgente":0, "Alta":1, "Media":2, "Normal":3 };
+function sortedKanbanTickets(tickets) {
+  const list = [...tickets];
+  if (kanbanSort === "fecha_asc")   return list.sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
+  if (kanbanSort === "cliente_az")  return list.sort((a,b) => (a.client||"").localeCompare(b.client||""));
+  if (kanbanSort === "prioridad")   return list.sort((a,b) => (PRIORITY_ORDER[a.priority]??9) - (PRIORITY_ORDER[b.priority]??9));
+  return list.sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||"")); // fecha_desc default
+}
+
 function renderTickets() {
   const perms = currentPerms();
+
+  // Render sort controls above the board
+  const sortBar = document.querySelector("#kanban-sort-bar");
+  if (sortBar) {
+    const opts = [
+      { v:"fecha_desc", l:"Más reciente ↓" },
+      { v:"fecha_asc",  l:"Más antiguo ↑" },
+      { v:"cliente_az", l:"Cliente A→Z" },
+      { v:"prioridad",  l:"Prioridad" },
+    ];
+    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}`;
+    sortBar.querySelectorAll(".kanban-sort-btn").forEach(btn => {
+      btn.addEventListener("click", () => { kanbanSort = btn.dataset.sort; renderTickets(); });
+    });
+  }
+
   document.querySelector("#ticket-board").innerHTML = ticketStages.map(status=>{
-    const tickets = bySearch(branchTickets()).filter(t=>t.status===status);
+    const tickets = sortedKanbanTickets(bySearch(branchTickets()).filter(t=>t.status===status));
     return `<section class="kanban-column"
       ondragover="event.preventDefault();this.classList.add('drag-over')"
       ondragleave="this.classList.remove('drag-over')"
@@ -6514,7 +6540,12 @@ function printRecibo(ticket, type) {
       <p class="rct-row"><strong>ANTICIPO:</strong> <span>${money.format(paid)}</span></p>
       <p class="rct-row"><strong>SALDO PENDIENTE:</strong> <span>${money.format(pending)}</span></p>
       <p class="rct-dash">${D}</p>
-      <p class="rct-value" style="font-size:7.5pt">El tiempo estimado de reparación será notificado. El equipo no reclamado después de 30 días podrá ser dado de baja.</p>
+      <p class="rct-label" style="font-size:7pt;text-transform:uppercase;letter-spacing:.04em">Términos y condiciones</p>
+      <p class="rct-policy">• El tiempo de reparación es estimado y sujeto a disponibilidad de refacciones.</p>
+      <p class="rct-policy">• ${escapeHtml(brand.displayName)} no se hace responsable por pérdida de información, datos o archivos del equipo.</p>
+      <p class="rct-policy">• Equipos no reclamados después de 30 días naturales podrán ser dados de baja sin responsabilidad para el taller.</p>
+      <p class="rct-policy">• El presupuesto puede variar si se detectan fallas adicionales durante el diagnóstico.</p>
+      <p class="rct-policy">• Al firmar este recibo, el cliente acepta los términos y autoriza la revisión del equipo.</p>
       <p class="rct-dash">${D}</p>
       <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE CLIENTE — RECIBIDO CONFORME</p></div>`;
   } else if (type === "pago") {
@@ -6957,12 +6988,15 @@ function techQrTarget(ticketId) {
 }
 
 function exportWorkbook(singleSheet) {
+  const [rFrom, rTo] = reportDateRange();
+  const periodTxs = branchTransactions().filter(t => t.date >= rFrom && t.date <= rTo);
   const sheets = {
     clients:      { title:"Clientes",     headers:["Nombre","Telefono","Email","Equipo","Ultima visita","Estado"],               rows:branchClients().map(i=>[i.name,i.phone,i.email,i.device,i.lastVisit,i.status]) },
-    products:     { title:"Productos",    headers:["Nombre","SKU","Categoria","Stock","Minimo","Precio"],                        rows:branchProducts().map(i=>[i.name,i.sku,i.category,i.stock,i.minStock,i.price]) },
+    products:     { title:"Productos",    headers:["Nombre","SKU","Tipo","Categoria","Stock","Minimo","Precio"],                 rows:branchProducts().map(i=>[i.name,i.sku,i.productType,i.category,i.stock,i.minStock,i.price]) },
     tickets:      { title:"Tickets",      headers:["Folio","Cliente","Producto","Trabajo","Stage","Prioridad","Sucursal","Empleado","Registrado por","Monto","Pago","Pagado","Fecha"], rows:branchTickets().map(i=>[i.tracking,i.client,i.productName,i.issue,i.status,i.priority,i.branch,i.assignedTo,i.createdByName||"",i.repairAmount??i.total,i.paymentStatus,i.paidAmount,i.createdAt]) },
     supplies:     { title:"Insumos",      headers:["Fecha","Proveedor","Insumo","Cantidad","Total"],                             rows:branchSupplies().map(i=>[i.date,i.supplier,i.item,i.quantity,i.total]) },
-    transactions: { title:"Finanzas",     headers:["Fecha","Tipo","Concepto","Categoria","Monto"],                              rows:branchTransactions().map(i=>[i.date,i.type,i.concept,i.category,i.amount]) },
+    transactions: { title:"Finanzas (todo)", headers:["Fecha","Tipo","Concepto","Categoria","Monto","Metodo pago"],             rows:branchTransactions().map(i=>[i.date,i.type,i.concept,i.category,i.amount,i.paymentMethod||""]) },
+    reports:      { title:`Reporte período ${rFrom} al ${rTo}`, headers:["Fecha","Tipo","Concepto","Categoria","Monto","Metodo pago"], rows:periodTxs.map(i=>[i.date,i.type,i.concept,i.category,i.amount,i.paymentMethod||""]) },
   };
   const keys = singleSheet ? [singleSheet] : Object.keys(sheets);
   const html = `<html><head><meta charset="utf-8"/><style>table{border-collapse:collapse;margin-bottom:28px}th,td{border:1px solid #999;padding:8px}th{background:#2f6fff;color:#fff}h2{font-family:Arial}</style></head><body>${keys.map(k=>sheetToTable(sheets[k])).join("")}</body></html>`;

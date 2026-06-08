@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-06_ (sesión 4)
+_Última actualización: 2026-06-07_ (sesión 5)
 
 ## Fase 1: Definir operacion interna
 
@@ -42,7 +42,7 @@ _Última actualización: 2026-06-06_ (sesión 4)
 
 - [x] Mejorar folio de ticket con formato fijo `[FZ] 0001`.
 - [x] Agregar impresion de recibo de recepcion, pago y garantia.
-- [ ] Agregar plantilla con terminos y condiciones.
+- [x] Agregar plantilla con terminos y condiciones — incluidos en recibo de recepción (5 cláusulas estándar).
 - [x] Permitir abonos, saldo pendiente y pagos parciales.
 - [x] Pagos de tickets se registran automáticamente como Ingresos en Finanzas (backfill migration 20).
 - [x] Agregar historial de eventos por ticket (detecta cambio de stage, timeline en modal de edición).
@@ -79,9 +79,9 @@ _Última actualización: 2026-06-06_ (sesión 4)
 - [x] Crear reporte de empleados y productividad.
 - [x] Crear reporte de utilidad estimada (ingresos − egresos por período, margen %, desglose por categoría).
 - [x] Reporte de equipos más frecuentes — top 20 por sucursal con tickets, cerrados e ingresos (historial completo).
-- [ ] Exportar reportes a Excel.
+- [x] Exportar reportes a Excel — botón "Exportar período" filtra por período activo; "Todo" exporta todas las hojas.
 - [ ] Ver y descargar reportes de períodos anteriores o rangos personalizados.
-- [ ] Considerar gastos de movilidad / gasolina como categoría de egreso (traslados a proveedor, entregas a domicilio).
+- [x] Considerar gastos de movilidad / gasolina — categorías "Gasolina" y "Movilidad" agregadas a egresos.
 - Integracion de metricas y assurance de traceabilidad bidireccional entre cotizaciones <> clientes <> tickets <> cotizaciones - Prioridad media
 - [x] Registrar método de pago interno — efectivo, transferencia, link de pago, terminal TC, terminal TD. Campo en form de transacción manual + abono guarda método como campo separado en DB (`payment_method`). Se muestra en tabla Finanzas bajo el concepto.
 - [x] Métricas de método de pago — sección "💳 Ingresos por método de pago" en Reportes, filtrada por período y sucursal, con tarjeta por canal y % del total.
@@ -124,7 +124,7 @@ _Última actualización: 2026-06-06_ (sesión 4)
 - [x] Tooltips de sección al hacer hover en el nav.
 - [x] Que exista un QR interno, en el ticket para que lo escanee el tecnico y ahi le aprezcan tres opciones: recibido | Proceso | Listo y en cada seccion que escoja pues sea para que pueda tomar las fotos y esas se suben y llegan al ticket al QR ahora si del cliente y se ven esas etapas tambien conforme el ticket se mueve.. 
 - [ ] Para el area de insumos, agragar el escaneo de tickets con la camara y que al leerlo , escanee y detecte los campos para un prellenado,  y asi aparezzca el formulario antes de guardar, donde se verifiquen o corrihan los campos y al guardar se guarde la foto Y el llenado del formulario porfavor. Esto para mantener mas facil el registro para los reportes. Asi que sea "Agregar" -> aparezcan las opciones : manual | escanear ; Y manual se abre el formulario asi tal cual esta y para adjuntar el archivo del ticket, y si ponen escanear se abra la camara , tomen la foto y haga el prellenado adjuntando esa foto.  Priority 
-- [ ] Opc para Ordenar columnas del kanban : fecha asc, descendiente. alfabetica, etc. 
+- [x] Ordenar columnas del kanban — barra de orden: Más reciente ↓, Más antiguo ↑, Cliente A→Z, Prioridad.
 
 ## Fase 10: Fixes 
 
@@ -137,7 +137,7 @@ _Última actualización: 2026-06-06_ (sesión 4)
 - [x] Pagos de tickets crean transacción en Finanzas — backfill migration 20 aplicado.
 - [x] dateStamp usa hora local (no UTC) — corrige "Ingresos hoy" después de las 7pm.
 - [x] Tickets — carga de fotos existe solo al editar, no al crear (diseño intencional por ahora). * Se arregló con los QR de etapas* 
-- [ ] El logo de la entrada , de home, para iniciar sesion, es el equivocado. 
+- [x] Logo de login y sidebar corregido — apunta a LOGO-FIXZONE.png (ruta logo-color.png no existía).
 - [x] Teléfono del cliente en ticket — campo `clientPhone` opcional en el form; al editar se pre-llena del registro existente.
 - [x] Auto-registrar cliente cuando hay nombre + teléfono al crear o editar un ticket (también actualiza teléfono si el cliente existe sin uno).
 - [x] Texto largo de descripción en cards — `word-break:break-word` + `-webkit-line-clamp:2` en ticket card y cotización card.

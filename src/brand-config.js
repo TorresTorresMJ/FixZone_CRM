@@ -11,7 +11,7 @@ window.BRANCH_BRANDS = {
     locationLabel:    "Puerto Vallarta",
     tagline:          "WE FIX FAST. YOU RELAX.",
     crmLabel:         "CRM OPERATIVO",
-    logoSrc:          "./assets/brand/fixzone/logo-color.png",
+    logoSrc:          "./assets/brand/fixzone/LOGO-FIXZONE.png",
     logoMonoSrc:      "./assets/brand/logos-mono/fixzone-monocromatico.png",
     logoFallback:     "./assets/brand/fixzone/LOGO-FIXZONE.png",
     pageTitle:        "FixZone CRM",

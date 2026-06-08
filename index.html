@@ -21,7 +21,7 @@
   <div class="app-shell" style="display:none">
     <aside class="sidebar" aria-label="Navegacion principal">
       <div class="brand" style="flex-direction:column;align-items:flex-start;gap:4px">
-        <img src="./assets/brand/fixzone/logo-color.png" alt="FixZone"
+        <img src="./assets/brand/fixzone/LOGO-FIXZONE.png" alt="FixZone"
           style="width:160px;height:auto;max-height:44px;object-fit:contain;border-radius:4px"
           onerror="this.style.display='none'" />
         <span id="brand-crm-label"
@@ -227,6 +227,7 @@
             <button class="primary-action" data-open-form="ticket">+ Ticket</button>
           </div>
         </div>
+        <div id="kanban-sort-bar" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
         <div class="kanban" id="ticket-board"></div>
       </section>
 
@@ -331,8 +332,9 @@
             <button class="mini-button rpt-filter" data-rpt="week">7 días</button>
             <button class="mini-button rpt-filter is-active" data-rpt="month">Mes</button>
             <button class="mini-button rpt-filter" data-rpt="all">Todo</button>
-            <button class="ghost-button" id="export-data" data-export-sheet="" title="Exportar todo a Excel"
-              style="margin-left:8px">📊 Excel</button>
+            <button class="ghost-button" data-export-sheet="reports" title="Exportar período actual a Excel"
+              style="margin-left:8px">📊 Exportar período</button>
+            <button class="ghost-button" id="export-data" data-export-sheet="" title="Exportar todo a Excel">📊 Todo</button>
           </div>
         </div>
         <div class="report-grid" id="reports-grid"></div>
