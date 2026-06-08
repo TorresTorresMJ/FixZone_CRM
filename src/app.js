@@ -3468,6 +3468,8 @@ function saveQuickMessages(msgs) { localStorage.setItem(QUICK_MESSAGES_KEY, JSON
 function renderQuickMessages() {
   const el = document.querySelector("#quick-messages-manager");
   if (!el) return;
+  // Skip re-render if the user is in edit mode — avoids overwriting unsaved changes
+  if (el.querySelector("#qm-save-btn")) return;
   const msgs = loadQuickMessages();
   let editMode = false;
 
