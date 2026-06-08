@@ -55,6 +55,9 @@ There is no test suite and no linter configured.
 | `supabase/22_variant_prices.sql` | Adds `variant` column to service_prices — multiple prices per cell (e.g. screen quality) |
 | `supabase/22_service_type_default_price.sql` | Adds `default_price` to service_types — precio base global por servicio (ej. Diagnóstico $350) |
 | `supabase/23_cotizacion_ref.sql` | Adds `cotizacion_ref` + `converted_to_ticket` to service_tickets — traceabilidad bidireccional |
+| `supabase/24_ticket_payment_method.sql` | Adds `payment_method` to service_tickets — método de pago por ticket para uso interno y reportes |
+| `supabase/25_transaction_receipt_url.sql` | Adds `receipt_url` to transactions — adjuntar comprobante a egresos registrados manualmente |
+| `supabase/functions/scan-receipt/` | Edge Function — recibe imagen base64, llama a Claude Haiku vision API, devuelve campos extraídos del comprobante. Requiere secret `ANTHROPIC_API_KEY`. |
 
 ## Architecture
 
@@ -299,13 +302,16 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 21. `22_variant_prices.sql` — add `variant` column to service_prices for multi-price cells
 22. `22_service_type_default_price.sql` — add `default_price` to service_types; seed Diagnóstico/Limpieza $350
 23. `23_cotizacion_ref.sql` — add `cotizacion_ref` + `converted_to_ticket` to service_tickets
+24. `24_ticket_payment_method.sql` — add `payment_method` to service_tickets
+25. `25_transaction_receipt_url.sql` — add `receipt_url` to transactions
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
 ### Edge Functions
-Two Deno Edge Functions in `supabase/functions/`:
+Three Deno Edge Functions in `supabase/functions/`:
 - `create_employee/` — create/update/delete/reset_password for employees. Uses service-role key. Maps frontend roles to DB roles at insert/update time. Sets `email = username@fixzone.internal` on insert so RLS email lookup works.
 - `login-employee/` — legacy bcrypt login, not used in current auth flow.
+- `scan-receipt/` — receives a base64 image of a purchase receipt and returns extracted fields (date, supplier, item, quantity, total / or concept, category, amount for transactions) using Claude Haiku vision API. **Requires `ANTHROPIC_API_KEY` set via `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`**.
 
 ## Branch branding
 

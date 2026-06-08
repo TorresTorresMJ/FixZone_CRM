@@ -175,6 +175,7 @@ const formSchemas = {
       ["discountCode","Código de descuento","text",null,false,true],
       ["discountAmount","Descuento ($)","number",null,false,true],
       ["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
+      ["paymentMethod","Método de pago","select",["","Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"],false,true],
       ["paidAmount","Monto pagado","number"],["createdAt","Fecha","date"],
       ["notes","Notas internas","text",null,true,true],
     ],
@@ -627,12 +628,14 @@ async function loadSupabaseState() {
         repairAmount:Number(t.repair_amount||0), paymentStatus:t.payment_status, paidAmount:Number(t.paid_amount||0),
         branch:branchRows.find(b=>b.id===t.branch_id)?.name||BRANCHES[0],
         assignedTo:employeeRows.find(e=>e.id===t.assigned_employee_id)?.full_name||"",
+        createdByName:employeeRows.find(e=>e.id===t.created_by)?.full_name||"",
         createdAt:utcToLocalDate(t.received_at||t.created_at),
         notes:t.notes||"",
         discountCode:t.discount_code||"",
         discountAmount:Number(t.discount_amount||0),
         discountPct:Number(t.discount_pct||0),
         serviceType:t.service_type||"",
+        paymentMethod:t.payment_method||"",
         cotizacionRef:t.cotizacion_ref||"",
         convertedToTicket:t.converted_to_ticket||"",
         deviceId:t.device_id||null,
@@ -2673,6 +2676,46 @@ function renderReports() {
         </div>` : "";
     }
   }
+
+  // ── Tickets por método de pago ───────────────────────────────────────────────
+  {
+    const tpmEl = document.querySelector("#reports-ticket-payment");
+    if (tpmEl) {
+      const ORDER = ["Efectivo","Transferencia","Terminal TC","Terminal TD","Link de pago","Otro"];
+      const ticketsPeriod = branchTickets().filter(t => {
+        const d = (t.createdAt||"").slice(0,10);
+        return d >= from && d <= to && t.paymentMethod;
+      });
+      const byMethod = {};
+      ticketsPeriod.forEach(t => {
+        const m = t.paymentMethod;
+        if (!byMethod[m]) byMethod[m] = { count:0, paid:0 };
+        byMethod[m].count++;
+        byMethod[m].paid += Number(t.paidAmount||0);
+      });
+      const totalTicketPaid = Object.values(byMethod).reduce((s,v)=>s+v.paid,0);
+      const sorted = Object.entries(byMethod).sort((a,b) => {
+        const oa = ORDER.indexOf(a[0]), ob = ORDER.indexOf(b[0]);
+        return (oa===-1?99:oa) - (ob===-1?99:ob) || b[1].paid - a[1].paid;
+      });
+      const cards = sorted.map(([m,v]) => {
+        const pct = totalTicketPaid > 0 ? Math.round(v.paid/totalTicketPaid*100) : 0;
+        return `<div style="flex:1;min-width:130px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m)}</div>
+          <div style="font-size:16px;font-weight:700;color:#2ecc71">${money.format(v.paid)}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.35);margin-top:2px">${v.count} ticket${v.count!==1?"s":""} · ${pct}%</div>
+        </div>`;
+      }).join("");
+      tpmEl.innerHTML = sorted.length ? `
+        <div class="card" style="margin-top:16px;border-left:3px solid rgba(var(--fz-primary-rgb),.6)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0;font-size:14px">🎫 Tickets por método de pago — ${periodLabel}</h3>
+            <span style="font-size:11px;color:rgba(255,255,255,.4)">${ticketsPeriod.length} ticket${ticketsPeriod.length!==1?"s":""} · ${money.format(totalTicketPaid)} cobrado</span>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">${cards}</div>
+        </div>` : "";
+    }
+  }
 }
 
 // ── Users panel ───────────────────────────────────────────────────────────────
@@ -4163,6 +4206,10 @@ function openForm(type, prefill = {}) {
     formFields.innerHTML += buildReceiptUploadSection();
     initProductAutoFill();
   }
+  if (type === "transaction" && (prefill.type === "Egreso" || !prefill.type)) {
+    // Add receipt upload for expense transactions (shown/hidden by type change)
+    formFields.innerHTML += `<div id="tx-receipt-wrap" style="display:${prefill.type==="Egreso"?"block":"none"}">${buildReceiptUploadSection()}</div>`;
+  }
   if (type === "cotizacion") {
     formFields.innerHTML += buildQuoteItemsSection();
     initQuoteItemsBuilder(prefill.quoteItems || []);
@@ -4178,16 +4225,8 @@ function syncTransactionCategories(type) {
   if (!catSel) return;
   const current = catSel.value;
   catSel.innerHTML = cats.map(c => `<option value="${c}" ${c===current?"selected":""}>${c}</option>`).join("");
-}
-
-function openTransactionForm(type) {
-  openForm("transaction", { type, date: dateStamp() });
-  setTimeout(() => {
-    const sel = formFields.querySelector("#type");
-    if (sel) { sel.value = type; syncTransactionCategories(type); }
-    const typeSel = formFields.querySelector("#type");
-    typeSel?.addEventListener("change", e => syncTransactionCategories(e.target.value));
-  }, 0);
+  const receiptWrap = formFields.querySelector("#tx-receipt-wrap");
+  if (receiptWrap) receiptWrap.style.display = type === "Egreso" ? "block" : "none";
 }
 
 function openEditTransaction(txId) {
@@ -5056,6 +5095,7 @@ async function createRemoteTicket(r) {
     product_name:r.productName, issue_description:r.issue,
     stage:r.status, priority:r.priority,
     repair_amount:r.repairAmount, payment_status:r.paymentStatus, paid_amount:r.paidAmount,
+    payment_method:r.paymentMethod||null,
     discount_code:r.discountCode||null, discount_amount:disc.amount, discount_pct:disc.pct,
     branch_id:branchId, notes:r.notes||null,
     assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId(),
@@ -5091,6 +5131,7 @@ async function createRemoteTicket(r) {
     assignedTo:assignedE?.full_name||r.assignedTo||"",
     createdAt:utcToLocalDate(data.received_at||data.created_at),
     notes:r.notes||"", deviceId,
+    paymentMethod:r.paymentMethod||"",
     discountCode:r.discountCode||"", discountAmount:disc.amount, discountPct:disc.pct,
     imei:r.imei||"", color:r.color||"",
     accessories:r.accessories||"", physicalCondition:r.physicalCondition||"",
@@ -5101,11 +5142,12 @@ async function createRemoteTicket(r) {
   // Auto-create income transaction if an upfront payment was recorded at creation
   if (Number(r.paidAmount || 0) > 0) {
     await createRemoteTransaction({
-      date:     dateStamp(),
-      type:     "Ingreso",
-      concept:  `Anticipo ${data.tracking_number}`,
-      category: "Servicio",
-      amount:   Number(r.paidAmount),
+      date:          dateStamp(),
+      type:          "Ingreso",
+      concept:       `Anticipo ${data.tracking_number}`,
+      category:      "Servicio",
+      amount:        Number(r.paidAmount),
+      paymentMethod: r.paymentMethod || "",
     });
   }
 }
@@ -5148,6 +5190,7 @@ async function updateRemoteTicket(ticketId, r) {
     repair_amount:        Number(r.repairAmount||0),
     payment_status:       r.paymentStatus,
     paid_amount:          Number(r.paidAmount||0),
+    payment_method:       r.paymentMethod||null,
     branch_id:            await branchIdByName(r.branch||activeBranchId),
     assigned_employee_id: assignedE?.id||null,
     notes:                r.notes||null,
@@ -5165,11 +5208,12 @@ async function updateRemoteTicket(ticketId, r) {
   const newPaid = Number(r.paidAmount || 0);
   if (newPaid > oldPaid) {
     await createRemoteTransaction({
-      date:     dateStamp(),
-      type:     "Ingreso",
-      concept:  `Pago ${oldTicket?.tracking || ticketId}`,
-      category: "Servicio",
-      amount:   newPaid - oldPaid,
+      date:          dateStamp(),
+      type:          "Ingreso",
+      concept:       `Pago ${oldTicket?.tracking || ticketId}`,
+      category:      "Servicio",
+      amount:        newPaid - oldPaid,
+      paymentMethod: r.paymentMethod || "",
     });
   }
 
@@ -5234,6 +5278,221 @@ async function updateRemoteTask(taskId, r) {
     priority:             r.priority,
   }).eq("id", taskId);
   if (error) throw error;
+}
+
+// ── Scan-or-Manual choice ─────────────────────────────────────────────────────
+
+function openScanOrManual(formType, txType) {
+  const dlg = document.createElement("dialog");
+  dlg.className = "modal";
+  dlg.style.cssText = "max-width:340px;padding:0;border-radius:16px";
+  dlg.innerHTML = `
+    <div style="padding:24px 22px 20px">
+      <p style="font-size:13px;font-weight:600;margin:0 0 18px;text-transform:uppercase;letter-spacing:.06em;opacity:.6">Agregar registro</p>
+      <div style="display:grid;gap:12px">
+        <button id="som-manual" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);cursor:pointer;text-align:left;color:inherit;font-size:14px;font-family:inherit">
+          <span style="font-size:26px">📝</span>
+          <div>
+            <div style="font-weight:600">Manual</div>
+            <div style="font-size:12px;opacity:.55;margin-top:2px">Llenar el formulario a mano</div>
+          </div>
+        </button>
+        <button id="som-scan" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:12px;border:1px solid rgba(var(--fz-primary-rgb,8,90,203),.4);background:rgba(var(--fz-primary-rgb,8,90,203),.08);cursor:pointer;text-align:left;color:inherit;font-size:14px;font-family:inherit">
+          <span style="font-size:26px">📷</span>
+          <div>
+            <div style="font-weight:600">Escanear comprobante</div>
+            <div style="font-size:12px;opacity:.55;margin-top:2px">Toma foto y el sistema llena los campos</div>
+          </div>
+        </button>
+      </div>
+      <button id="som-cancel" class="ghost-button" style="width:100%;margin-top:16px">Cancelar</button>
+    </div>`;
+  document.body.appendChild(dlg);
+
+  dlg.querySelector("#som-manual").addEventListener("click", () => {
+    dlg.close();
+    if (formType === "supply") {
+      openForm("supply");
+    } else {
+      openForm("transaction", { type: txType || "Egreso", date: dateStamp(), _fromScan: true });
+      setTimeout(() => {
+        const sel = formFields.querySelector("#type");
+        const t   = txType || "Egreso";
+        if (sel) { sel.value = t; syncTransactionCategories(t); }
+        formFields.querySelector("#type")?.addEventListener("change", e => syncTransactionCategories(e.target.value));
+      }, 0);
+    }
+  });
+  dlg.querySelector("#som-scan").addEventListener("click", () => {
+    dlg.close();
+    openReceiptScanner(formType, txType || "Egreso");
+  });
+  dlg.querySelector("#som-cancel").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener("close", () => dlg.remove(), { once: true });
+  dlg.showModal();
+}
+
+function openReceiptScanner(formType, txType) {
+  const dlg = document.createElement("dialog");
+  dlg.className = "modal";
+  dlg.style.cssText = "max-width:420px;padding:0;border-radius:16px";
+  dlg.innerHTML = `
+    <div style="padding:22px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <p style="font-weight:600;font-size:15px;margin:0">📷 Escanear comprobante</p>
+        <button id="rsc-close" class="icon-button" style="font-size:16px">✕</button>
+      </div>
+
+      <div id="rsc-capture-area" style="border:2px dashed rgba(255,255,255,.18);border-radius:12px;padding:28px 16px;text-align:center;margin-bottom:16px">
+        <p style="margin:0 0 12px;font-size:13px;opacity:.6">Toma o selecciona la foto del ticket de compra</p>
+        <label class="primary-action" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:10px 20px">
+          📷 Abrir cámara / Seleccionar imagen
+          <input type="file" id="rsc-file-input" accept="image/*" capture="environment" style="display:none" />
+        </label>
+      </div>
+
+      <div id="rsc-preview-area" style="display:none;margin-bottom:16px">
+        <img id="rsc-preview-img" style="width:100%;border-radius:10px;max-height:260px;object-fit:contain;background:rgba(0,0,0,.3)" />
+        <p id="rsc-status" style="font-size:12px;margin:10px 0 0;opacity:.6;text-align:center"></p>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button id="rsc-retake" class="ghost-button" style="display:none;flex:1">Nueva foto</button>
+        <button id="rsc-analyze" class="primary-action" style="display:none;flex:1">✨ Analizar con IA</button>
+      </div>
+    </div>`;
+  document.body.appendChild(dlg);
+
+  let capturedFile = null;
+
+  const fileInput    = dlg.querySelector("#rsc-file-input");
+  const previewArea  = dlg.querySelector("#rsc-preview-area");
+  const captureArea  = dlg.querySelector("#rsc-capture-area");
+  const previewImg   = dlg.querySelector("#rsc-preview-img");
+  const statusEl     = dlg.querySelector("#rsc-status");
+  const retakeBtn    = dlg.querySelector("#rsc-retake");
+  const analyzeBtn   = dlg.querySelector("#rsc-analyze");
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    capturedFile = file;
+    const url = URL.createObjectURL(file);
+    previewImg.src = url;
+    captureArea.style.display = "none";
+    previewArea.style.display = "block";
+    retakeBtn.style.display = "block";
+    analyzeBtn.style.display = "block";
+    statusEl.textContent = file.name;
+  });
+
+  retakeBtn.addEventListener("click", () => {
+    capturedFile = null;
+    fileInput.value = "";
+    captureArea.style.display = "block";
+    previewArea.style.display = "none";
+    retakeBtn.style.display = "none";
+    analyzeBtn.style.display = "none";
+  });
+
+  analyzeBtn.addEventListener("click", async () => {
+    if (!capturedFile) return;
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = "Analizando…";
+    statusEl.textContent = "Enviando imagen a la IA…";
+
+    try {
+      const base64 = await fileToBase64(capturedFile);
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      const res = await fetch(`${window.FIXZONE_SUPABASE.url}/functions/v1/scan-receipt`, {
+        method: "POST",
+        headers: {
+          "content-type":  "application/json",
+          "authorization": `Bearer ${session?.access_token || window.FIXZONE_SUPABASE.anonKey}`,
+          "apikey":        window.FIXZONE_SUPABASE.anonKey,
+        },
+        body: JSON.stringify({
+          imageBase64: base64,
+          mimeType:    capturedFile.type || "image/jpeg",
+          formType,
+        }),
+      });
+
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "Error al analizar");
+
+      dlg.close();
+      // Pre-fill the appropriate form with extracted fields + attach the captured file
+      if (formType === "supply") {
+        openForm("supply", {
+          date:     json.fields.date     || dateStamp(),
+          supplier: json.fields.supplier || "",
+          item:     json.fields.item     || "",
+          quantity: json.fields.quantity || 1,
+          total:    json.fields.total    || "",
+        });
+      } else {
+        openTransactionForm(txType, {
+          _fromScan: true,
+          date:      json.fields.date     || dateStamp(),
+          concept:   json.fields.concept  || (json.fields.supplier ? `Compra: ${json.fields.supplier}` : ""),
+          category:  json.fields.category || "Insumos",
+          amount:    json.fields.amount   || "",
+        });
+      }
+      // After form opens, inject the captured file into the receipt input
+      setTimeout(() => {
+        const receiptInput = formFields.querySelector("#receipt-file-input");
+        if (receiptInput) {
+          const dt = new DataTransfer();
+          dt.items.add(capturedFile);
+          receiptInput.files = dt.files;
+          const statusSpan = formFields.querySelector("#receipt-upload-status");
+          if (statusSpan) statusSpan.textContent = "📷 Foto adjuntada";
+        }
+      }, 80);
+
+    } catch (err) {
+      statusEl.textContent = `Error: ${err.message}`;
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = "✨ Analizar con IA";
+    }
+  });
+
+  dlg.querySelector("#rsc-close").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener("close", () => dlg.remove(), { once: true });
+  dlg.showModal();
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Redefined to (1) show scan-or-manual for Egreso, (2) support extraPrefill for AI pre-fill
+function openTransactionForm(type, extraPrefill = {}) {
+  // When opening Egreso directly (no prefill = user clicked the button, not coming from scan flow)
+  if (type === "Egreso" && !extraPrefill._fromScan) {
+    openScanOrManual("transaction", "Egreso");
+    return;
+  }
+  openForm("transaction", { type, date: dateStamp(), ...extraPrefill });
+  setTimeout(() => {
+    const sel = formFields.querySelector("#type");
+    if (sel) { sel.value = type; syncTransactionCategories(type); }
+    if (extraPrefill.category) {
+      const catSel = formFields.querySelector("#category");
+      if (catSel) catSel.value = extraPrefill.category;
+    }
+    const typeSel = formFields.querySelector("#type");
+    typeSel?.addEventListener("change", e => syncTransactionCategories(e.target.value));
+  }, 0);
 }
 
 async function uploadReceiptFile(file) {
@@ -5313,11 +5572,18 @@ async function findOrCreateSupplier(name) {
 
 async function createRemoteTransaction(r) {
   const branchId = await branchIdByName(activeBranchId);
+  // Upload receipt file if one was selected in the form
+  let receiptUrl = r.receipt_url || null;
+  if (!receiptUrl) {
+    const fileInput = document.querySelector("#receipt-file-input");
+    if (fileInput?.files?.length) receiptUrl = await uploadReceiptFile(fileInput.files[0]);
+  }
   const { data, error } = await supabaseClient.from("transactions").insert({
     branch_id:branchId,
     transaction_date:r.date, type:r.type, concept:r.concept,
     category:r.category, amount:r.amount, created_by:currentEmployeeId(),
     payment_method: r.paymentMethod || null,
+    receipt_url: receiptUrl,
   }).select().single();
   if (error) throw error;
   // Add the DB-created transaction to state immediately so it appears in the dashboard.
@@ -5719,6 +5985,7 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
       const { error } = await supabaseClient.from("service_tickets").update({
         paid_amount:    newPaid,
         payment_status: newStatus,
+        payment_method: method || null,
       }).eq("id", abonoTicketId);
       if (error) throw error;
 
@@ -5736,7 +6003,7 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
     // Update local state regardless so UI reflects immediately
     const idx = state.tickets.findIndex(t => t.id === abonoTicketId);
     if (idx !== -1) {
-      state.tickets[idx] = { ...state.tickets[idx], paidAmount: newPaid, paymentStatus: newStatus };
+      state.tickets[idx] = { ...state.tickets[idx], paidAmount: newPaid, paymentStatus: newStatus, paymentMethod: method || state.tickets[idx].paymentMethod };
     }
     abonoModal.close();
     render();
@@ -5756,7 +6023,11 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
 // EVENT LISTENERS
 // ──────────────────────────────────────────────────────────────────────────────
 document.querySelectorAll("[data-open-form]").forEach(btn => {
-  btn.addEventListener("click", () => openForm(btn.dataset.openForm));
+  btn.addEventListener("click", () => {
+    const ft = btn.dataset.openForm;
+    if (ft === "supply") openScanOrManual("supply");
+    else openForm(ft);
+  });
 });
 
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
@@ -6675,7 +6946,7 @@ function exportWorkbook(singleSheet) {
   const sheets = {
     clients:      { title:"Clientes",     headers:["Nombre","Telefono","Email","Equipo","Ultima visita","Estado"],               rows:branchClients().map(i=>[i.name,i.phone,i.email,i.device,i.lastVisit,i.status]) },
     products:     { title:"Productos",    headers:["Nombre","SKU","Categoria","Stock","Minimo","Precio"],                        rows:branchProducts().map(i=>[i.name,i.sku,i.category,i.stock,i.minStock,i.price]) },
-    tickets:      { title:"Tickets",      headers:["Folio","Cliente","Producto","Trabajo","Stage","Prioridad","Sucursal","Empleado","Monto","Pago","Pagado","Fecha"], rows:branchTickets().map(i=>[i.tracking,i.client,i.productName,i.issue,i.status,i.priority,i.branch,i.assignedTo,i.repairAmount??i.total,i.paymentStatus,i.paidAmount,i.createdAt]) },
+    tickets:      { title:"Tickets",      headers:["Folio","Cliente","Producto","Trabajo","Stage","Prioridad","Sucursal","Empleado","Registrado por","Monto","Pago","Pagado","Fecha"], rows:branchTickets().map(i=>[i.tracking,i.client,i.productName,i.issue,i.status,i.priority,i.branch,i.assignedTo,i.createdByName||"",i.repairAmount??i.total,i.paymentStatus,i.paidAmount,i.createdAt]) },
     supplies:     { title:"Insumos",      headers:["Fecha","Proveedor","Insumo","Cantidad","Total"],                             rows:branchSupplies().map(i=>[i.date,i.supplier,i.item,i.quantity,i.total]) },
     transactions: { title:"Finanzas",     headers:["Fecha","Tipo","Concepto","Categoria","Monto"],                              rows:branchTransactions().map(i=>[i.date,i.type,i.concept,i.category,i.amount]) },
   };
@@ -6993,6 +7264,7 @@ function viewTicketDetail(ticketId) {
         ${row("Equipo",       ticket.productName || ticket.device)}
         ${row("IMEI / serie", ticket.imei)}
         ${row("Técnico",      ticket.assignedTo)}
+        ${ticket.createdByName ? row("Registrado por", ticket.createdByName) : ""}
         ${row("Sucursal",     ticket.branch)}
         ${row("Fecha entrada",ticket.date)}
         ${row("Fecha entrega",ticket.deliveryDate)}
@@ -7003,6 +7275,7 @@ function viewTicketDetail(ticketId) {
         ${paidAmt> 0 ? row("Pagado",    money.format(paidAmt))         : ""}
         ${balance> 0 ? `<div class="detail-row"><span>Saldo pendiente</span><strong style="color:#ffd18c">${money.format(balance)}</strong></div>` : ""}
         ${row("Estado de pago", ticket.paymentStatus)}
+        ${ticket.paymentMethod ? row("Método de pago", ticket.paymentMethod) : ""}
       </div>
       ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${ticket.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas internas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(ticket.notes)}</p></div>` : ""}

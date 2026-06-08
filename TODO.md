@@ -143,7 +143,11 @@ _Última actualización: 2026-06-06_ (sesión 4)
 - [x] Texto largo de descripción en cards — `word-break:break-word` + `-webkit-line-clamp:2` en ticket card y cotización card.
 - [ ](image-3.png)Que en el chat de notificaciones , cuando IT manda mensaje diga IT. O mejor, como hay roles repetidos, que se muestr el nombre del usuario plis, solo primer nombre. 
 - [ ] Mande mensaje en el centro de notificaciones y no le llegó a nadie, abrieron su centro de campanita y no aparecia nunfun mensaje de los que habia enviado. 
-- [ ] .photo-stage-group {} /* se usa?*/ si no, borrar la regla vacia. 
+- [ ] .photo-stage-group {} /* se usa?*/ si no, borrar la regla vacia. prioridad media - cleaning dead code 
+- [ ]Edito y guardo los mensajes rapidos en la seccion de automatizacion , pero al dar guardar, no respeta los cambios. Prioridad alta 
+- [ ] En "Diseño" al guardar un logo , se cambio el icono del logo de la pagina del CRM, NO queiro eso. Queiro que ahi solo sea un fodler para rapido acceso o source of truth de los elementos de la marca. Quiero poder subir los logos monocromaticos, logo sin fondo png, logo black, varios, que sea un folder en linea que en cualquier momento se pueda acceder, descargar, copiar, para hacer uso de él. Incluso que no sea el logo si no por ejemplo el icono del telefono del logo, etc. prioridad alta 
+- [ ] cuando hago click en añadir "Compra" se abre la ventana pero despues se quita el formulario, y se queda el CRM mas tenue y tengo que presionar ESC. Prioridad alta
+- [ ] Al agregar "Compra" hace lo de que se ve la pantalla mas atenuada y solo se puede salir con ESC - PRIORIDAD URGENTE 
 
 ## Fase 11: Cotizaciones
 
@@ -186,10 +190,44 @@ _Última actualización: 2026-06-06_ (sesión 4)
 - [x] Click en movimiento reciente en Home → abre vista Finanzas con el registro.
 - [x] Refresh mantiene la tab activa (sessionStorage).
 - [ ] Kanban tipo Hubspot — expandir card al click para leer info completa (read-only). Actualmente hay que ir a Editar.
-- [ ] Revisar mobile en celular real (responsive implementado, pendiente QA).
+- [x] Revisar mobile en celular real (responsive implementado, pendiente QA).
 - [ ] Centro de notificaciones en tiempo real — ticket asignado, cambio de stage, comentarios IT.
-- [ ] Desborde fuera del margen de los tickets y texto . Prioridad medai. 
+- [x] Desborde fuera del margen de los tickets y texto . Prioridad medai. *Arreglado con click en tickeet y abrir vista detalladad de ticket*
 
 ## Fase 14 - IT 
 - [ ] Que en cada task de IT permita la comunciacion IT <> Usuario
 - [ ] Poner que se peuda adjuntar fotos en los tickets para IT que crean los usuarios. 
+
+---
+
+## Fase 15: UX Audit — Página pública fixzone.pages.dev
+
+_Pendiente implementar — evaluación hecha en sesión 2026-06-06_
+
+- [x] **[P0] Consolidar CTAs** — cada fila es tappable a WhatsApp con el servicio pre-llenado + bloque CTA verde prominente abajo.
+- [x] **[P1] Añadir precio de referencia** — "desde $X" debajo de cada servicio. Actualizar precios reales en `docs/fixzone-menu.html`.
+- [x] **[P1] Añadir prueba social** — Trust bar con rating ⭐, horario y dirección arriba del fold. Actualizar rating real en el archivo.
+- [x] **[P2] Reemplazar bullets por íconos de servicio** — cada servicio tiene ícono específico en caja azul redondeada.
+- [x] **[P2] Adaptar layout desktop** — card centrada sobre fondo gris, border-radius 20px y sombra en ≥520px.
+- [x] **[P2] Dar más visibilidad al horario** — barra "Abierto hoy" con punto verde pulsante justo debajo del trust bar.
+- [x] **[P3] Elevar el botón de Maps** — full-width, borde azul sólido, texto "Ver en Maps". Actualizar href con URL real.
+- [x] **[PENDIENTE datos reales]** — Actualizar en `docs/fixzone-menu.html`: rating Google real, URL de Google Maps, y precios por servicio.
+
+---
+
+## Fase 16: UX Audit — CRM interno (fixzone-crm.pages.dev)
+
+_Pendiente implementar — auditoría de código hecha en sesión 2026-06-06_
+
+- [ ] **[P0] Subir tamaño mínimo de fuente a 12px** — 29 instancias de `font-size: 11px/10px` en labels, badges, report cards, ticket detail. Problema real de legibilidad en mostrador con luz ambiental.
+- [ ] **[P0] Quitar `text-transform: uppercase` de `.field label`** — Cada label de formulario está en ALL CAPS 11px. Cambiar a `sentence case` o `Title Case`. Mantener uppercase solo en badges de estado/rol y `th` de tablas.
+- [ ] **[P1] Unificar íconos de nav a Lucide** — La navegación mezcla emoji unicode (`⌂ ✦ ◎ ◈ ◉ ₱ $ ≡ ⚙ ⚡`) con Lucide sin criterio. Tickets y Diseño usan el mismo símbolo ✦. Migrar todo a Lucide.
+- [ ] **[P1] Extender stagger de animación a todas las vistas** — `card-enter` solo existe en Dashboard y Tickets. Clientes, Productos, Finanzas, Reportes entran planos. Añadir a `.product-card`, filas de clientes, `.report-card`.
+- [ ] **[P1] Definir escala de z-index semántica** — Dos elementos con `z-index: 9999` sin escala documentada. Definir tokens: `--z-sticky`, `--z-modal`, `--z-toast`, `--z-tooltip`.
+- [ ] **[P1] Corregir colores de RefaxZone (Puebla)** — `brand-config.js` líneas 72-80 muestran `#085ACB` azul para Puebla. Debería ser naranja `#E85D04` según diseño original. El multi-branch theming no está funcionando correctamente.
+- [ ] **[P2] Kanban ancho adaptable en pantallas grandes** — `width: 240px` fijo desperdicia espacio en 1440px+. Cambiar a `width: clamp(240px, 22vw, 320px)`.
+- [ ] **[P2] Metric grid responsive sin breakpoints fijos** — `repeat(4, minmax(0,1fr))` se estira en pantallas anchas. Cambiar a `repeat(auto-fill, minmax(200px, 1fr))`.
+- [ ] **[P2] Toasts descartables** — Ambos toasts tienen `pointer-events: none`. El usuario no puede cerrarlos si bloquean UI. Añadir click para dismiss.
+- [ ] **[P2] Skeleton loader en carga inicial** — Durante el `Promise.all` de Supabase las vistas aparecen vacías. Añadir 3-4 cards skeleton con shimmer para mejorar percepción de velocidad.
+- [ ] **[P3] Tracking codes en monospace, no Orbitron** — `[FZ] 0001` en Orbitron es difícil de escanear repetidamente. Cambiar a `ui-monospace, 'SF Mono', monospace; font-weight: 700`.
+- [ ] **[P3] Hover de botón primario sin `filter: brightness()`** — Causa nuevo stacking context. Cambiar a variante de color directa en el `background` del `:hover`.
