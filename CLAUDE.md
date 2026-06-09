@@ -57,7 +57,7 @@ There is no test suite and no linter configured.
 | `supabase/23_cotizacion_ref.sql` | Adds `cotizacion_ref` + `converted_to_ticket` to service_tickets — traceabilidad bidireccional |
 | `supabase/24_ticket_payment_method.sql` | Adds `payment_method` to service_tickets — método de pago por ticket para uso interno y reportes |
 | `supabase/25_transaction_receipt_url.sql` | Adds `receipt_url` to transactions — adjuntar comprobante a egresos registrados manualmente |
-| `supabase/functions/scan-receipt/` | Edge Function — recibe imagen base64, llama a Claude Haiku vision API, devuelve campos extraídos del comprobante. Requiere secret `ANTHROPIC_API_KEY`. |
+| `supabase/functions/scan-receipt/` | Edge Function — recibe imagen o PDF base64, llama a Claude Haiku vision/document API, devuelve campos extraídos del comprobante. Requiere secret `ANTHROPIC_API_KEY`. |
 
 ## Architecture
 
@@ -311,7 +311,7 @@ Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to 
 Three Deno Edge Functions in `supabase/functions/`:
 - `create_employee/` — create/update/delete/reset_password for employees. Uses service-role key. Maps frontend roles to DB roles at insert/update time. Sets `email = username@fixzone.internal` on insert so RLS email lookup works.
 - `login-employee/` — legacy bcrypt login, not used in current auth flow.
-- `scan-receipt/` — receives a base64 image of a purchase receipt and returns extracted fields (date, supplier, item, quantity, total / or concept, category, amount for transactions) using Claude Haiku vision API. **Requires `ANTHROPIC_API_KEY` set via `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`**.
+- `scan-receipt/` — receives a base64 image OR PDF of a purchase receipt and returns extracted fields (date, supplier, item, quantity, total / or concept, category, amount for transactions) using Claude Haiku vision/document API (`anthropic-beta: pdfs-2024-09-25` header for PDF input). **Requires `ANTHROPIC_API_KEY` set via `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`**.
 
 ## Branch branding
 

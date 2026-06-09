@@ -123,7 +123,7 @@ _Última actualización: 2026-06-07_ (sesión 5)
 - [x] Drag & drop en KANBANs (tickets + soporte IT).
 - [x] Tooltips de sección al hacer hover en el nav.
 - [x] Que exista un QR interno, en el ticket para que lo escanee el tecnico y ahi le aprezcan tres opciones: recibido | Proceso | Listo y en cada seccion que escoja pues sea para que pueda tomar las fotos y esas se suben y llegan al ticket al QR ahora si del cliente y se ven esas etapas tambien conforme el ticket se mueve.. 
-- [ ] Para el area de insumos, agragar el escaneo de tickets con la camara y que al leerlo , escanee y detecte los campos para un prellenado,  y asi aparezzca el formulario antes de guardar, donde se verifiquen o corrihan los campos y al guardar se guarde la foto Y el llenado del formulario porfavor. Esto para mantener mas facil el registro para los reportes. Asi que sea "Agregar" -> aparezcan las opciones : manual | escanear ; Y manual se abre el formulario asi tal cual esta y para adjuntar el archivo del ticket, y si ponen escanear se abra la camara , tomen la foto y haga el prellenado adjuntando esa foto.  Priority 
+- [x] Para el area de insumos y egresos, escaneo de comprobantes (cámara o subir imagen/PDF) con prellenado por IA (`scan-receipt` Edge Function, requiere `ANTHROPIC_API_KEY`). "Agregar" → manual | escanear; al escanear se acepta foto, imagen o PDF, se analiza y se abre el formulario prellenado con la foto adjunta.
 - [x] Ordenar columnas del kanban — barra de orden: Más reciente ↓, Más antiguo ↑, Cliente A→Z, Prioridad.
 
 ## Fase 10: Fixes 

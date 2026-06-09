@@ -5385,15 +5385,16 @@ function openReceiptScanner(formType, txType) {
       </div>
 
       <div id="rsc-capture-area" style="border:2px dashed rgba(255,255,255,.18);border-radius:12px;padding:28px 16px;text-align:center;margin-bottom:16px">
-        <p style="margin:0 0 12px;font-size:13px;opacity:.6">Toma o selecciona la foto del ticket de compra</p>
+        <p style="margin:0 0 12px;font-size:13px;opacity:.6">Toma una foto o sube una imagen / PDF del ticket de compra</p>
         <label class="primary-action" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:10px 20px">
-          📷 Abrir cámara / Seleccionar imagen
-          <input type="file" id="rsc-file-input" accept="image/*" capture="environment" style="display:none" />
+          📷 Tomar foto / Subir archivo
+          <input type="file" id="rsc-file-input" accept="image/*,application/pdf" capture="environment" style="display:none" />
         </label>
       </div>
 
       <div id="rsc-preview-area" style="display:none;margin-bottom:16px">
         <img id="rsc-preview-img" style="width:100%;border-radius:10px;max-height:260px;object-fit:contain;background:rgba(0,0,0,.3)" />
+        <div id="rsc-preview-pdf" style="display:none;padding:32px 16px;border-radius:10px;background:rgba(0,0,0,.3);text-align:center;font-size:14px">📄 <span id="rsc-pdf-name"></span></div>
         <p id="rsc-status" style="font-size:12px;margin:10px 0 0;opacity:.6;text-align:center"></p>
       </div>
 
@@ -5410,6 +5411,8 @@ function openReceiptScanner(formType, txType) {
   const previewArea  = dlg.querySelector("#rsc-preview-area");
   const captureArea  = dlg.querySelector("#rsc-capture-area");
   const previewImg   = dlg.querySelector("#rsc-preview-img");
+  const previewPdf   = dlg.querySelector("#rsc-preview-pdf");
+  const pdfNameEl    = dlg.querySelector("#rsc-pdf-name");
   const statusEl     = dlg.querySelector("#rsc-status");
   const retakeBtn    = dlg.querySelector("#rsc-retake");
   const analyzeBtn   = dlg.querySelector("#rsc-analyze");
@@ -5418,8 +5421,15 @@ function openReceiptScanner(formType, txType) {
     const file = fileInput.files[0];
     if (!file) return;
     capturedFile = file;
-    const url = URL.createObjectURL(file);
-    previewImg.src = url;
+    if (file.type === "application/pdf") {
+      previewImg.style.display = "none";
+      previewPdf.style.display = "block";
+      pdfNameEl.textContent = file.name;
+    } else {
+      previewImg.style.display = "block";
+      previewPdf.style.display = "none";
+      previewImg.src = URL.createObjectURL(file);
+    }
     captureArea.style.display = "none";
     previewArea.style.display = "block";
     retakeBtn.style.display = "block";

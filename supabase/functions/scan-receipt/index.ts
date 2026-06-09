@@ -44,12 +44,14 @@ Extrae los siguientes campos y devuelve SOLO un JSON válido sin explicaciones:
 Si un campo no es visible, usa null para strings y 0 para números. La fecha de hoy es ${new Date().toISOString().slice(0,10)}.`;
 
     const prompt = formType === "transaction" ? transactionPrompt : supplyPrompt;
+    const isPdf = mimeType === "application/pdf";
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "x-api-key":         apiKey,
         "anthropic-version": "2023-06-01",
+        "anthropic-beta":    "pdfs-2024-09-25",
         "content-type":      "application/json",
       },
       body: JSON.stringify({
@@ -59,7 +61,7 @@ Si un campo no es visible, usa null para strings y 0 para números. La fecha de 
           role: "user",
           content: [
             {
-              type: "image",
+              type: isPdf ? "document" : "image",
               source: { type: "base64", media_type: mimeType, data: imageBase64 },
             },
             { type: "text", text: prompt },
