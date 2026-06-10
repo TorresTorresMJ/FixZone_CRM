@@ -11,12 +11,12 @@
   <meta property="og:url"         content="https://fixzone.pages.dev/">
   <meta property="og:title"       content="FixZone — Reparación de Celulares · Puerto Vallarta">
   <meta property="og:description" content="Cambio de pantalla, batería, glass, microsoldadura y más. Garantía 30 días. Sin cita necesaria. Lun–Sáb 9–19h.">
-  <meta property="og:image"       content="https://fixzone.pages.dev/assets/brand/fixzone/LOGO-FIXZONE.png">
+  <meta property="og:image"       content="https://fixzone-crm.pages.dev/assets/brand/fixzone/LOGO-FIXZONE.png">
   <meta property="og:locale"      content="es_MX">
   <meta name="twitter:card"        content="summary">
   <meta name="twitter:title"       content="FixZone — Reparación de Celulares · Puerto Vallarta">
   <meta name="twitter:description" content="Cambio de pantalla, batería, glass, microsoldadura y más. Garantía 30 días. Sin cita necesaria.">
-  <meta name="twitter:image"       content="https://fixzone.pages.dev/assets/brand/fixzone/LOGO-FIXZONE.png">
+  <meta name="twitter:image"       content="https://fixzone-crm.pages.dev/assets/brand/fixzone/LOGO-FIXZONE.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -437,6 +437,44 @@
       line-height: 1.3;
     }
 
+    /* ── Selector de dispositivo (servicios multi-equipo) ─────────── */
+    .sheet-device-select { margin-bottom: 22px; }
+
+    .device-options {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .device-opt {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 14px 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      color: var(--ink-2);
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .device-opt-icon { font-size: 22px; }
+
+    .device-opt:active { background: var(--blue-dim); }
+
+    .device-opt.is-selected {
+      background: var(--blue-dim);
+      border-color: var(--blue-border);
+      color: var(--ink);
+    }
+
     .sheet-hint {
       font-size: 13px;
       color: var(--muted);
@@ -542,10 +580,10 @@
   <!-- HEADER -->
   <header class="header">
     <img
-      src="../assets/brand/fixzone/LOGO-FIXZONE.png"
+      src="https://fixzone-crm.pages.dev/assets/brand/fixzone/LOGO-FIXZONE.png"
       alt="FixZone"
       class="logo"
-      onerror="this.src='../assets/brand/logos-mono/fixzone-monocromatico.png';
+      onerror="this.src='https://fixzone-crm.pages.dev/assets/brand/logos-mono/fixzone-monocromatico.png';
                this.onerror=function(){this.style.display='none';
                document.querySelector('.logo-text').style.display='block';}"
     />
@@ -603,8 +641,8 @@
       </li>
 
       <li>
-        <button class="svc-row" data-service="Reparación de Pantalla" data-icon="📱">
-          <span class="svc-icon">📱</span>
+        <button class="svc-row" data-service="Reparación de Pantalla" data-icon="🖼️" data-multidevice="true">
+          <span class="svc-icon">🖼️</span>
           <span class="svc-body">
             <span class="svc-name">Reparación de Pantalla</span>
           </span>
@@ -623,7 +661,7 @@
       </li>
 
       <li>
-        <button class="svc-row" data-service="Cambio de Batería" data-icon="🔋">
+        <button class="svc-row" data-service="Cambio de Batería" data-icon="🔋" data-multidevice="true">
           <span class="svc-icon">🔋</span>
           <span class="svc-body">
             <span class="svc-name">Cambio de Batería</span>
@@ -633,7 +671,7 @@
       </li>
 
       <li>
-        <button class="svc-row" data-service="Daño por Agua" data-icon="💧">
+        <button class="svc-row" data-service="Daño por Agua" data-icon="💧" data-multidevice="true">
           <span class="svc-icon">💧</span>
           <span class="svc-body">
             <span class="svc-name">Daño por Agua</span>
@@ -664,7 +702,7 @@
       </li>
 
       <li>
-        <button class="svc-row" data-service="Microsoldadura" data-icon="🔬">
+        <button class="svc-row" data-service="Microsoldadura" data-icon="🔬" data-multidevice="true">
           <span class="svc-icon">🔬</span>
           <span class="svc-body">
             <span class="svc-name">Microsoldadura</span>
@@ -735,18 +773,37 @@
       <span class="sheet-service-name" id="sheet-service-name">Servicio</span>
     </div>
 
-    <p class="sheet-question">¿Sabes la marca y modelo de tu celular?</p>
-    <p class="sheet-hint">Nos ayuda a darte el precio exacto más rápido. Puedes dejarlo en blanco si no lo tienes a la mano.</p>
+    <!-- Selector de equipo (solo servicios disponibles para varios equipos) -->
+    <div class="sheet-device-select" id="sheet-device-select" hidden>
+      <p class="sheet-question">¿Para qué equipo es?</p>
+      <div class="device-options">
+        <button class="device-opt" data-device="celular">
+          <span class="device-opt-icon">📱</span><span>Celular</span>
+        </button>
+        <button class="device-opt" data-device="mac">
+          <span class="device-opt-icon">💻</span><span>Mac</span>
+        </button>
+        <button class="device-opt" data-device="watch">
+          <span class="device-opt-icon">⌚</span><span>Apple Watch</span>
+        </button>
+      </div>
+    </div>
 
-    <input
-      class="sheet-input"
-      id="sheet-model-input"
-      type="text"
-      placeholder="Ej. iPhone 14 Pro, Galaxy S23, Moto G…"
-      autocomplete="off"
-      autocorrect="off"
-      spellcheck="false"
-    />
+    <!-- Marca y modelo (solo cuando el equipo es un celular) -->
+    <div id="sheet-model-section">
+      <p class="sheet-question" id="sheet-question">¿Sabes la marca y modelo de tu celular?</p>
+      <p class="sheet-hint" id="sheet-hint">Nos ayuda a darte el precio exacto más rápido. Puedes dejarlo en blanco si no lo tienes a la mano.</p>
+
+      <input
+        class="sheet-input"
+        id="sheet-model-input"
+        type="text"
+        placeholder="Ej. iPhone 14 Pro, Galaxy S23, Moto G…"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+      />
+    </div>
 
     <button class="sheet-btn" id="sheet-send">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
@@ -793,39 +850,70 @@
 
   const WA_NUMBER = '523349812755';
 
-  const overlay  = document.getElementById('sheet-overlay');
-  const sheetEl  = document.getElementById('sheet');
-  const iconEl   = document.getElementById('sheet-icon');
-  const nameEl   = document.getElementById('sheet-service-name');
-  const inputEl  = document.getElementById('sheet-model-input');
-  const sendBtn  = document.getElementById('sheet-send');
-  const skipLink = document.getElementById('sheet-skip');
+  const overlay        = document.getElementById('sheet-overlay');
+  const sheetEl        = document.getElementById('sheet');
+  const iconEl         = document.getElementById('sheet-icon');
+  const nameEl         = document.getElementById('sheet-service-name');
+  const deviceSelectEl = document.getElementById('sheet-device-select');
+  const deviceOpts     = document.querySelectorAll('.device-opt');
+  const modelSectionEl = document.getElementById('sheet-model-section');
+  const inputEl        = document.getElementById('sheet-model-input');
+  const sendBtn        = document.getElementById('sheet-send');
+  const skipLink       = document.getElementById('sheet-skip');
+
+  const DEVICE_LABELS = { mac: 'Mac', watch: 'Apple Watch' };
 
   let currentService = '';
+  let selectedDevice = 'celular';
 
-  function openSheet(service, icon) {
+  function openSheet(service, icon, isMultiDevice) {
     currentService = service;
     iconEl.textContent = icon;
     nameEl.textContent = service;
     inputEl.value = '';
+    deviceOpts.forEach(b => b.classList.remove('is-selected'));
+
+    if (isMultiDevice) {
+      // Primero preguntamos el equipo; el modelo solo aplica a celulares
+      selectedDevice = null;
+      deviceSelectEl.hidden = false;
+      modelSectionEl.hidden = true;
+      sendBtn.hidden  = true;
+      skipLink.hidden = true;
+    } else {
+      selectedDevice = 'celular';
+      deviceSelectEl.hidden = true;
+      modelSectionEl.hidden = false;
+      sendBtn.hidden  = false;
+      skipLink.hidden = false;
+    }
+
     overlay.classList.add('is-open');
     // Foco al input en desktop; en mobile evitar que el teclado
     // tape el sheet antes de que termine la animación
-    setTimeout(() => inputEl.focus(), 320);
+    if (!modelSectionEl.hidden) {
+      setTimeout(() => inputEl.focus(), 320);
+    }
   }
 
   function closeSheet() {
     overlay.classList.remove('is-open');
   }
 
-  function buildWaUrl(service, model) {
-    const modelPart = model.trim() ? ` para ${model.trim()}` : '';
-    const text = `Hola! Me interesa cotizar: ${service}${modelPart}`;
+  function buildWaUrl(service, model, device) {
+    let text;
+    if (device === 'celular') {
+      const modelPart = model.trim() ? ` para ${model.trim()}` : '';
+      text = `Hola! Me interesa cotizar: ${service}${modelPart}`;
+    } else {
+      const deviceLabel = DEVICE_LABELS[device] || '';
+      text = `Hola! Me interesa cotizar: ${service} (${deviceLabel})`;
+    }
     return `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`;
   }
 
   function sendToWhatsApp() {
-    const url = buildWaUrl(currentService, inputEl.value);
+    const url = buildWaUrl(currentService, inputEl.value, selectedDevice || 'celular');
     closeSheet();
     window.open(url, '_blank', 'noopener,noreferrer');
   }
@@ -833,7 +921,25 @@
   // Abrir sheet al tocar cualquier fila de servicio
   document.querySelectorAll('.svc-row').forEach(btn => {
     btn.addEventListener('click', () => {
-      openSheet(btn.dataset.service, btn.dataset.icon);
+      openSheet(btn.dataset.service, btn.dataset.icon, btn.dataset.multidevice === 'true');
+    });
+  });
+
+  // Selección de equipo (Celular / Mac / Apple Watch)
+  deviceOpts.forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedDevice = btn.dataset.device;
+      deviceOpts.forEach(b => b.classList.toggle('is-selected', b === btn));
+
+      if (selectedDevice === 'celular') {
+        modelSectionEl.hidden = false;
+        skipLink.hidden = false;
+        setTimeout(() => inputEl.focus(), 50);
+      } else {
+        modelSectionEl.hidden = true;
+        skipLink.hidden = true;
+      }
+      sendBtn.hidden = false;
     });
   });
 
