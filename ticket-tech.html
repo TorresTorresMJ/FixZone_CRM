@@ -454,6 +454,40 @@
     }
   }
 
+  // ── Resize/compress before upload ────────────────────────────────────────
+  const MAX_DIMENSION = 1600;
+  const JPEG_QUALITY   = 0.82;
+
+  async function resizeImage(file) {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const { width, height } = bitmap;
+      const scale = Math.min(1, MAX_DIMENSION / Math.max(width, height));
+
+      // Skip if already small enough
+      if (scale >= 1) {
+        bitmap.close?.();
+        return file;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close?.();
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
+      if (!blob) return file;
+
+      const newName = file.name.replace(/\.[^.]+$/, '.jpg');
+      return new File([blob], newName, { type: 'image/jpeg' });
+    } catch (err) {
+      console.warn('No se pudo redimensionar la imagen, se sube tal cual:', err);
+      return file;
+    }
+  }
+
   // ── Photo upload ──────────────────────────────────────────────────────────
   async function handlePhotoUpload(e) {
     let files = Array.from(e.target.files || []);
@@ -466,6 +500,8 @@
     if (files.some(isHeic)) {
       files = await Promise.all(files.map(f => isHeic(f) ? convertHeicToJpeg(f) : f));
     }
+
+    files = await Promise.all(files.map(resizeImage));
 
     let okCount = 0;
     let errCount = 0;
