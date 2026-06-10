@@ -425,14 +425,47 @@
     showToast(`Etapa actualizada: ${STAGE_MAP[newStage]?.label}`, 'success');
   }
 
+  // ── HEIC/HEIF → JPEG conversion ──────────────────────────────────────────
+  function isHeic(file) {
+    const type = (file.type || '').toLowerCase();
+    const name = (file.name || '').toLowerCase();
+    return type.includes('heic') || type.includes('heif') ||
+           name.endsWith('.heic') || name.endsWith('.heif');
+  }
+
+  let heic2anyPromise = null;
+  async function loadHeic2Any() {
+    if (!heic2anyPromise) {
+      heic2anyPromise = import('https://esm.sh/heic2any@0.0.4').then(m => m.default || m);
+    }
+    return heic2anyPromise;
+  }
+
+  async function convertHeicToJpeg(file) {
+    try {
+      const heic2any = await loadHeic2Any();
+      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+      const jpegBlob = Array.isArray(blob) ? blob[0] : blob;
+      const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+      return new File([jpegBlob], newName, { type: 'image/jpeg' });
+    } catch (err) {
+      console.warn('Conversión HEIC falló, se sube el archivo original:', err);
+      return file;
+    }
+  }
+
   // ── Photo upload ──────────────────────────────────────────────────────────
   async function handlePhotoUpload(e) {
-    const files = Array.from(e.target.files || []);
+    let files = Array.from(e.target.files || []);
     if (!files.length) return;
     e.target.value = '';
 
     const indicator = document.getElementById('uploading');
     if (indicator) indicator.classList.add('visible');
+
+    if (files.some(isHeic)) {
+      files = await Promise.all(files.map(f => isHeic(f) ? convertHeicToJpeg(f) : f));
+    }
 
     let okCount = 0;
     let errCount = 0;
