@@ -108,6 +108,7 @@
 
     /* ── Photo section ── */
     .photo-section { margin-bottom: 24px; }
+    .photo-buttons-row { display: flex; gap: 10px; margin-bottom: 14px; }
     .photo-upload-btn {
       width: 100%;
       background: var(--primary);
@@ -125,12 +126,17 @@
       transition: background 0.15s, transform 0.1s;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
-      margin-bottom: 14px;
     }
     .photo-upload-btn:active { transform: scale(0.97); background: var(--primary-dark); }
     .photo-upload-btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+    .photo-upload-btn.secondary {
+      background: var(--surface);
+      color: var(--primary);
+      border: 1px solid var(--primary);
+    }
+    .photo-upload-btn.secondary:active { background: var(--bg); transform: scale(0.97); }
 
-    #photo-input { display: none; }
+    #photo-input, #photo-input-gallery { display: none; }
 
     .uploading-indicator {
       display: none;
@@ -358,10 +364,16 @@
 
       <div class="photo-section">
         <p class="section-label">Fotos — ${currentStageLabel}</p>
-        <button class="photo-upload-btn" id="photo-btn">
-          📷 Tomar foto
-        </button>
+        <div class="photo-buttons-row">
+          <button class="photo-upload-btn" id="photo-btn">
+            📷 Tomar foto
+          </button>
+          <button class="photo-upload-btn secondary" id="photo-gallery-btn">
+            🖼️ Añadir foto
+          </button>
+        </div>
         <input type="file" id="photo-input" accept="image/*" capture="environment">
+        <input type="file" id="photo-input-gallery" accept="image/*" multiple>
         <div class="uploading-indicator" id="uploading">Subiendo foto…</div>
       </div>
 
@@ -381,6 +393,11 @@
       document.getElementById('photo-input').click();
     });
     document.getElementById('photo-input').addEventListener('change', handlePhotoUpload);
+
+    document.getElementById('photo-gallery-btn').addEventListener('click', () => {
+      document.getElementById('photo-input-gallery').click();
+    });
+    document.getElementById('photo-input-gallery').addEventListener('change', handlePhotoUpload);
   }
 
   // ── Stage change ──────────────────────────────────────────────────────────
@@ -410,46 +427,58 @@
 
   // ── Photo upload ──────────────────────────────────────────────────────────
   async function handlePhotoUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     e.target.value = '';
 
     const indicator = document.getElementById('uploading');
     if (indicator) indicator.classList.add('visible');
 
-    const ext  = file.name.split('.').pop() || 'jpg';
-    const path = `tickets/${ticketId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    let okCount = 0;
+    let errCount = 0;
 
-    const { error: upErr } = await supabase.storage
-      .from('ticket-photos')
-      .upload(path, file, { contentType: file.type, upsert: false });
+    for (const file of files) {
+      const ext  = file.name.split('.').pop() || 'jpg';
+      const path = `tickets/${ticketId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-    if (upErr) {
-      if (indicator) indicator.classList.remove('visible');
-      showToast('Error al subir la foto', 'error');
-      return;
+      const { error: upErr } = await supabase.storage
+        .from('ticket-photos')
+        .upload(path, file, { contentType: file.type, upsert: false });
+
+      if (upErr) {
+        errCount++;
+        continue;
+      }
+
+      const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path);
+      const publicUrl = urlData?.publicUrl;
+
+      const { error: dbErr } = await supabase.from('attachments').insert({
+        ticket_id: ticketId,
+        file_url:  publicUrl,
+        file_type: file.type,
+        label:     file.name,
+        stage:     currentStage,
+      });
+
+      if (dbErr) {
+        errCount++;
+        continue;
+      }
+
+      photos.push({ file_url: publicUrl, file_type: file.type, stage: currentStage, created_at: new Date().toISOString() });
+      okCount++;
     }
-
-    const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path);
-    const publicUrl = urlData?.publicUrl;
-
-    const { error: dbErr } = await supabase.from('attachments').insert({
-      ticket_id: ticketId,
-      file_url:  publicUrl,
-      file_type: file.type,
-      label:     file.name,
-      stage:     currentStage,
-    });
 
     if (indicator) indicator.classList.remove('visible');
 
-    if (dbErr) {
-      showToast('Foto subida pero no registrada', 'error');
-      return;
+    if (okCount > 0) {
+      showToast(okCount === 1 ? 'Foto guardada' : `${okCount} fotos guardadas`, 'success');
+    }
+    if (errCount > 0) {
+      showToast(errCount === 1 ? 'Error al subir una foto' : `Error al subir ${errCount} fotos`, 'error');
     }
 
-    photos.push({ file_url: publicUrl, file_type: file.type, stage: currentStage, created_at: new Date().toISOString() });
-    showToast('Foto guardada', 'success');
     renderPage();
   }
 
