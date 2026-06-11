@@ -1141,7 +1141,10 @@ function renderSupplies() {
       <td>${i.date}</td><td>${escapeHtml(i.supplier)}</td><td>${escapeHtml(i.item)}</td>
       <td>${i.quantity}</td><td><strong>${money.format(i.total)}</strong></td>
       <td>${i.receipt_url ? `<a href="${escapeHtml(i.receipt_url)}" target="_blank" class="mini-button">📄 Ver</a>` : ''}</td>
-      <td><button class="mini-button" data-edit-supply="${i.id}">Editar</button></td>
+      <td style="white-space:nowrap">
+        <button class="mini-button" data-edit-supply="${i.id}">Editar</button>
+        <button class="mini-button danger-btn" data-delete-supply="${i.id}">✕</button>
+      </td>
     </tr>
   `).join("")||tableEmpty(7);
 }
@@ -3913,6 +3916,24 @@ function deleteRemoteProduct(productId) {
   });
 }
 
+function deleteRemoteSupply(supplyId) {
+  const supply = state.supplies.find(s => s.id === supplyId);
+  const name = supply?.item || "esta compra";
+  showConfirmModal(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`, {
+    label: "Eliminar",
+    danger: true,
+    onConfirm: async () => {
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(supplyId);
+      if (isUUID) {
+        const { error } = await supabaseClient.from("supply_purchases").delete().eq("id", supplyId);
+        if (error) { showErrorToast(`Error al eliminar: ${error.message}`); return; }
+      }
+      state.supplies = state.supplies.filter(s => s.id !== supplyId);
+      render();
+    }
+  });
+}
+
 // ── Edit: Supply ──────────────────────────────────────────────────────────────
 function openEditSupply(supplyId) {
   const supply = branchSupplies().find(s => s.id === supplyId);
@@ -4843,7 +4864,12 @@ function validateFormFields(formEl) {
 recordForm.addEventListener("submit", async e => {
   e.preventDefault();
   if (!validateFormFields(recordForm)) { setLoading(false); return; }
+  if (recordForm.dataset.submitting === "true") return; // evita duplicados por doble click
+  recordForm.dataset.submitting = "true";
+  const saveBtn = document.querySelector("#save-record");
+  if (saveBtn) saveBtn.disabled = true;
   setLoading(true, "Guardando…");
+  try {
   const schema = formSchemas[activeForm];
   const data   = Object.fromEntries(new FormData(recordForm).entries());
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
@@ -5004,6 +5030,10 @@ recordForm.addEventListener("submit", async e => {
     showErrorToast(`No se pudo guardar: ${err.message}`);
   } finally {
     setLoading(false);
+  }
+  } finally {
+    recordForm.dataset.submitting = "false";
+    if (saveBtn) saveBtn.disabled = false;
   }
 });
 
@@ -6439,6 +6469,10 @@ document.addEventListener("click", async e => {
   // Edit supply
   const editSupply = e.target.closest("[data-edit-supply]");
   if (editSupply) { openEditSupply(editSupply.dataset.editSupply); return; }
+
+  // Delete supply
+  const deleteSupply = e.target.closest("[data-delete-supply]");
+  if (deleteSupply) { deleteRemoteSupply(deleteSupply.dataset.deleteSupply); return; }
 
   // Edit transaction
   const editTxBtn = e.target.closest("[data-edit-tx]");
