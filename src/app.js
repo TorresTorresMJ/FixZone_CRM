@@ -5566,6 +5566,7 @@ function openReceiptScanner(formType, txType) {
     }
 
     // IA no disponible (sin API key, sin saldo, sin conexión, etc.) — intentar OCR local
+    console.warn("scan-receipt IA falló:", aiError.message);
     if (capturedFile.type === "application/pdf") {
       statusEl.textContent = `IA no disponible (${aiError.message}). Adjunta el archivo y llena el formulario manualmente.`;
       analyzeBtn.disabled = false;
@@ -5574,7 +5575,7 @@ function openReceiptScanner(formType, txType) {
     }
 
     try {
-      statusEl.textContent = "IA no disponible. Leyendo texto con OCR local…";
+      statusEl.textContent = `IA no disponible (${aiError.message}). Leyendo texto con OCR local…`;
       const Tesseract = await loadTesseract();
       const { data: { text } } = await Tesseract.recognize(capturedFile, "spa", {
         logger: m => {
