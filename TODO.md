@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-10_ (sesión 6)
+_Última actualización: 2026-06-11_ (sesión 7)
 
 ## Fase 1: Definir operacion interna
 
@@ -152,6 +152,8 @@ _Última actualización: 2026-06-10_ (sesión 6)
 - [x] Doble click en "Guardar" (Tickets, Insumos, etc.) creaba registros duplicados mientras cargaba — el formulario ahora se bloquea (`dataset.submitting` + botón deshabilitado) hasta terminar el guardado.
 - [x] Permitir decimales en "Total MXN" de compras/insumos y demás campos de precio — `step="0.01"` en todos los inputs monetarios (antes `step="1"` rechazaba centavos).
 - [x] Escaneo de comprobantes acepta también PDF/imagen subida (no solo cámara) y tiene fallback a OCR local (Tesseract.js) si la IA de Anthropic no está disponible.
+- [x] Escaneo de comprobantes con varios artículos (Insumos) — la IA detecta todas las líneas del ticket; si hay más de una, se muestra una pantalla de revisión donde se puede editar/eliminar cada línea antes de guardar como insumos separados ("Guardar todos").
+- [x] POS checkout fallaba para empleados con rol `it` (RLS) — `supabase/28_it_role_pos_tables.sql` agrega las políticas "it can manage *" faltantes en `pos_sales`/`pos_sale_items`.
 
 ## Fase 11: Cotizaciones
 

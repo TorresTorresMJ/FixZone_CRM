@@ -5541,6 +5541,8 @@ function openScanOrManual(formType, txType) {
   dlg.showModal();
 }
 
+const RSC_MI_INPUT_STYLE = "min-height:38px;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:0 10px;outline:0;background:rgba(255,255,255,0.06);color:var(--fz-white);";
+
 function openReceiptScanner(formType, txType) {
   const dlg = document.createElement("dialog");
   dlg.className = "modal";
@@ -5569,6 +5571,21 @@ function openReceiptScanner(formType, txType) {
       <div style="display:flex;gap:10px">
         <button id="rsc-retake" class="ghost-button" style="display:none;flex:1">Nueva foto</button>
         <button id="rsc-analyze" class="primary-action" style="display:none;flex:1">✨ Analizar con IA</button>
+      </div>
+
+      <div id="rsc-multi-area" style="display:none">
+        <p style="font-weight:600;font-size:14px;margin:0 0 12px">Se detectaron varios artículos — revisa antes de guardar</p>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input id="rsc-multi-date" type="date" style="${RSC_MI_INPUT_STYLE}flex:1" />
+          <input id="rsc-multi-supplier" type="text" placeholder="Proveedor" style="${RSC_MI_INPUT_STYLE}flex:1" />
+        </div>
+        <div id="rsc-multi-items" style="display:flex;flex-direction:column;gap:8px;max-height:280px;overflow:auto"></div>
+        <button id="rsc-multi-add" class="ghost-button" style="width:100%;margin-top:10px">+ Agregar línea</button>
+        <p id="rsc-multi-status" style="font-size:12px;margin:10px 0 0;opacity:.6;text-align:center"></p>
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button id="rsc-multi-cancel" class="ghost-button" style="flex:1">Cancelar</button>
+          <button id="rsc-multi-save" class="primary-action" style="flex:1">Guardar todos</button>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(dlg);
@@ -5619,15 +5636,21 @@ function openReceiptScanner(formType, txType) {
   });
 
   function openPrefilledForm(fields, viaOcr) {
+    // Recibos con varios artículos: revisar y guardar cada línea como un insumo separado
+    if (formType === "supply" && Array.isArray(fields.items) && fields.items.length > 1) {
+      showMultiItemReview(fields);
+      return;
+    }
     dlg.close();
     // Pre-fill the appropriate form with extracted fields + attach the captured file
     if (formType === "supply") {
+      const firstItem = Array.isArray(fields.items) ? fields.items[0] : null;
       openForm("supply", {
         date:     fields.date     || dateStamp(),
         supplier: fields.supplier || "",
-        item:     fields.item     || "",
-        quantity: fields.quantity || 1,
-        total:    fields.total    || "",
+        item:     firstItem?.description || fields.item || "",
+        quantity: firstItem?.quantity     || fields.quantity || 1,
+        total:    firstItem?.total        || fields.total    || "",
       });
     } else if (formType === "invoice") {
       openForm("invoice", {
@@ -5663,6 +5686,89 @@ function openReceiptScanner(formType, txType) {
     if (viaOcr) {
       showToast("Campos detectados con OCR local — revisa los datos antes de guardar, la IA no está disponible.");
     }
+  }
+
+  function showMultiItemReview(fields) {
+    captureArea.style.display = "none";
+    previewArea.style.display = "none";
+    retakeBtn.style.display = "none";
+    analyzeBtn.style.display = "none";
+
+    const multiArea     = dlg.querySelector("#rsc-multi-area");
+    const dateInput     = dlg.querySelector("#rsc-multi-date");
+    const supplierInput = dlg.querySelector("#rsc-multi-supplier");
+    const itemsEl       = dlg.querySelector("#rsc-multi-items");
+    const addBtn        = dlg.querySelector("#rsc-multi-add");
+    const cancelBtn     = dlg.querySelector("#rsc-multi-cancel");
+    const saveBtn       = dlg.querySelector("#rsc-multi-save");
+    const miStatusEl    = dlg.querySelector("#rsc-multi-status");
+
+    dateInput.value     = fields.date || dateStamp();
+    supplierInput.value = fields.supplier || "";
+
+    function addRow(item) {
+      const row = document.createElement("div");
+      row.className = "rsc-multi-row";
+      row.style.cssText = "display:flex;gap:6px;align-items:center";
+      row.innerHTML = `
+        <input type="checkbox" data-mi-include checked style="min-height:auto" />
+        <input type="text" data-mi-desc placeholder="Artículo" style="${RSC_MI_INPUT_STYLE}flex:2" />
+        <input type="number" data-mi-qty placeholder="Cant." step="1" min="0" style="${RSC_MI_INPUT_STYLE}width:60px" />
+        <input type="number" data-mi-total placeholder="Importe" step="0.01" min="0" style="${RSC_MI_INPUT_STYLE}width:90px" />
+        <button type="button" data-mi-remove class="icon-button" style="font-size:14px">✕</button>`;
+      row.querySelector("[data-mi-desc]").value  = item.description || "";
+      row.querySelector("[data-mi-qty]").value   = item.quantity || 1;
+      row.querySelector("[data-mi-total]").value = item.total || "";
+      row.querySelector("[data-mi-remove]").addEventListener("click", () => row.remove());
+      itemsEl.appendChild(row);
+    }
+
+    itemsEl.innerHTML = "";
+    fields.items.forEach(addRow);
+    addBtn.onclick = () => addRow({ description: "", quantity: 1, total: "" });
+    cancelBtn.onclick = () => dlg.close();
+
+    multiArea.style.display = "block";
+
+    saveBtn.addEventListener("click", async () => {
+      const rows = [...itemsEl.querySelectorAll(".rsc-multi-row")].filter(row =>
+        row.querySelector("[data-mi-include]").checked &&
+        row.querySelector("[data-mi-desc]").value.trim()
+      );
+      if (!rows.length) {
+        miStatusEl.textContent = "Marca al menos un artículo para guardar.";
+        return;
+      }
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      try {
+        let receiptUrl = null;
+        if (capturedFile) {
+          miStatusEl.textContent = "Subiendo comprobante…";
+          receiptUrl = await uploadReceiptFile(capturedFile);
+        }
+        const date     = dateInput.value || dateStamp();
+        const supplier = supplierInput.value || "";
+        for (let i = 0; i < rows.length; i++) {
+          miStatusEl.textContent = `Guardando ${i + 1} de ${rows.length}…`;
+          const row = rows[i];
+          await createRemoteSupply({
+            date, supplier, receiptUrl,
+            item:     row.querySelector("[data-mi-desc]").value.trim(),
+            quantity: Number(row.querySelector("[data-mi-qty]").value || 1),
+            total:    Number(row.querySelector("[data-mi-total]").value || 0),
+          });
+        }
+        await reloadState();
+        render();
+        dlg.close();
+        showToast(`${rows.length} insumos registrados.`);
+      } catch (err) {
+        miStatusEl.textContent = `Error: ${err.message}`;
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+      }
+    });
   }
 
   analyzeBtn.addEventListener("click", async () => {
@@ -5966,9 +6072,11 @@ async function createRemoteSupply(r) {
   }
   if (!itemName) throw new Error("Ingresa el nombre del artículo o selecciona un producto del catálogo");
 
-  let receiptUrl = null;
-  const fileInput = document.querySelector("#receipt-file-input");
-  if (fileInput?.files?.length) receiptUrl = await uploadReceiptFile(fileInput.files[0]);
+  let receiptUrl = r.receiptUrl || null;
+  if (!receiptUrl) {
+    const fileInput = document.querySelector("#receipt-file-input");
+    if (fileInput?.files?.length) receiptUrl = await uploadReceiptFile(fileInput.files[0]);
+  }
 
   const suppId = await findOrCreateSupplier(r.supplier);
   const tx = await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${itemName}`, category:"Insumos", amount:r.total });

@@ -59,7 +59,8 @@ There is no test suite and no linter configured.
 | `supabase/25_transaction_receipt_url.sql` | Adds `receipt_url` to transactions — adjuntar comprobante a egresos registrados manualmente |
 | `supabase/26_supply_purchase_transaction_link.sql` | Adds `transaction_id` FK to supply_purchases — vincula cada compra de insumos con su transacción de Egreso |
 | `supabase/27_invoices.sql` | `invoices` table (Contaduría) — registro de facturas emitidas/recibidas, estado pendiente/facturado, vínculo opcional a `transactions`, RLS restringido a admin/it + Kevin Mijangos |
-| `supabase/functions/scan-receipt/` | Edge Function — recibe imagen o PDF base64, llama a Claude Haiku vision/document API, devuelve campos extraídos del comprobante. Requiere secret `ANTHROPIC_API_KEY`. |
+| `supabase/28_it_role_pos_tables.sql` | Additive `"it can manage *"` policies for `pos_sales`/`pos_sale_items` — migration 13 (POS tables) predates 08 and never got the `it` role policy, so employees with role `it` got an RLS violation on POS checkout |
+| `supabase/functions/scan-receipt/` | Edge Function — recibe imagen base64, llama a Gemini vision API (free tier, `gemini-3.1-flash-lite`), devuelve campos extraídos del comprobante (para insumos, devuelve un array `items[]` con una línea por producto del ticket). PDFs caen a llenado manual. Requiere secret `GEMINI_API_KEY`. |
 
 ## Architecture
 
@@ -326,6 +327,7 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 25. `25_transaction_receipt_url.sql` — add `receipt_url` to transactions
 26. `26_supply_purchase_transaction_link.sql` — add `transaction_id` FK to supply_purchases, linking each purchase to its Egreso transaction
 27. `27_invoices.sql` — `invoices` table for Contaduría, `private.is_admin_it_or_kevin()` helper, RLS
+28. `28_it_role_pos_tables.sql` — additive `"it can manage *"` policies for `pos_sales`/`pos_sale_items` (missed by migration 08, which predates the POS tables from migration 13)
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -333,7 +335,7 @@ Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to 
 Three Deno Edge Functions in `supabase/functions/`:
 - `create_employee/` — create/update/delete/reset_password for employees. Uses service-role key. Maps frontend roles to DB roles at insert/update time. Sets `email = username@fixzone.internal` on insert so RLS email lookup works.
 - `login-employee/` — legacy bcrypt login, not used in current auth flow.
-- `scan-receipt/` — receives a base64 image OR PDF of a purchase receipt and returns extracted fields (date, supplier, item, quantity, total / or concept, category, amount for transactions) using Claude Haiku vision/document API (`anthropic-beta: pdfs-2024-09-25` header for PDF input). **Requires `ANTHROPIC_API_KEY` set via `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`**.
+- `scan-receipt/` — receives a base64 image of a purchase receipt and returns extracted fields (date, supplier, items[] — array of `{description, quantity, total}`, one per line item / or concept, category, amount for transactions / or invoice_date, type, party_name, party_rfc, folio, concept, amount for invoices) using Google Gemini's vision API (free tier, model `gemini-3.1-flash-lite`, `response_mime_type: application/json`). PDF input is not supported — falls back to manual entry. **Requires `GEMINI_API_KEY` set via `supabase secrets set GEMINI_API_KEY=...`** — get a free key at https://aistudio.google.com/apikey.
 
 ## Branch branding
 
@@ -385,3 +387,5 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **Quote item `insumoCost`**: stored in `quoteItems` JSONB array per item. When > 0, `calcPrecio()` is called client-side to auto-fill `unitPrice`. The `insumoCost` is for internal reference only — not shown on client-facing receipts.
 - **Contaduría requires migration 27**: `27_invoices.sql` creates the `invoices` table and `private.is_admin_it_or_kevin()`. Without it, `state.invoices` stays `[]` and the Contaduría view renders empty for everyone, including Kevin.
 - **Contaduría access for Kevin is name-based, not role-based**: if Kevin Mijangos is ever renamed in `employees.full_name`, both `currentPerms()` (frontend) and `private.is_admin_it_or_kevin()` (RLS) must be updated to match — they compare `lower(full_name) = 'kevin mijangos'`.
+- **POS checkout for `it`-role employees requires migration 28**: `28_it_role_pos_tables.sql` adds the missing `"it can manage *"` policies for `pos_sales`/`pos_sale_items`. Without it, employees with `role = 'it'` (never normalized to `admin`) get a "violates row-level security policy" error on `checkoutPos()`.
+- **Escaneo de comprobantes con múltiples artículos (Insumos)**: `scan-receipt` now returns `items[]` (one entry per line item) instead of a single `item`/`quantity`/`total`. When `formType === "supply"` and `fields.items.length > 1`, `openReceiptScanner()` shows a review screen (`showMultiItemReview()`) where each line can be edited/removed before saving — "Guardar todos" calls `createRemoteSupply()` once per row, all sharing the same uploaded receipt file. Single-item receipts still prefill the normal supply form.

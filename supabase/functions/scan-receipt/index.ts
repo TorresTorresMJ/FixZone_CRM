@@ -28,11 +28,15 @@ Extrae los siguientes campos y devuelve SOLO un JSON válido sin explicaciones:
 {
   "date": "YYYY-MM-DD",        // fecha de la compra (si no se ve claramente, usa la fecha de hoy)
   "supplier": "nombre",        // nombre de la tienda o proveedor
-  "item": "descripción",       // artículo o producto principal comprado
-  "quantity": 1,               // cantidad (número entero, default 1)
-  "total": 0.00                // total pagado en MXN (número decimal)
+  "items": [                   // UNA entrada por cada producto o línea distinta del ticket
+    {
+      "description": "descripción", // artículo o producto de esa línea
+      "quantity": 1,                // cantidad (número entero, default 1)
+      "total": 0.00                 // importe de esa línea en MXN (cantidad × precio unitario)
+    }
+  ]
 }
-Si un campo no es visible, usa null para strings y 0 para números. La fecha de hoy es ${new Date().toISOString().slice(0,10)}.`;
+Incluye TODAS las líneas de producto que aparezcan en el ticket, no solo la primera. Si solo hay un artículo, "items" debe tener un solo elemento. Si un campo no es visible, usa null para strings, 0 para números y [] si no hay artículos. La fecha de hoy es ${new Date().toISOString().slice(0,10)}.`;
 
     const expenseCategories = ["Inventario","Insumos","Renta","Nomina","Servicios","Herramientas","Operacion","Otro"];
     const transactionPrompt = `Analiza esta foto de un comprobante, ticket de compra o recibo de pago.
