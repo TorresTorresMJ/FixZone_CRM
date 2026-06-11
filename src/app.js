@@ -5468,24 +5468,28 @@ function openReceiptScanner(formType, txType) {
   const retakeBtn    = dlg.querySelector("#rsc-retake");
   const analyzeBtn   = dlg.querySelector("#rsc-analyze");
 
-  fileInput.addEventListener("change", () => {
+  fileInput.addEventListener("change", async () => {
     const file = fileInput.files[0];
     if (!file) return;
-    capturedFile = file;
     if (file.type === "application/pdf") {
+      capturedFile = file;
       previewImg.style.display = "none";
       previewPdf.style.display = "block";
       pdfNameEl.textContent = file.name;
     } else {
+      captureArea.style.display = "none";
+      previewArea.style.display = "block";
+      statusEl.textContent = "Procesando imagen…";
+      capturedFile = await normalizeImageFile(file);
       previewImg.style.display = "block";
       previewPdf.style.display = "none";
-      previewImg.src = URL.createObjectURL(file);
+      previewImg.src = URL.createObjectURL(capturedFile);
     }
     captureArea.style.display = "none";
     previewArea.style.display = "block";
     retakeBtn.style.display = "block";
     analyzeBtn.style.display = "block";
-    statusEl.textContent = file.name;
+    statusEl.textContent = capturedFile.name;
   });
 
   retakeBtn.addEventListener("click", () => {
@@ -5596,6 +5600,38 @@ function openReceiptScanner(formType, txType) {
   dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
   dlg.addEventListener("close", () => dlg.remove(), { once: true });
   dlg.showModal();
+}
+
+// Convierte HEIC/HEIF (fotos de iPhone) a JPEG y reduce el tamaño antes de
+// enviar a la IA / OCR — evita el error "media type not supported" de Claude
+// y acelera la subida en conexiones lentas.
+async function normalizeImageFile(file) {
+  if (!file.type.startsWith("image/")) return file;
+  const isHeic = /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name || "");
+  const tooLarge = file.size > 1.5 * 1024 * 1024; // 1.5MB
+  if (!isHeic && !tooLarge) return file;
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxDim = 1600;
+    let { width, height } = bitmap;
+    if (width > maxDim || height > maxDim) {
+      const scale = maxDim / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, width, height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob) return file;
+    const name = (file.name || "comprobante").replace(/\.\w+$/, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } catch (err) {
+    console.warn("No se pudo convertir la imagen, se usará el archivo original:", err);
+    return file;
+  }
 }
 
 function fileToBase64(file) {
