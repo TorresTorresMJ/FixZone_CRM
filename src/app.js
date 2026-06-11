@@ -5519,6 +5519,8 @@ function openScanOrManual(formType, txType) {
     dlg.close();
     if (formType === "supply") {
       openForm("supply");
+    } else if (formType === "invoice") {
+      openForm("invoice", { invoice_date: dateStamp(), type: "Recibida", status: "Pendiente" });
     } else {
       openForm("transaction", { type: txType || "Egreso", date: dateStamp(), _fromScan: true });
       setTimeout(() => {
@@ -5627,6 +5629,17 @@ function openReceiptScanner(formType, txType) {
         quantity: fields.quantity || 1,
         total:    fields.total    || "",
       });
+    } else if (formType === "invoice") {
+      openForm("invoice", {
+        invoice_date: fields.invoice_date || dateStamp(),
+        type:         fields.type         || "Recibida",
+        status:       "Pendiente",
+        party_name:   fields.party_name   || "",
+        party_rfc:    fields.party_rfc    || "",
+        folio:        fields.folio        || "",
+        concept:      fields.concept      || "",
+        amount:       fields.amount       || "",
+      });
     } else {
       openTransactionForm(txType, {
         _fromScan: true,
@@ -5661,12 +5674,14 @@ function openReceiptScanner(formType, txType) {
     let aiError = null;
     try {
       const base64 = await fileToBase64(capturedFile);
-      const { data: { session } } = await supabaseClient.auth.getSession();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
       const res = await fetch(`${window.FIXZONE_SUPABASE.url}/functions/v1/scan-receipt`, {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "content-type":  "application/json",
-          "authorization": `Bearer ${session?.access_token || window.FIXZONE_SUPABASE.anonKey}`,
+          "authorization": `Bearer ${window.FIXZONE_SUPABASE.anonKey}`,
           "apikey":        window.FIXZONE_SUPABASE.anonKey,
         },
         body: JSON.stringify({
@@ -5675,6 +5690,7 @@ function openReceiptScanner(formType, txType) {
           formType,
         }),
       });
+      clearTimeout(timeout);
 
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || "Error al analizar");
@@ -5863,6 +5879,15 @@ function parseReceiptText(text, formType) {
       category: "Insumos",
       amount:   amount || "",
       supplier,
+    };
+  }
+  if (formType === "invoice") {
+    return {
+      invoice_date: date || dateStamp(),
+      type:         "Recibida",
+      party_name:   supplier,
+      concept:      supplier ? `Compra: ${supplier}` : "",
+      amount:       amount || "",
     };
   }
   return {
@@ -6484,6 +6509,7 @@ document.querySelectorAll("[data-open-form]").forEach(btn => {
   btn.addEventListener("click", () => {
     const ft = btn.dataset.openForm;
     if (ft === "supply") openScanOrManual("supply");
+    else if (ft === "invoice") openScanOrManual("invoice");
     else openForm(ft);
   });
 });
