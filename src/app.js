@@ -122,8 +122,10 @@ let state = loadState();
 const views      = document.querySelectorAll(".view");
 const navItems   = document.querySelectorAll(".nav-item");
 const modal      = document.querySelector("#record-modal");
+let modalCloseToken = 0;
 async function closeModal(dlg = modal) {
   if (!dlg.open) return;
+  const token = ++modalCloseToken;
   dlg.classList.add("is-closing");
   try {
     await dlg.animate(
@@ -132,8 +134,18 @@ async function closeModal(dlg = modal) {
       { duration:150, easing:"cubic-bezier(0.5,0,0.75,0)", fill:"forwards" }
     ).finished;
   } catch(_) {}
+  // Si mientras tanto se reabrió el modal (openModal), no lo cierres ni le quites la animación
+  if (token !== modalCloseToken) return;
   dlg.classList.remove("is-closing");
   dlg.close();
+}
+// Abre el modal de forma segura: limpia cualquier cierre/animación pendiente
+// para evitar que quede "tenue" (fondo oscurecido, contenido invisible) hasta dar ESC.
+function openModal(dlg = modal) {
+  modalCloseToken++;
+  dlg.classList.remove("is-closing");
+  if (dlg.open) dlg.close();
+  dlg.showModal();
 }
 const recordForm = document.querySelector("#record-form");
 const formFields = document.querySelector("#form-fields");
@@ -1541,13 +1553,17 @@ function renderPrecios() {
     showToast(`✓ Servicio "${name}" agregado`);
   });
   stEl.querySelectorAll("[data-del-stype]").forEach(btn => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", () => {
       const id = btn.dataset.delStype;
-      if (!await confirmModal(`¿Eliminar servicio? Se borrarán todos sus precios.`)) return;
-      await supabaseClient.from("service_types").delete().eq("id", id);
-      state.serviceTypes = state.serviceTypes.filter(t=>t.id!==id);
-      state.servicePrices = state.servicePrices.filter(p=>p.serviceTypeId!==id);
-      renderPrecios();
+      showConfirmModal(`¿Eliminar servicio? Se borrarán todos sus precios.`, {
+        label: "Eliminar", danger: true,
+        onConfirm: async () => {
+          await supabaseClient.from("service_types").delete().eq("id", id);
+          state.serviceTypes = state.serviceTypes.filter(t=>t.id!==id);
+          state.servicePrices = state.servicePrices.filter(p=>p.serviceTypeId!==id);
+          renderPrecios();
+        }
+      });
     });
   });
 
@@ -1892,12 +1908,16 @@ function renderPrecios() {
     renderPrecios(); showToast(`✓ ${dev} agregado a la tabla`);
   });
   mxEl.querySelectorAll("[data-del-device]").forEach(btn=>{
-    btn.addEventListener("click",async()=>{
+    btn.addEventListener("click",()=>{
       const dev=btn.dataset.delDevice;
-      if (!await confirmModal(`¿Eliminar todos los precios de "${dev}"?`)) return;
-      await supabaseClient.from("service_prices").delete().eq("device_model",dev).eq("branch_id",branchId);
-      state.servicePrices=state.servicePrices.filter(p=>p.deviceModel!==dev||p.branchId!==branchId);
-      renderPrecios();
+      showConfirmModal(`¿Eliminar todos los precios de "${dev}"?`, {
+        label: "Eliminar", danger: true,
+        onConfirm: async () => {
+          await supabaseClient.from("service_prices").delete().eq("device_model",dev).eq("branch_id",branchId);
+          state.servicePrices=state.servicePrices.filter(p=>p.deviceModel!==dev||p.branchId!==branchId);
+          renderPrecios();
+        }
+      });
     });
   });
 }
@@ -3805,7 +3825,7 @@ function openEditClient(clientId) {
     fieldTemplate(name, label, ftype, opts, wide, client[name] ?? "", optional)
   ).join("");
   initDeviceAutocomplete();
-  modal.showModal();
+  openModal();
 }
 
 async function updateRemoteClient(clientId, data) {
@@ -3845,7 +3865,7 @@ function openEditSupportTask(taskId) {
   formFields.innerHTML = formSchemas["supportTasks"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, task[name] ?? "", optional)
   ).join("");
-  modal.showModal();
+  openModal();
 }
 
 async function updateRemoteSupportTask(taskId, data) {
@@ -3875,7 +3895,7 @@ function openEditProduct(productId) {
   formFields.innerHTML = formSchemas["product"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, product[name] ?? "", optional)
   ).join("");
-  modal.showModal();
+  openModal();
 }
 
 async function updateRemoteProduct(productId, data) {
@@ -3945,7 +3965,7 @@ function openEditSupply(supplyId) {
   formFields.innerHTML = formSchemas["supply"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, supply[name] ?? "", optional)
   ).join("") + buildReceiptUploadSection(supply.receipt_url);
-  modal.showModal();
+  openModal();
   initProductAutoFill();
 }
 
@@ -4277,7 +4297,7 @@ function openForm(type, prefill = {}) {
   }
   initDeviceAutocomplete();
   if (type === "ticket") { initPriceAutofill(); initTicketCotizadorWidget(); }
-  modal.showModal();
+  openModal();
 }
 
 function syncTransactionCategories(type) {
@@ -4305,7 +4325,7 @@ function openEditTransaction(txId) {
     syncTransactionCategories(tx.type);
     formFields.querySelector("#type")?.addEventListener("change", e => syncTransactionCategories(e.target.value));
   }, 0);
-  modal.showModal();
+  openModal();
 }
 
 function openEditTicket(ticketId) {
@@ -4334,7 +4354,7 @@ function openEditTicket(ticketId) {
     if (dcInp  && ticket.discountCode)  dcInp.value  = ticket.discountCode;
     initQuoteItemsBuilder(ticket.quoteItems || []);
     initDeviceAutocomplete();
-    modal.showModal();
+    openModal();
     return;
   }
 
@@ -4348,7 +4368,7 @@ function openEditTicket(ticketId) {
   initDeviceAutocomplete();
   initPriceAutofill();
   initTicketCotizadorWidget();
-  modal.showModal();
+  openModal();
   initPhotoUpload(ticketId);
   loadTicketParts(ticketId);
   loadTicketEvents(ticketId);
@@ -5419,7 +5439,7 @@ function openReceiptScanner(formType, txType) {
         <p style="margin:0 0 12px;font-size:13px;opacity:.6">Toma una foto o sube una imagen / PDF del ticket de compra</p>
         <label class="primary-action" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:10px 20px">
           📷 Tomar foto / Subir archivo
-          <input type="file" id="rsc-file-input" accept="image/*,application/pdf" capture="environment" style="display:none" />
+          <input type="file" id="rsc-file-input" accept="image/*,application/pdf" style="display:none" />
         </label>
       </div>
 
