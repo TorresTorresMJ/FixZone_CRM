@@ -5675,7 +5675,7 @@ function openReceiptScanner(formType, txType) {
     try {
       const base64 = await fileToBase64(capturedFile);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25000);
+      const timeout = setTimeout(() => controller.abort(), 12000);
       const res = await fetch(`${window.FIXZONE_SUPABASE.url}/functions/v1/scan-receipt`, {
         method: "POST",
         signal: controller.signal,
@@ -5724,7 +5724,8 @@ function openReceiptScanner(formType, txType) {
       });
       openPrefilledForm(parseReceiptText(text, formType), true);
     } catch (ocrErr) {
-      statusEl.textContent = `Error: ${aiError.message}`;
+      console.warn("OCR local falló:", ocrErr);
+      statusEl.textContent = `IA no disponible (${aiError.message}). OCR local falló (${ocrErr.message}).`;
       analyzeBtn.disabled = false;
       analyzeBtn.textContent = "✨ Analizar con IA";
     }
