@@ -5694,9 +5694,12 @@ function openReceiptScanner(formType, txType) {
     }
 
     try {
-      statusEl.textContent = `IA no disponible (${aiError.message}). Leyendo texto con OCR local…`;
+      statusEl.textContent = `IA no disponible (${aiError.message}). Preparando imagen…`;
       const Tesseract = await loadTesseract();
-      const { data: { text } } = await Tesseract.recognize(capturedFile, "spa", {
+      let ocrFile = await correctImageOrientation(capturedFile, Tesseract, statusEl);
+      ocrFile = await preprocessForOcr(ocrFile);
+      statusEl.textContent = `IA no disponible (${aiError.message}). Leyendo texto con OCR local…`;
+      const { data: { text } } = await Tesseract.recognize(ocrFile, "spa", {
         logger: m => {
           if (m.status === "recognizing text") {
             statusEl.textContent = `Leyendo texto… ${Math.round((m.progress || 0) * 100)}%`;
@@ -5745,6 +5748,60 @@ async function normalizeImageFile(file) {
     return new File([blob], name, { type: "image/jpeg" });
   } catch (err) {
     console.warn("No se pudo convertir la imagen, se usará el archivo original:", err);
+    return file;
+  }
+}
+
+// Detecta si la foto está rotada (común al fotografiar tickets en orientación
+// horizontal) usando OSD de Tesseract, y la endereza antes de leerla.
+async function correctImageOrientation(file, Tesseract, statusEl) {
+  try {
+    if (statusEl) statusEl.textContent = "Detectando orientación…";
+    const { data } = await Tesseract.detect(file);
+    const degrees = Math.round((data?.orientation_degrees || 0) / 90) * 90 % 360;
+    if (!degrees) return file;
+    const rotateBy = (360 - degrees) % 360; // corrige al sentido contrario
+    const bitmap = await createImageBitmap(file);
+    const swap = rotateBy === 90 || rotateBy === 270;
+    const canvas = document.createElement("canvas");
+    canvas.width  = swap ? bitmap.height : bitmap.width;
+    canvas.height = swap ? bitmap.width  : bitmap.height;
+    const ctx = canvas.getContext("2d");
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((rotateBy * Math.PI) / 180);
+    ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
+    if (!blob) return file;
+    return new File([blob], file.name, { type: "image/jpeg" });
+  } catch (err) {
+    console.warn("No se pudo detectar/corregir la orientación:", err);
+    return file;
+  }
+}
+
+// Convierte a escala de grises y aumenta el contraste — mejora mucho la
+// precisión de Tesseract en fotos de tickets con poco contraste o sombras.
+async function preprocessForOcr(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    canvas.width  = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0);
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const v = gray < 140 ? Math.max(0, gray - 35) : Math.min(255, gray + 35);
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
+    if (!blob) return file;
+    return new File([blob], file.name, { type: "image/jpeg" });
+  } catch (err) {
+    console.warn("No se pudo preprocesar la imagen para OCR:", err);
     return file;
   }
 }
