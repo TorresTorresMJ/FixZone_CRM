@@ -121,6 +121,10 @@ Navigation is purely DOM-based: `.nav-item[data-view]` buttons toggle the `is-vi
 ### Modal / form system
 A single `<dialog id="record-modal">` is reused for all create/edit forms. `app.js` dynamically builds form fields and wires save logic by inspecting `activeForm` (the form type string) and `editingTicketId` (the record ID being edited, used for all entity types not just tickets).
 
+**Opening/closing `#record-modal`**: always use `openModal()` to open it (never call `modal.showModal()` directly) and `closeModal()` to close it. `closeModal()` plays a 150ms exit animation via `.is-closing` before calling `dlg.close()`. `openModal()` clears any in-flight close (token-based) and force-closes/reopens the dialog cleanly — this prevents the dialog from getting stuck with `.is-closing` (opacity:0) while `::backdrop` stays visible, which looked like the screen going dim until the user pressed ESC.
+
+**Submit guard**: `recordForm`'s submit handler bails early if `recordForm.dataset.submitting === "true"` and disables `#save-record` while a save is in flight, to prevent duplicate records from rapid double-clicks on "Guardar".
+
 **activeForm values and their handlers:**
 
 | activeForm | create path | edit path |
@@ -343,6 +347,8 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **`reloadState()` seed fallback**: if a table's SELECT returns 0 rows (RLS block or query error), that table falls back to hardcoded `seed` data. Newly created records won't appear. Check `pg_policies` if data seems stale.
 - **Brand colors in CSS**: never add `rgba(47,111,255,...)` or `#2F6FFF` hardcoded in `app.css` — those won't switch with the branch. Always use `rgba(var(--fz-primary-rgb), alpha)` and `var(--fz-primary)`.
 - **Optional form fields**: the `fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional)` function controls `required` attribute. Pass `true` as 6th element in the field tuple (schema) and `optional` as 7th arg to `fieldTemplate` to make a field non-required. Currently: `discountCode`, `discountAmount`, `notes` are optional in the ticket schema.
+- **`fieldTemplate` numeric inputs use `step="0.01"`** by default so monetary fields (`total`, `price`, `amount`, `repairAmount`, `paidAmount`, `discountAmount`, etc.) accept decimals. Standalone hardcoded `<input type="number">` for prices (cotizador, tabla de precios, quote items) also use `step="0.01"` — only true integer counters (`qty`, `part-qty`) should keep `step="1"`.
+- **Deleting a supply (Insumos)**: `deleteRemoteSupply(supplyId)` deletes from `supply_purchases` (or local state if not a UUID) and is wired via `data-delete-supply` in `renderSupplies()`.
 - **Sidebar tooltip position**: `NAV_TOOLTIPS` renders tooltips at `left: 220px` (sidebar width). If the sidebar width changes, update that value in `initNavTooltips()`.
 - **Adding a new view**: (1) add nav button in `index.html`, (2) add `<section class="view" id="{name}-view">`, (3) add `"{name}"` to the relevant role tabs in `PERMISSIONS`, (4) add to `PERM_SECTIONS`, (5) add entry to `NAV_TOOLTIPS`, (6) call `render{Name}()` from `render()`.
 - **POS requires migration 13**: `supabase/13_pos_tables.sql` must be applied in the Supabase SQL Editor. Until then, `checkoutPos()` will throw a table-not-found error.

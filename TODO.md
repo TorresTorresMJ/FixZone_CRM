@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-07_ (sesión 5)
+_Última actualización: 2026-06-10_ (sesión 6)
 
 ## Fase 1: Definir operacion interna
 
@@ -144,10 +144,14 @@ _Última actualización: 2026-06-07_ (sesión 5)
 - [ ](image-3.png)Que en el chat de notificaciones , cuando IT manda mensaje diga IT. O mejor, como hay roles repetidos, que se muestr el nombre del usuario plis, solo primer nombre. 
 - [ ] Mande mensaje en el centro de notificaciones y no le llegó a nadie, abrieron su centro de campanita y no aparecia nunfun mensaje de los que habia enviado. 
 - [ ] .photo-stage-group {} /* se usa?*/ si no, borrar la regla vacia. prioridad media - cleaning dead code 
-- [ ]Edito y guardo los mensajes rapidos en la seccion de automatizacion , pero al dar guardar, no respeta los cambios. Prioridad alta 
+- [x] Edito y guardo los mensajes rapidos en la seccion de automatizacion , pero al dar guardar, no respeta los cambios. — `renderQuickMessages()`/`renderWATemplates()` se re-renderizaban sobre el modo edición y perdían los cambios; ahora tienen guardas anti-reset y autosave.
 - [ ] En "Diseño" al guardar un logo , se cambio el icono del logo de la pagina del CRM, NO queiro eso. Queiro que ahi solo sea un fodler para rapido acceso o source of truth de los elementos de la marca. Quiero poder subir los logos monocromaticos, logo sin fondo png, logo black, varios, que sea un folder en linea que en cualquier momento se pueda acceder, descargar, copiar, para hacer uso de él. Incluso que no sea el logo si no por ejemplo el icono del telefono del logo, etc. prioridad alta 
-- [ ] cuando hago click en añadir "Compra" se abre la ventana pero despues se quita el formulario, y se queda el CRM mas tenue y tengo que presionar ESC. Prioridad alta
-- [ ] Al agregar "Compra" hace lo de que se ve la pantalla mas atenuada y solo se puede salir con ESC - PRIORIDAD URGENTE 
+- [x] cuando hago click en añadir "Compra" se abre la ventana pero despues se quita el formulario, y se queda el CRM mas tenue y tengo que presionar ESC. — Causa: `closeModal()` dejaba el modal en `.is-closing` (opacity:0) si se reabría mientras la animación de cierre anterior seguía corriendo. Fix: `openModal()` limpia el estado y reabre limpio; `closeModal()` usa un token para no pisar el modal reabierto.
+- [x] Al agregar "Compra" hace lo de que se ve la pantalla mas atenuada y solo se puede salir con ESC - mismo fix que el punto anterior.
+- [x] Insumos no tenía botón para eliminar registros — agregado ✕ Eliminar (borra de `supply_purchases`).
+- [x] Doble click en "Guardar" (Tickets, Insumos, etc.) creaba registros duplicados mientras cargaba — el formulario ahora se bloquea (`dataset.submitting` + botón deshabilitado) hasta terminar el guardado.
+- [x] Permitir decimales en "Total MXN" de compras/insumos y demás campos de precio — `step="0.01"` en todos los inputs monetarios (antes `step="1"` rechazaba centavos).
+- [x] Escaneo de comprobantes acepta también PDF/imagen subida (no solo cámara) y tiene fallback a OCR local (Tesseract.js) si la IA de Anthropic no está disponible.
 
 ## Fase 11: Cotizaciones
 
