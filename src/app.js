@@ -1286,7 +1286,7 @@ function renderCotizador() {
           </div>
           <div style="margin-bottom:12px">
             <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.45);margin-bottom:6px">Costo del insumo (MXN)</div>
-            <input id="cot-insumo" type="number" min="0" step="1" placeholder="0"
+            <input id="cot-insumo" type="number" min="0" step="0.01" placeholder="0"
               style="font-size:28px;font-weight:700;width:100%;padding:10px 12px;border-radius:7px;
               border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:inherit;
               appearance:textfield;-moz-appearance:textfield;box-sizing:border-box"/>
@@ -1489,7 +1489,7 @@ function renderPrecios() {
               <span style="color:rgba(255,255,255,.35);font-size:10px;min-width:14px">${i+1}</span>
               <span style="flex:1">${escapeHtml(t.name)}</span>
               <input class="stype-default-price" data-stid="${t.id}"
-                type="number" min="0" step="1" value="${t.defaultPrice||""}" placeholder="—"
+                type="number" min="0" step="0.01" value="${t.defaultPrice||""}" placeholder="—"
                 title="Precio base (aplica cuando no hay precio específico por equipo)"
                 style="width:64px;font-size:11px;padding:3px 5px;border-radius:4px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:inherit;text-align:right"/>
               ${supabaseClient?`<button data-del-stype="${t.id}" style="background:none;border:none;color:rgba(255,100,100,.4);cursor:pointer;padding:0;font-size:11px;line-height:1" title="Eliminar">✕</button>`:""}
@@ -1595,7 +1595,7 @@ function renderPrecios() {
             background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px;
             white-space:nowrap;max-width:130px">${pvSummaryText(vs)}</button>`
         : `<div style="display:inline-flex;align-items:center;gap:2px">
-            <input class="pv-price" type="number" min="0" step="1" value="${single.price||0}"
+            <input class="pv-price" type="number" min="0" step="0.01" value="${single.price||0}"
               data-device="${escapeHtml(dev)}" data-stype="${t.id}"
               data-pid="${single.id||""}" data-variant=""
               data-row-idx="${rowIdx}" data-col-idx="${colIdx}" style="${inpS}"/>
@@ -1781,7 +1781,7 @@ function renderPrecios() {
     const d=document.createElement("div"); d.className="pv-row";
     d.style.cssText="display:flex;align-items:center;gap:5px;margin-bottom:7px";
     d.innerHTML=`<input class="pv-label" value="${escapeHtml(v.variant||"")}" placeholder="Ej: Original" style="${pvLblS}" title="Nombre del nivel de calidad"/>
-      <input class="pv-price" type="number" min="0" step="1" value="${v.price||0}"
+      <input class="pv-price" type="number" min="0" step="0.01" value="${v.price||0}"
         data-device="${escapeHtml(dev)}" data-stype="${stype}" data-pid="${v.id||""}"
         data-variant="${escapeHtml(v.variant||"")}" data-row-idx="${rIdx}" data-col-idx="${cIdx}"
         style="${pvInpS}"/>
@@ -4001,7 +4001,7 @@ function renderQuoteItemsDraft() {
     const insumoRow = item.type === "Servicio" ? `
       <div style="grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:2px 0 5px 8px">
         <span style="font-size:10px;color:rgba(255,255,255,.3);white-space:nowrap">💡 Costo insumo $</span>
-        <input class="qi-insumo" data-idx="${idx}" type="number" min="0" step="1"
+        <input class="qi-insumo" data-idx="${idx}" type="number" min="0" step="0.01"
           value="${item.insumoCost||""}" placeholder="0"
           style="width:90px;font-size:12px;${INP}" title="Ingresa el costo del insumo para calcular precio automático"/>
         <span style="font-size:10px;color:rgba(255,255,255,.25)">${hasCosto
@@ -4016,7 +4016,7 @@ function renderQuoteItemsDraft() {
       </select>
       ${descField}
       <input class="qi-qty" data-idx="${idx}" type="number" value="${item.qty}" min="1" style="font-size:13px;text-align:center;${INP}">
-      <input class="qi-price" data-idx="${idx}" type="number" value="${item.unitPrice||""}" placeholder="Precio" min="0" step="1"
+      <input class="qi-price" data-idx="${idx}" type="number" value="${item.unitPrice||""}" placeholder="Precio" min="0" step="0.01"
         style="font-size:13px;${INP};${hasCosto?"border-color:rgba(46,204,113,.35);background:rgba(46,204,113,.06)":""}">
       <button type="button" class="qi-del" data-idx="${idx}" title="Eliminar" style="padding:2px 5px;font-size:13px;opacity:.5;cursor:pointer;background:none;border:none;color:inherit">✕</button>
       ${insumoRow}
@@ -4642,7 +4642,7 @@ function initTicketCotizadorWidget() {
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <div style="flex:1;min-width:120px">
           <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:4px">Costo insumo ($)</div>
-          <input id="tc-insumo" type="number" min="0" step="1" placeholder="0"
+          <input id="tc-insumo" type="number" min="0" step="0.01" placeholder="0"
             style="font-size:18px;font-weight:700;width:100%;padding:7px 10px;border-radius:6px;
             border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:inherit;
             appearance:textfield;-moz-appearance:textfield;box-sizing:border-box"/>
@@ -4809,9 +4809,10 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
     </div>`;
   }
   const val = defaultValue ?? (ftype==="date" ? new Date().toISOString().slice(0,10) : "");
+  const step = ftype==="number" ? ` step="0.01"` : "";
   return `<div class="field ${wide?"is-wide":""}">
     <label for="${name}">${labelHtml}</label>
-    <input id="${name}" name="${name}" type="${ftype}" value="${escapeHtml(String(val))}" ${optional?"":"required"} />
+    <input id="${name}" name="${name}" type="${ftype}" value="${escapeHtml(String(val))}"${step} ${optional?"":"required"} />
   </div>`;
 }
 
