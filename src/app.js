@@ -5446,12 +5446,49 @@ function openReceiptScanner(formType, txType) {
     analyzeBtn.style.display = "none";
   });
 
+  function openPrefilledForm(fields, viaOcr) {
+    dlg.close();
+    // Pre-fill the appropriate form with extracted fields + attach the captured file
+    if (formType === "supply") {
+      openForm("supply", {
+        date:     fields.date     || dateStamp(),
+        supplier: fields.supplier || "",
+        item:     fields.item     || "",
+        quantity: fields.quantity || 1,
+        total:    fields.total    || "",
+      });
+    } else {
+      openTransactionForm(txType, {
+        _fromScan: true,
+        date:      fields.date     || dateStamp(),
+        concept:   fields.concept  || (fields.supplier ? `Compra: ${fields.supplier}` : ""),
+        category:  fields.category || "Insumos",
+        amount:    fields.amount   || "",
+      });
+    }
+    // After form opens, inject the captured file into the receipt input
+    setTimeout(() => {
+      const receiptInput = formFields.querySelector("#receipt-file-input");
+      if (receiptInput) {
+        const dt = new DataTransfer();
+        dt.items.add(capturedFile);
+        receiptInput.files = dt.files;
+        const statusSpan = formFields.querySelector("#receipt-upload-status");
+        if (statusSpan) statusSpan.textContent = "📷 Foto adjuntada";
+      }
+    }, 80);
+    if (viaOcr) {
+      showToast("Campos detectados con OCR local — revisa los datos antes de guardar, la IA no está disponible.");
+    }
+  }
+
   analyzeBtn.addEventListener("click", async () => {
     if (!capturedFile) return;
     analyzeBtn.disabled = true;
     analyzeBtn.textContent = "Analizando…";
-    statusEl.textContent = "Enviando imagen a la IA…";
+    statusEl.textContent = "Enviando a la IA…";
 
+    let aiError = null;
     try {
       const base64 = await fileToBase64(capturedFile);
       const { data: { session } } = await supabaseClient.auth.getSession();
@@ -5471,40 +5508,33 @@ function openReceiptScanner(formType, txType) {
 
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || "Error al analizar");
-
-      dlg.close();
-      // Pre-fill the appropriate form with extracted fields + attach the captured file
-      if (formType === "supply") {
-        openForm("supply", {
-          date:     json.fields.date     || dateStamp(),
-          supplier: json.fields.supplier || "",
-          item:     json.fields.item     || "",
-          quantity: json.fields.quantity || 1,
-          total:    json.fields.total    || "",
-        });
-      } else {
-        openTransactionForm(txType, {
-          _fromScan: true,
-          date:      json.fields.date     || dateStamp(),
-          concept:   json.fields.concept  || (json.fields.supplier ? `Compra: ${json.fields.supplier}` : ""),
-          category:  json.fields.category || "Insumos",
-          amount:    json.fields.amount   || "",
-        });
-      }
-      // After form opens, inject the captured file into the receipt input
-      setTimeout(() => {
-        const receiptInput = formFields.querySelector("#receipt-file-input");
-        if (receiptInput) {
-          const dt = new DataTransfer();
-          dt.items.add(capturedFile);
-          receiptInput.files = dt.files;
-          const statusSpan = formFields.querySelector("#receipt-upload-status");
-          if (statusSpan) statusSpan.textContent = "📷 Foto adjuntada";
-        }
-      }, 80);
-
+      openPrefilledForm(json.fields, false);
+      return;
     } catch (err) {
-      statusEl.textContent = `Error: ${err.message}`;
+      aiError = err;
+    }
+
+    // IA no disponible (sin API key, sin saldo, sin conexión, etc.) — intentar OCR local
+    if (capturedFile.type === "application/pdf") {
+      statusEl.textContent = `IA no disponible (${aiError.message}). Adjunta el archivo y llena el formulario manualmente.`;
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = "✨ Analizar con IA";
+      return;
+    }
+
+    try {
+      statusEl.textContent = "IA no disponible. Leyendo texto con OCR local…";
+      const Tesseract = await loadTesseract();
+      const { data: { text } } = await Tesseract.recognize(capturedFile, "spa", {
+        logger: m => {
+          if (m.status === "recognizing text") {
+            statusEl.textContent = `Leyendo texto… ${Math.round((m.progress || 0) * 100)}%`;
+          }
+        },
+      });
+      openPrefilledForm(parseReceiptText(text, formType), true);
+    } catch (ocrErr) {
+      statusEl.textContent = `Error: ${aiError.message}`;
       analyzeBtn.disabled = false;
       analyzeBtn.textContent = "✨ Analizar con IA";
     }
@@ -5523,6 +5553,65 @@ function fileToBase64(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+// Carga Tesseract.js bajo demanda — solo se descarga si la IA (Claude) no está disponible.
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.onload  = () => resolve(window.Tesseract);
+    script.onerror = () => reject(new Error("No se pudo cargar el motor OCR"));
+    document.head.appendChild(script);
+  });
+}
+
+// Extrae fecha, monto y proveedor de texto OCR en bruto (fallback sin IA — menos preciso).
+function parseReceiptText(text, formType) {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+
+  let date = null;
+  const isoMatch = text.match(/\d{4}-\d{2}-\d{2}/);
+  const dmyMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (isoMatch) {
+    date = isoMatch[0];
+  } else if (dmyMatch) {
+    let [, d, m, y] = dmyMatch;
+    if (y.length === 2) y = "20" + y;
+    date = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  let amount = 0;
+  const totalRegex = /total[^\d]{0,10}\$?\s*([\d,]+\.?\d{0,2})/gi;
+  let m, lastTotal = null;
+  while ((m = totalRegex.exec(text)) !== null) lastTotal = m[1];
+  if (lastTotal) {
+    amount = parseFloat(lastTotal.replace(/,/g, ""));
+  } else {
+    const nums = [...text.matchAll(/\$?\s*(\d{1,3}(?:,\d{3})*\.\d{2})/g)]
+      .map(x => parseFloat(x[1].replace(/,/g, "")));
+    if (nums.length) amount = Math.max(...nums);
+  }
+
+  const supplier = lines[0] || "";
+
+  if (formType === "transaction") {
+    return {
+      date:     date || dateStamp(),
+      concept:  supplier ? `Compra: ${supplier}` : "",
+      category: "Insumos",
+      amount:   amount || "",
+      supplier,
+    };
+  }
+  return {
+    date:     date || dateStamp(),
+    supplier,
+    item:     lines[1] || "",
+    quantity: 1,
+    total:    amount || "",
+  };
 }
 
 // Redefined to (1) show scan-or-manual for Egreso, (2) support extraPrefill for AI pre-fill
