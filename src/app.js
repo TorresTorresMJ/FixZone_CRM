@@ -69,12 +69,12 @@ const ROLE_LABELS  = { it: "Admin", owner: "Admin", admin: "Admin", standard: "E
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
   // Frontend roles
-  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","contaduria","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","contaduria","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   standard:  { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   marketing: { tabs: ["dashboard","cotizaciones","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
   // DB roles (map to equivalent frontend permission sets)
-  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","contaduria","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   sales:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
   technician: { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
@@ -92,6 +92,8 @@ let posPaymentMethod = "Efectivo";
 let posCustomerId = null; // null = venta anónima
 let lastPosSale = null; // sale snapshot shown after checkout for print button
 let editingTaskId   = null;
+let contaduriaStatusFilter = "all"; // "all" | "Pendiente" | "Facturado"
+let contaduriaTypeFilter   = "all"; // "all" | "Emitida" | "Recibida"
 let dataMode        = "local";
 let supabaseClient = null;
 let currentSession = null;
@@ -114,6 +116,7 @@ const seed = {
   discounts: [],
   serviceTypes: [],
   servicePrices: [],
+  invoices: [],
 };
 
 let state = loadState();
@@ -144,6 +147,10 @@ async function closeModal(dlg = modal) {
 function openModal(dlg = modal) {
   modalCloseToken++;
   dlg.classList.remove("is-closing");
+  // Cancela cualquier animación de cierre (dlg.animate(), fill:"forwards") en curso:
+  // si no se cancela, termina después de reabrir y deja el modal en opacity:0
+  // (abierto pero invisible, fondo oscurecido) hasta ESC.
+  dlg.getAnimations().forEach(a => a.cancel());
   if (dlg.open) dlg.close();
   dlg.showModal();
 }
@@ -238,6 +245,20 @@ const formSchemas = {
       ["notes","Notas","text",null,true,true],
     ],
   },
+  invoice: {
+    title: "Factura", collection: "invoices",
+    fields: [
+      ["invoice_date","Fecha","date"],
+      ["type","Tipo","select",["Emitida","Recibida"]],
+      ["status","Estado","select",["Pendiente","Facturado"]],
+      ["party_name","Cliente / Proveedor","text"],
+      ["party_rfc","RFC","text",null,false,true],
+      ["folio","Folio fiscal","text",null,false,true],
+      ["concept","Concepto","text",null,true],
+      ["amount","Monto","number"],
+      ["transaction_id","Transacción vinculada","transaction-select",null,true,true],
+    ],
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -258,6 +279,7 @@ function normalizeState(data) {
   next.branches   = next.branches?.length   ? next.branches   : structuredClone(seed.branches);
   next.employees  = next.employees?.length  ? next.employees  : structuredClone(seed.employees);
   next.supportTasks = next.supportTasks     || [];
+  next.invoices     = next.invoices         || [];
   next.tickets = next.tickets.map((t, i) => ({
     ...t,
     tracking:      t.tracking      || nextTracking(i+1),
@@ -335,6 +357,7 @@ async function reloadState() {
       discounts:     remote.discounts           || [],
       serviceTypes:  remote.serviceTypes        || [],
       servicePrices: remote.servicePrices       || [],
+      invoices:      remote.invoices            || [],
     };
     return state;
   } finally {
@@ -537,7 +560,7 @@ function updateAuthBar() {
 
 function applyRolePermissions() {
   const role = currentEmployee?.role || "standard";
-  const perms = PERMISSIONS[role] || PERMISSIONS.standard;
+  const perms = currentPerms();
 
   // Show/hide nav tabs
   document.querySelectorAll(".nav-item").forEach(btn => {
@@ -565,14 +588,19 @@ function applyRolePermissions() {
 
 function currentPerms() {
   const role = currentEmployee?.role || "standard";
-  return PERMISSIONS[role] || PERMISSIONS.standard;
+  const perms = PERMISSIONS[role] || PERMISSIONS.standard;
+  // Excepción especial: Kevin Mijangos siempre ve Contaduría, sin importar su rol
+  if ((currentEmployee?.full_name || "").trim().toLowerCase() === "kevin mijangos" && !perms.tabs.includes("contaduria")) {
+    return { ...perms, tabs: [...perms.tabs, "contaduria"] };
+  }
+  return perms;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // REMOTE DATA
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadSupabaseState() {
-  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes] = await Promise.all([
+  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("name"),
     supabaseClient.from("employees").select("*").order("full_name"),
     supabaseClient.from("customers").select("*").order("created_at",{ascending:false}),
@@ -586,6 +614,7 @@ async function loadSupabaseState() {
     supabaseClient.from("discount_codes").select("*").order("created_at",{ascending:false}),
     supabaseClient.from("service_types").select("*").order("sort_order"),
     supabaseClient.from("service_prices").select("*"),
+    supabaseClient.from("invoices").select("*").order("invoice_date",{ascending:false}),
   ]);
 
   const branchRows   = bRes.data  || [];
@@ -668,6 +697,7 @@ async function loadSupabaseState() {
       id:p.id, date:p.purchase_date, supplier:p.suppliers?.name||"Sin proveedor",
       item:p.item_name, quantity:Number(p.quantity||0), total:Number(p.total_amount||0),
       product_id:p.product_id||null, receipt_url:p.receipt_url||null,
+      transaction_id:p.transaction_id||null,
       branch:branchRows.find(b=>b.id===p.branch_id)?.name||BRANCHES[0],
     })),
     transactions: (txRes.data||[]).map(t => ({
@@ -700,6 +730,14 @@ async function loadSupabaseState() {
       id:p.id, deviceModel:p.device_model, serviceTypeId:p.service_type_id,
       price:Number(p.price||0), branchId:p.branch_id||null, notes:p.notes||"",
       variant:p.variant||"",
+    })),
+    invoices: (invRes.data||[]).map(i => ({
+      id:i.id, branch:branchRows.find(b=>b.id===i.branch_id)?.name||null,
+      type:i.type, status:i.status, folio:i.folio||"",
+      party_name:i.party_name||"", party_rfc:i.party_rfc||"",
+      concept:i.concept||"", amount:Number(i.amount||0),
+      invoice_date:i.invoice_date, transaction_id:i.transaction_id||"",
+      file_url:i.file_url||null,
     })),
   };
 }
@@ -773,6 +811,7 @@ function render() {
   renderReports();
   renderUsers();
   renderSupport();
+  renderContaduria();
   renderDiseno();
   renderAutoToolsSection();
   document.querySelector("#record-count").textContent = `${totalRecords()} registros`;
@@ -792,6 +831,7 @@ function branchProducts()      { return state.products.filter(p => !p.branch || 
 function branchClients()       { return state.clients.filter(c => !c.branch || c.branch === activeBranchId); }
 function branchSupplies()      { return state.supplies.filter(s => !s.branch || s.branch === activeBranchId); }
 function branchTransactions()  { return state.transactions.filter(t => !t.branch || t.branch === activeBranchId); }
+function branchInvoices()      { return (state.invoices||[]).filter(i => !i.branch || i.branch === activeBranchId); }
 function sumByType(list, type) { return list.filter(i=>i.type===type).reduce((s,i)=>s+Number(i.amount||0),0); }
 
 function renderMetrics() {
@@ -2804,6 +2844,7 @@ const PERM_SECTIONS = [
   { key:"reports",        label:"Reportes" },
   { key:"users",          label:"Usuarios" },
   { key:"soporte",        label:"Soporte IT" },
+  { key:"contaduria",     label:"Contaduría" },
   { key:"diseno",         label:"Diseño" },
   { key:"automatizacion", label:"Automatización" },
 ];
@@ -3002,8 +3043,35 @@ function supportTaskCard(task, perms) {
   </article>`;
 }
 
+// ── Contaduría ───────────────────────────────────────────────────────────────
+function renderContaduria() {
+  const tbody = document.querySelector("#contaduria-table");
+  if (!tbody) return;
+  let rows = bySearch(branchInvoices());
+  if (contaduriaStatusFilter !== "all") rows = rows.filter(i => i.status === contaduriaStatusFilter);
+  if (contaduriaTypeFilter   !== "all") rows = rows.filter(i => i.type   === contaduriaTypeFilter);
+  rows = [...rows].sort((a,b) => (b.invoice_date||"").localeCompare(a.invoice_date||""));
 
-
+  tbody.innerHTML = rows.map(i => {
+    const tx = state.transactions.find(t => t.id === i.transaction_id);
+    return `<tr>
+      <td>${escapeHtml(i.invoice_date||"")}</td>
+      <td>${escapeHtml(i.type||"")}</td>
+      <td>${escapeHtml(i.party_name||"")}</td>
+      <td>${escapeHtml(i.party_rfc||"")}</td>
+      <td>${escapeHtml(i.folio||"")}</td>
+      <td>${escapeHtml(i.concept||"")}</td>
+      <td><strong>${money.format(i.amount)}</strong></td>
+      <td><span class="status ${i.status==="Facturado"?"ready":""}">${escapeHtml(i.status||"")}</span></td>
+      <td>${tx ? escapeHtml(`${tx.date} — ${tx.concept}`) : ""}</td>
+      <td>${i.file_url ? `<a href="${escapeHtml(i.file_url)}" target="_blank" class="mini-button">📄 Ver</a>` : ''}</td>
+      <td style="white-space:nowrap">
+        <button class="mini-button" data-edit-invoice="${i.id}">Editar</button>
+        <button class="mini-button danger-btn" data-delete-invoice="${i.id}">✕</button>
+      </td>
+    </tr>`;
+  }).join("") || tableEmpty(11);
+}
 
 // ── Diseño — contenido dinámico por sucursal ──────────────────────────────────
 function renderDiseno() {
@@ -3947,6 +4015,11 @@ function deleteRemoteSupply(supplyId) {
       if (isUUID) {
         const { error } = await supabaseClient.from("supply_purchases").delete().eq("id", supplyId);
         if (error) { showErrorToast(`Error al eliminar: ${error.message}`); return; }
+        if (supply?.transaction_id) {
+          const { error: txError } = await supabaseClient.from("transactions").delete().eq("id", supply.transaction_id);
+          if (txError) console.warn("No se pudo eliminar la transacción vinculada:", txError);
+          state.transactions = state.transactions.filter(t => t.id !== supply.transaction_id);
+        }
       }
       state.supplies = state.supplies.filter(s => s.id !== supplyId);
       render();
@@ -3967,6 +4040,20 @@ function openEditSupply(supplyId) {
   ).join("") + buildReceiptUploadSection(supply.receipt_url);
   openModal();
   initProductAutoFill();
+}
+
+// ── Edit: Invoice (Contaduría) ───────────────────────────────────────────────
+function openEditInvoice(invoiceId) {
+  const invoice = (state.invoices||[]).find(i => i.id === invoiceId);
+  if (!invoice) return;
+  activeForm      = "invoice";
+  editingTicketId = invoiceId;
+  modalTitle.textContent = "Editar factura";
+  document.querySelector("#modal-eyebrow").textContent = "Editar registro";
+  formFields.innerHTML = formSchemas["invoice"].fields.map(([name,label,ftype,opts,wide,optional]) =>
+    fieldTemplate(name, label, ftype, opts, wide, invoice[name] ?? "", optional)
+  ).join("") + buildReceiptUploadSection(invoice.file_url);
+  openModal();
 }
 
 async function updateRemoteSupply(supplyId, data) {
@@ -3993,6 +4080,17 @@ async function updateRemoteSupply(supplyId, data) {
   if (receiptUrl) payload.receipt_url = receiptUrl;
   const { error } = await supabaseClient.from("supply_purchases").update(payload).eq("id", supplyId);
   if (error) throw error;
+
+  // Sync the linked Egreso transaction so its date/concept/amount stay in sync
+  const supply = state.supplies.find(s => s.id === supplyId);
+  if (supply?.transaction_id) {
+    const tx = state.transactions.find(t => t.id === supply.transaction_id);
+    await updateRemoteTransaction(supply.transaction_id, {
+      date: payload.purchase_date, type: "Egreso",
+      concept: `Compra: ${itemName}`, category: "Insumos",
+      amount: payload.total_amount, paymentMethod: tx?.paymentMethod || "",
+    });
+  }
 }
 
 async function updateRemoteTransaction(txId, data) {
@@ -4286,6 +4384,9 @@ function openForm(type, prefill = {}) {
   if (type === "supply") {
     formFields.innerHTML += buildReceiptUploadSection();
     initProductAutoFill();
+  }
+  if (type === "invoice") {
+    formFields.innerHTML += buildReceiptUploadSection();
   }
   if (type === "transaction" && (prefill.type === "Egreso" || !prefill.type)) {
     // Add receipt upload for expense transactions (shown/hidden by type change)
@@ -4821,6 +4922,17 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
         ${options.map(o=>`<option value="${o}" ${o===defaultValue?"selected":""}>${name==="role"?(ROLE_LABELS[o]||o):o}</option>`).join("")}
       </select></div>`;
   }
+  if (ftype==="transaction-select") {
+    const txs = [...branchTransactions()]
+      .sort((a,b) => (b.date||"").localeCompare(a.date||""))
+      .slice(0, 100);
+    return `<div class="field ${wide?"is-wide":""}">
+      <label for="${name}">${labelHtml}</label>
+      <select id="${name}" name="${name}">
+        <option value="">— Sin vincular —</option>
+        ${txs.map(t=>`<option value="${t.id}" ${t.id===defaultValue?"selected":""}>${escapeHtml(`${t.date} — ${t.concept} — ${money.format(t.amount)}`)}</option>`).join("")}
+      </select></div>`;
+  }
   if (ftype==="product-select") {
     const products = branchProducts();
     return `<div class="field ${wide?"is-wide":""}">
@@ -4905,6 +5017,8 @@ recordForm.addEventListener("submit", async e => {
         await updateRemoteSupply(editingTicketId, data);
       } else if (activeForm === "transaction") {
         await updateRemoteTransaction(editingTicketId, data);
+      } else if (activeForm === "invoice") {
+        await updateRemoteInvoice(editingTicketId, data);
       } else if (activeForm === "cotizacion") {
         data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
         delete data.quoteItemsJson;
@@ -5139,6 +5253,7 @@ async function saveRemoteRecord(type, record) {
   if (type==="ticket")      return createRemoteTicket(record);
   if (type==="supply")      return createRemoteSupply(record);
   if (type==="transaction") return createRemoteTransaction(record);
+  if (type==="invoice")     return createRemoteInvoice(record);
   throw new Error("Tipo no soportado.");
 }
 
@@ -5773,6 +5888,7 @@ async function createRemoteSupply(r) {
   if (fileInput?.files?.length) receiptUrl = await uploadReceiptFile(fileInput.files[0]);
 
   const suppId = await findOrCreateSupplier(r.supplier);
+  const tx = await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${itemName}`, category:"Insumos", amount:r.total });
   const { error } = await supabaseClient.from("supply_purchases").insert({
     supplier_id:  suppId,
     branch_id:    await branchIdByName(activeBranchId),
@@ -5783,9 +5899,9 @@ async function createRemoteSupply(r) {
     product_id:   productId,
     receipt_url:  receiptUrl,
     created_by:   currentEmployeeId(),
+    transaction_id: tx?.id || null,
   });
   if (error) throw error;
-  await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${itemName}`, category:"Insumos", amount:r.total });
 }
 
 async function findOrCreateSupplier(name) {
@@ -5821,6 +5937,64 @@ async function createRemoteTransaction(r) {
     paymentMethod:data.payment_method||"", branch:branchName,
   };
   state.transactions = [mapped, ...state.transactions.filter(t=>t.id!==data.id)];
+  return mapped;
+}
+
+async function createRemoteInvoice(r) {
+  let fileUrl = null;
+  const fileInput = document.querySelector("#receipt-file-input");
+  if (fileInput?.files?.length) fileUrl = await uploadReceiptFile(fileInput.files[0]);
+
+  const { error } = await supabaseClient.from("invoices").insert({
+    branch_id:      await branchIdByName(activeBranchId),
+    type:           r.type,
+    status:         r.status,
+    folio:          r.folio || null,
+    party_name:     r.party_name || null,
+    party_rfc:      r.party_rfc || null,
+    concept:        r.concept || null,
+    amount:         Number(r.amount || 0),
+    invoice_date:   r.invoice_date,
+    transaction_id: r.transaction_id || null,
+    file_url:       fileUrl,
+    created_by:     currentEmployeeId(),
+  });
+  if (error) throw error;
+}
+
+async function updateRemoteInvoice(invoiceId, r) {
+  let fileUrl;
+  const fileInput = document.querySelector("#receipt-file-input");
+  if (fileInput?.files?.length) fileUrl = await uploadReceiptFile(fileInput.files[0]);
+
+  const payload = {
+    type:           r.type,
+    status:         r.status,
+    folio:          r.folio || null,
+    party_name:     r.party_name || null,
+    party_rfc:      r.party_rfc || null,
+    concept:        r.concept || null,
+    amount:         Number(r.amount || 0),
+    invoice_date:   r.invoice_date,
+    transaction_id: r.transaction_id || null,
+  };
+  if (fileUrl) payload.file_url = fileUrl;
+  const { error } = await supabaseClient.from("invoices").update(payload).eq("id", invoiceId);
+  if (error) throw error;
+}
+
+function deleteRemoteInvoice(invoiceId) {
+  const invoice = (state.invoices||[]).find(i => i.id === invoiceId);
+  showConfirmModal(`¿Eliminar la factura de "${invoice?.party_name || "este registro"}"? Esta acción no se puede deshacer.`, {
+    label: "Eliminar",
+    danger: true,
+    onConfirm: async () => {
+      const { error } = await supabaseClient.from("invoices").delete().eq("id", invoiceId);
+      if (error) { showErrorToast(`Error al eliminar: ${error.message}`); return; }
+      state.invoices = (state.invoices||[]).filter(i => i.id !== invoiceId);
+      render();
+    }
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -6530,6 +6704,30 @@ document.addEventListener("click", async e => {
   // Delete supply
   const deleteSupply = e.target.closest("[data-delete-supply]");
   if (deleteSupply) { deleteRemoteSupply(deleteSupply.dataset.deleteSupply); return; }
+
+  // Edit invoice (Contaduría)
+  const editInvoice = e.target.closest("[data-edit-invoice]");
+  if (editInvoice) { openEditInvoice(editInvoice.dataset.editInvoice); return; }
+
+  // Delete invoice (Contaduría)
+  const deleteInvoice = e.target.closest("[data-delete-invoice]");
+  if (deleteInvoice) { deleteRemoteInvoice(deleteInvoice.dataset.deleteInvoice); return; }
+
+  // Contaduría status/type filters
+  const ctaStatus = e.target.closest("[data-cta-status]");
+  if (ctaStatus) {
+    contaduriaStatusFilter = ctaStatus.dataset.ctaStatus;
+    document.querySelectorAll(".cta-filter").forEach(b => b.classList.toggle("is-active", b===ctaStatus));
+    renderContaduria();
+    return;
+  }
+  const ctaType = e.target.closest("[data-cta-type]");
+  if (ctaType) {
+    contaduriaTypeFilter = ctaType.dataset.ctaType;
+    document.querySelectorAll(".cta-type").forEach(b => b.classList.toggle("is-active", b===ctaType));
+    renderContaduria();
+    return;
+  }
 
   // Edit transaction
   const editTxBtn = e.target.closest("[data-edit-tx]");
@@ -7325,6 +7523,7 @@ const NAV_TOOLTIPS = {
   reports:        "Reportes de caja, tickets por etapa y productividad del equipo.",
   users:          "Gestión de empleados, roles y permisos de acceso.",
   soporte:        "Kanban de tareas internas del equipo de IT/Soporte.",
+  contaduria:     "Control de facturas emitidas y pendientes por facturar (insumos, servicios, fin de mes), con comprobante adjunto.",
   diseno:         "Herramientas de marketing, plantillas de WhatsApp y códigos de descuento.",
   automatizacion: "Flujos y automatizaciones para la sucursal activa.",
 };

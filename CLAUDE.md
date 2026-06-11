@@ -57,6 +57,8 @@ There is no test suite and no linter configured.
 | `supabase/23_cotizacion_ref.sql` | Adds `cotizacion_ref` + `converted_to_ticket` to service_tickets — traceabilidad bidireccional |
 | `supabase/24_ticket_payment_method.sql` | Adds `payment_method` to service_tickets — método de pago por ticket para uso interno y reportes |
 | `supabase/25_transaction_receipt_url.sql` | Adds `receipt_url` to transactions — adjuntar comprobante a egresos registrados manualmente |
+| `supabase/26_supply_purchase_transaction_link.sql` | Adds `transaction_id` FK to supply_purchases — vincula cada compra de insumos con su transacción de Egreso |
+| `supabase/27_invoices.sql` | `invoices` table (Contaduría) — registro de facturas emitidas/recibidas, estado pendiente/facturado, vínculo opcional a `transactions`, RLS restringido a admin/it + Kevin Mijangos |
 | `supabase/functions/scan-receipt/` | Edge Function — recibe imagen o PDF base64, llama a Claude Haiku vision/document API, devuelve campos extraídos del comprobante. Requiere secret `ANTHROPIC_API_KEY`. |
 
 ## Architecture
@@ -204,6 +206,20 @@ Discount codes live in the `discount_codes` Supabase table (migration 18). They 
 
 **Scope values**: `"pos"`, `"cotizacion"`, `"ticket"` — a code with scope `['pos']` will be rejected when applied in a cotización.
 
+### Contaduría
+
+The Contaduría view (`#contaduria-view`, nav `data-view="contaduria"`) tracks invoices — both **emitidas** (issued to clients) and **recibidas** (received for expenses: insumos, herramientas, servicios como luz/internet, facturación de fin de mes), with a "pendiente / facturado" status and an optional PDF/image attachment.
+
+**Access**: only `admin`/`it`/`owner` roles, plus a hardcoded exception for the employee **Kevin Mijangos** regardless of his DB role. `currentPerms()` adds `"contaduria"` to the tabs array when `currentEmployee.full_name` (case-insensitive) equals `"kevin mijangos"`. On the DB side, RLS uses `private.is_admin_it_or_kevin()` (migration 27), which checks the same condition by `full_name`.
+
+**Schema** (`invoices` table, migration 27): `type` (`Emitida`|`Recibida`), `status` (`Pendiente`|`Facturado`), `folio`, `party_name`, `party_rfc`, `concept`, `amount`, `invoice_date`, `transaction_id` (optional FK to `transactions`), `file_url`, `branch_id`.
+
+**State**: `state.invoices`, loaded by `loadSupabaseState()` and merged in `reloadState()`. `branchInvoices()` filters by `activeBranchId` (permissive, like other branch helpers).
+
+**File attachment**: reuses `uploadReceiptFile()` / `buildReceiptUploadSection()` (same `ticket-photos` bucket, `receipts/` path) — no new storage bucket needed since storage RLS policies are bucket-wide, not path-scoped.
+
+**Filters**: `renderContaduria()` applies `contaduriaStatusFilter` (`"all"|"Pendiente"|"Facturado"`) and `contaduriaTypeFilter` (`"all"|"Emitida"|"Recibida"`), set via `[data-cta-status]` / `[data-cta-type]` buttons in the filter bar.
+
 ### Device autocomplete
 
 The "Producto / equipo" field in ticket and cotización forms uses `ftype = "device-autocomplete"` — renders a custom dropdown instead of native `<datalist>` (which is inconsistent across browsers).
@@ -308,6 +324,8 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 23. `23_cotizacion_ref.sql` — add `cotizacion_ref` + `converted_to_ticket` to service_tickets
 24. `24_ticket_payment_method.sql` — add `payment_method` to service_tickets
 25. `25_transaction_receipt_url.sql` — add `receipt_url` to transactions
+26. `26_supply_purchase_transaction_link.sql` — add `transaction_id` FK to supply_purchases, linking each purchase to its Egreso transaction
+27. `27_invoices.sql` — `invoices` table for Contaduría, `private.is_admin_it_or_kevin()` helper, RLS
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -348,7 +366,8 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **Brand colors in CSS**: never add `rgba(47,111,255,...)` or `#2F6FFF` hardcoded in `app.css` — those won't switch with the branch. Always use `rgba(var(--fz-primary-rgb), alpha)` and `var(--fz-primary)`.
 - **Optional form fields**: the `fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional)` function controls `required` attribute. Pass `true` as 6th element in the field tuple (schema) and `optional` as 7th arg to `fieldTemplate` to make a field non-required. Currently: `discountCode`, `discountAmount`, `notes` are optional in the ticket schema.
 - **`fieldTemplate` numeric inputs use `step="0.01"`** by default so monetary fields (`total`, `price`, `amount`, `repairAmount`, `paidAmount`, `discountAmount`, etc.) accept decimals. Standalone hardcoded `<input type="number">` for prices (cotizador, tabla de precios, quote items) also use `step="0.01"` — only true integer counters (`qty`, `part-qty`) should keep `step="1"`.
-- **Deleting a supply (Insumos)**: `deleteRemoteSupply(supplyId)` deletes from `supply_purchases` (or local state if not a UUID) and is wired via `data-delete-supply` in `renderSupplies()`.
+- **Deleting a supply (Insumos)**: `deleteRemoteSupply(supplyId)` deletes from `supply_purchases` (or local state if not a UUID) and is wired via `data-delete-supply` in `renderSupplies()`. It also deletes the linked Egreso transaction via `supply_purchases.transaction_id` (migration 26).
+- **Editing a supply (Insumos)**: `updateRemoteSupply()` keeps the linked Egreso transaction (`supply_purchases.transaction_id`, migration 26) in sync — date, concept, and amount are updated together. Without migration 26 applied, `transaction_id` is always null and the linked transaction is left stale.
 - **Sidebar tooltip position**: `NAV_TOOLTIPS` renders tooltips at `left: 220px` (sidebar width). If the sidebar width changes, update that value in `initNavTooltips()`.
 - **Adding a new view**: (1) add nav button in `index.html`, (2) add `<section class="view" id="{name}-view">`, (3) add `"{name}"` to the relevant role tabs in `PERMISSIONS`, (4) add to `PERM_SECTIONS`, (5) add entry to `NAV_TOOLTIPS`, (6) call `render{Name}()` from `render()`.
 - **POS requires migration 13**: `supabase/13_pos_tables.sql` must be applied in the Supabase SQL Editor. Until then, `checkoutPos()` will throw a table-not-found error.
@@ -364,3 +383,5 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **Traceability migrations require 23**: Without `23_cotizacion_ref.sql`, approving a cotización will throw a column-not-found error on `cotizacion_ref` update.
 - **`calcPrecio()` formula**: `precio = (insumo × (1 + margen)) × 1.16 × 1.0406`. Glass applies an additional discount: `precioFinal = precioPantalla × (1 - glassDesc)`. Never hardcode margin values — always read from `loadPricingConfig()`.
 - **Quote item `insumoCost`**: stored in `quoteItems` JSONB array per item. When > 0, `calcPrecio()` is called client-side to auto-fill `unitPrice`. The `insumoCost` is for internal reference only — not shown on client-facing receipts.
+- **Contaduría requires migration 27**: `27_invoices.sql` creates the `invoices` table and `private.is_admin_it_or_kevin()`. Without it, `state.invoices` stays `[]` and the Contaduría view renders empty for everyone, including Kevin.
+- **Contaduría access for Kevin is name-based, not role-based**: if Kevin Mijangos is ever renamed in `employees.full_name`, both `currentPerms()` (frontend) and `private.is_admin_it_or_kevin()` (RLS) must be updated to match — they compare `lower(full_name) = 'kevin mijangos'`.

@@ -73,6 +73,9 @@
         <button class="nav-item" data-view="soporte" title="Soporte IT">
           <span aria-hidden="true">⚙</span> Soporte
         </button>
+        <button class="nav-item" data-view="contaduria" title="Contaduría">
+          <span aria-hidden="true">🧾</span> Contaduría
+        </button>
         <button class="nav-item" data-view="diseno" title="Diseño">
           <span aria-hidden="true">✦</span> Diseño
         </button>
@@ -382,6 +385,35 @@
           <button class="primary-action" data-open-form="supportTasks">+ Tarea</button>
         </div>
         <div class="kanban" id="support-board"></div>
+      </section>
+
+      <!-- ── Contaduría ─────────────────────────────────────────────────── -->
+      <section class="view" id="contaduria-view" data-title="Contaduría">
+        <div class="section-heading">
+          <h2>Control de facturación</h2>
+          <button class="primary-action" data-open-form="invoice">+ Factura</button>
+        </div>
+        <div class="filter-bar" id="contaduria-filters" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="mini-button cta-filter is-active" data-cta-status="all">Todas</button>
+          <button class="mini-button cta-filter" data-cta-status="Pendiente">Pendiente por facturar</button>
+          <button class="mini-button cta-filter" data-cta-status="Facturado">Facturado</button>
+          <span style="width:1px;background:rgba(255,255,255,.1);margin:0 4px"></span>
+          <button class="mini-button cta-type is-active" data-cta-type="all">Emitidas y recibidas</button>
+          <button class="mini-button cta-type" data-cta-type="Emitida">Emitidas</button>
+          <button class="mini-button cta-type" data-cta-type="Recibida">Recibidas (gastos)</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Tipo</th><th>Cliente / Proveedor</th><th>RFC</th>
+                <th>Folio fiscal</th><th>Concepto</th><th>Monto</th><th>Estado</th>
+                <th>Transacción</th><th>Factura</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="contaduria-table"></tbody>
+          </table>
+        </div>
       </section>
 
       <!-- ── Diseño (Marketing / IT) — contenido dinámico por sucursal ──── -->

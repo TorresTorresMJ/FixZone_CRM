@@ -505,6 +505,12 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
   font-weight: 700;
 }
 
+.mini-button.is-active {
+  background: var(--fz-primary);
+  border-color: var(--fz-primary);
+  color: #fff;
+}
+
 .danger-btn {
   border-color: rgba(255,83,83,0.3);
   background: rgba(255,83,83,0.1);
