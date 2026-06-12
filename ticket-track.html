@@ -176,6 +176,25 @@
       margin-top: 2px;
     }
 
+    /* ── Mensajes del técnico ── */
+    .notes-list { display: flex; flex-direction: column; gap: 14px; }
+    .note-item {
+      border-left: 3px solid var(--primary);
+      padding: 4px 0 4px 12px;
+    }
+    .note-time {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: 0.02em;
+      margin-bottom: 2px;
+    }
+    .note-text {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
     /* ── Photos ── */
     .photos-section { display: flex; flex-direction: column; gap: 20px; }
     .photo-stage-group {} /* se usa?*/
@@ -377,6 +396,7 @@
 
   let ticket = null;
   let photos = [];
+  let notes  = [];
 
   // ── Lightbox ──────────────────────────────────────────────────────────────
   const lightbox     = document.getElementById('lightbox');
@@ -396,7 +416,7 @@
   }
 
   async function loadData() {
-    const [ticketRes, photosRes] = await Promise.all([
+    const [ticketRes, photosRes, notesRes] = await Promise.all([
       supabase
         .from('service_tickets')
         .select('id, tracking_number, customer_name, product_name, stage')
@@ -407,6 +427,12 @@
         .select('id, file_url, file_type, stage, created_at')
         .eq('ticket_id', ticketId)
         .order('created_at', { ascending: true }),
+      supabase
+        .from('ticket_events')
+        .select('id, note, created_at')
+        .eq('ticket_id', ticketId)
+        .eq('event_type', 'note')
+        .order('created_at', { ascending: false }),
     ]);
 
     if (ticketRes.error || !ticketRes.data) {
@@ -416,7 +442,22 @@
 
     ticket = ticketRes.data;
     photos = photosRes.data || [];
+    notes  = notesRes.data || [];
     renderPage();
+  }
+
+  // ── Date formatting: "12/06/2026 4:00 pm" ──────────────────────────────────
+  function formatNoteDate(iso) {
+    const d = new Date(iso);
+    const dd   = String(d.getDate()).padStart(2, '0');
+    const mm   = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    let h = d.getHours();
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${dd}/${mm}/${yyyy} ${h}:${min} ${ampm}`;
   }
 
   function renderPage() {
@@ -485,6 +526,20 @@
         <p class="section-title">Progreso de la reparación</p>
         <div class="timeline">${timelineItems}</div>
       </div>
+
+      ${notes.length > 0 ? `
+        <div class="section-card">
+          <p class="section-title">Mensajes del técnico</p>
+          <div class="notes-list">
+            ${notes.map(n => `
+              <div class="note-item">
+                <div class="note-time">${formatNoteDate(n.created_at)}</div>
+                <div class="note-text">${esc(n.note)}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
 
       ${Object.keys(photosByStage).length > 0 ? `
         <div class="section-card">

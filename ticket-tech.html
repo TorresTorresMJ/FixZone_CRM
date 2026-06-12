@@ -186,6 +186,71 @@
       display: block;
     }
 
+    /* ── Mensajes para el cliente ── */
+    .notes-section { margin-bottom: 24px; }
+    .note-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .note-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 100px;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .note-chip:active { transform: scale(0.97); }
+    .note-chip.selected {
+      border-color: var(--primary);
+      background: rgba(8, 90, 203, 0.12);
+      color: #fff;
+    }
+    #note-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 12px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 64px;
+      margin-bottom: 10px;
+    }
+    #note-input:focus { outline: none; border-color: var(--primary); }
+    .note-send-btn {
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .note-send-btn:active { transform: scale(0.97); background: var(--primary-dark); }
+    .note-send-btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+    .notes-list { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+    .note-item {
+      border-left: 3px solid var(--primary);
+      padding: 4px 0 4px 12px;
+    }
+    .note-item-time { font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 2px; }
+    .note-item-text { font-size: 13px; color: var(--text); line-height: 1.4; }
+
     /* ── Loading / error states ── */
     .loading-state, .error-state {
       text-align: center;
@@ -258,6 +323,14 @@
   };
   const STAGE_ORDER = ['Recibido', 'En reparacion', 'Listo'];
 
+  const NOTE_PRESETS = [
+    'Pieza encargada',
+    'Pieza en camino',
+    'Llegó la pieza, iniciamos la reparación',
+    'Reparación en proceso',
+    'Reparación terminada, listo para recoger',
+  ];
+
   const params    = new URLSearchParams(location.search);
   const ticketId  = params.get('id');
   const app       = document.getElementById('app');
@@ -265,6 +338,7 @@
 
   let ticket      = null;
   let photos      = [];
+  let notes       = [];
   let currentStage = null;
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -300,7 +374,7 @@
     currentStage = data.stage;
     headerTracking.textContent = data.tracking_number || data.id.slice(0, 8).toUpperCase();
 
-    await loadPhotos();
+    await Promise.all([loadPhotos(), loadNotes()]);
     renderPage();
   }
 
@@ -311,6 +385,30 @@
       .eq('ticket_id', ticketId)
       .order('created_at', { ascending: true });
     photos = data || [];
+  }
+
+  async function loadNotes() {
+    const { data } = await supabase
+      .from('ticket_events')
+      .select('id, note, created_at')
+      .eq('ticket_id', ticketId)
+      .eq('event_type', 'note')
+      .order('created_at', { ascending: false });
+    notes = data || [];
+  }
+
+  // ── Date formatting: "12/06/2026 4:00 pm" ──────────────────────────────────
+  function formatNoteDate(iso) {
+    const d = new Date(iso);
+    const dd   = String(d.getDate()).padStart(2, '0');
+    const mm   = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    let h = d.getHours();
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${dd}/${mm}/${yyyy} ${h}:${min} ${ampm}`;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -362,6 +460,26 @@
       <p class="section-label">Etapa del ticket</p>
       <div class="stage-grid">${stageBtns}</div>
 
+      <div class="notes-section">
+        <p class="section-label">Mensaje para el cliente</p>
+        <div class="note-chips">
+          ${NOTE_PRESETS.map(p => `<button class="note-chip" data-preset="${esc(p)}">${esc(p)}</button>`).join('')}
+        </div>
+        <textarea id="note-input" placeholder="Escribe un mensaje para el cliente…"></textarea>
+        <button class="note-send-btn" id="note-send-btn">Enviar mensaje</button>
+
+        ${notes.length > 0 ? `
+          <div class="notes-list">
+            ${notes.map(n => `
+              <div class="note-item">
+                <div class="note-item-time">${formatNoteDate(n.created_at)}</div>
+                <div class="note-item-text">${esc(n.note)}</div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+
       <div class="photo-section">
         <p class="section-label">Fotos — ${currentStageLabel}</p>
         <div class="photo-buttons-row">
@@ -387,6 +505,27 @@
     app.querySelectorAll('.stage-btn').forEach(btn => {
       btn.addEventListener('click', () => changeStage(btn.dataset.stage));
     });
+
+    // Wire message chips + send
+    const noteInput = document.getElementById('note-input');
+    app.querySelectorAll('.note-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const isSelected = chip.classList.contains('selected');
+        app.querySelectorAll('.note-chip').forEach(c => c.classList.remove('selected'));
+        if (isSelected) {
+          noteInput.value = '';
+        } else {
+          chip.classList.add('selected');
+          noteInput.value = chip.dataset.preset;
+        }
+      });
+    });
+    noteInput.addEventListener('input', () => {
+      app.querySelectorAll('.note-chip').forEach(c => {
+        c.classList.toggle('selected', c.dataset.preset === noteInput.value);
+      });
+    });
+    document.getElementById('note-send-btn').addEventListener('click', sendNote);
 
     // Wire photo upload
     document.getElementById('photo-btn').addEventListener('click', () => {
@@ -423,6 +562,35 @@
 
     ticket.stage = newStage;
     showToast(`Etapa actualizada: ${STAGE_MAP[newStage]?.label}`, 'success');
+  }
+
+  // ── Send message to client ──────────────────────────────────────────────────
+  async function sendNote() {
+    const input = document.getElementById('note-input');
+    const text  = input.value.trim();
+    if (!text) return;
+
+    const btn = document.getElementById('note-send-btn');
+    btn.disabled = true;
+    btn.textContent = 'Enviando…';
+
+    const { error } = await supabase.rpc('add_ticket_note_public', {
+      p_ticket_id: ticketId,
+      p_note: text,
+    });
+
+    btn.disabled = false;
+    btn.textContent = 'Enviar mensaje';
+
+    if (error) {
+      showToast('Error al enviar el mensaje', 'error');
+      return;
+    }
+
+    notes.unshift({ note: text, created_at: new Date().toISOString() });
+    input.value = '';
+    showToast('Mensaje enviado', 'success');
+    renderPage();
   }
 
   // ── HEIC/HEIF → JPEG conversion ──────────────────────────────────────────
