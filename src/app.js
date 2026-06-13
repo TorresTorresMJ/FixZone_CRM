@@ -117,6 +117,7 @@ const seed = {
   serviceTypes: [],
   servicePrices: [],
   invoices: [],
+  brandAssets: [],
 };
 
 let state = loadState();
@@ -358,6 +359,7 @@ async function reloadState() {
       serviceTypes:  remote.serviceTypes        || [],
       servicePrices: remote.servicePrices       || [],
       invoices:      remote.invoices            || [],
+      brandAssets:   remote.brandAssets         || [],
     };
     return state;
   } finally {
@@ -600,7 +602,7 @@ function currentPerms() {
 // REMOTE DATA
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadSupabaseState() {
-  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes] = await Promise.all([
+  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes,baRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("name"),
     supabaseClient.from("employees").select("*").order("full_name"),
     supabaseClient.from("customers").select("*").order("created_at",{ascending:false}),
@@ -615,6 +617,7 @@ async function loadSupabaseState() {
     supabaseClient.from("service_types").select("*").order("sort_order"),
     supabaseClient.from("service_prices").select("*"),
     supabaseClient.from("invoices").select("*").order("invoice_date",{ascending:false}),
+    supabaseClient.from("brand_assets").select("*").order("created_at",{ascending:false}),
   ]);
 
   const branchRows   = bRes.data  || [];
@@ -739,6 +742,12 @@ async function loadSupabaseState() {
       invoice_date:i.invoice_date, transaction_id:i.transaction_id||"",
       file_url:i.file_url||null,
     })),
+    brandAssets: (baRes.data||[]).map(a => ({
+      id:a.id, branch:branchRows.find(b=>b.id===a.branch_id)?.name||null,
+      label:a.label, category:a.category||"Otro",
+      fileUrl:a.file_url, fileName:a.file_name||"",
+      createdAt:(a.created_at||"").slice(0,10),
+    })),
   };
 }
 
@@ -832,6 +841,7 @@ function branchClients()       { return state.clients.filter(c => !c.branch || c
 function branchSupplies()      { return state.supplies.filter(s => !s.branch || s.branch === activeBranchId); }
 function branchTransactions()  { return state.transactions.filter(t => !t.branch || t.branch === activeBranchId); }
 function branchInvoices()      { return (state.invoices||[]).filter(i => !i.branch || i.branch === activeBranchId); }
+function branchBrandAssets()   { return (state.brandAssets||[]).filter(a => !a.branch || a.branch === activeBranchId); }
 function sumByType(list, type) { return list.filter(i=>i.type===type).reduce((s,i)=>s+Number(i.amount||0),0); }
 
 function renderMetrics() {
@@ -3146,6 +3156,7 @@ function renderDiseno() {
   renderDiscountManager();
   renderWATemplates();
   renderBrandEditor();
+  renderBrandAssetLibrary();
 }
 
 // ── Marketing links — editable per branch, stored in localStorage ─────────────
@@ -3498,6 +3509,159 @@ function renderBrandEditor() {
         renderBrandEditor();
         showToast("✓ Logo eliminado, usando logo default");
       }
+    });
+  });
+}
+
+// ── Brand asset library — shared file repository (logos, icons), separate from
+// the active branding editor above; uploads to Storage and lists in `brand_assets` ──
+const BRAND_ASSET_CATEGORIES = ["Logo color", "Logo monocromático", "Logo sin fondo", "Logo negro", "Ícono", "Otro"];
+
+async function uploadBrandAssetFile(file) {
+  const ext  = file.name.split(".").pop();
+  const path = `brand-assets/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabaseClient.storage.from("ticket-photos").upload(path, file, { upsert:false });
+  if (error) throw error;
+  const { data } = supabaseClient.storage.from("ticket-photos").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function createBrandAsset({ label, category, fileUrl, fileName, shared }) {
+  const branchId = shared ? null : await branchIdByName(activeBranchId);
+  const { data, error } = await supabaseClient.from("brand_assets").insert({
+    branch_id: branchId, label, category, file_url: fileUrl, file_name: fileName,
+    created_by: currentEmployeeId(),
+  }).select().single();
+  if (error) throw error;
+  state.brandAssets = [...(state.brandAssets||[]), {
+    id:data.id, branch: shared ? null : activeBranchId, label, category,
+    fileUrl, fileName, createdAt:(data.created_at||"").slice(0,10),
+  }];
+  reloadState().catch(err => console.warn("reloadState tras crear asset de marca:", err));
+}
+
+async function deleteBrandAsset(id) {
+  const { error } = await supabaseClient.from("brand_assets").delete().eq("id", id);
+  if (error) throw error;
+  state.brandAssets = (state.brandAssets||[]).filter(a => a.id !== id);
+}
+
+function brandAssetCardHtml(a) {
+  const isImage = /\.(png|jpe?g|webp|gif|svg)$/i.test(a.fileUrl) || /^image\//.test(a.fileName||"");
+  return `
+    <div class="marketing-card" style="cursor:default">
+      <div style="height:80px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.05);border-radius:6px;margin-bottom:8px;overflow:hidden">
+        ${isImage
+          ? `<img src="${escapeHtml(a.fileUrl)}" alt="${escapeHtml(a.label)}" style="max-height:100%;max-width:100%;object-fit:contain" />`
+          : `<span style="font-size:28px">📄</span>`}
+      </div>
+      <strong>${escapeHtml(a.label)}</strong>
+      <p>${escapeHtml(a.category)}${a.branch ? ` · ${escapeHtml(a.branch)}` : " · Ambas marcas"}</p>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button class="mini-button" data-ba-copy="${escapeHtml(a.fileUrl)}">📋 Copiar URL</button>
+        <a class="mini-button" href="${escapeHtml(a.fileUrl)}" download="${escapeHtml(a.fileName||a.label)}" target="_blank">⬇ Descargar</a>
+        <button class="mini-button danger-btn" data-ba-delete="${escapeHtml(a.id)}">✕ Eliminar</button>
+      </div>
+    </div>`;
+}
+
+function renderBrandAssetLibrary() {
+  const el = document.querySelector("#brand-assets-library");
+  if (!el) return;
+  const assets = branchBrandAssets();
+
+  el.innerHTML = `
+    <div class="section-heading"><h2>📁 Biblioteca de assets de marca</h2></div>
+    <div class="card" style="margin-bottom:16px">
+      <div style="margin-bottom:12px">
+        <h3 style="margin:0 0 4px;font-size:14px">Subir nuevo archivo</h3>
+        <small class="muted">Logos en distintas variantes, íconos sueltos, etc. Solo se guarda aquí como repositorio — no cambia el branding activo del CRM.</small>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end">
+        <div class="field">
+          <label>Nombre / etiqueta</label>
+          <input type="text" id="ba-label" placeholder="Ej. Logo mono blanco" />
+        </div>
+        <div class="field">
+          <label>Categoría</label>
+          <select id="ba-category">
+            ${BRAND_ASSET_CATEGORIES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>Alcance</label>
+          <select id="ba-scope">
+            <option value="branch">${escapeHtml(activeBranchId)}</option>
+            <option value="shared">Ambas marcas</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Archivo</label>
+          <input type="file" id="ba-file" accept="image/*,.svg,.pdf" />
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">
+        <button class="primary-action" id="ba-upload-btn" style="font-size:13px">Subir archivo</button>
+        <span id="ba-upload-status" class="muted" style="font-size:12px"></span>
+      </div>
+    </div>
+
+    <div class="marketing-grid" id="ba-gallery">
+      ${assets.length ? assets.map(a => brandAssetCardHtml(a)).join("") : `<p class="muted">Sin archivos guardados todavía.</p>`}
+    </div>
+  `;
+
+  el.querySelector("#ba-upload-btn")?.addEventListener("click", async () => {
+    const labelInput = el.querySelector("#ba-label");
+    const categorySel = el.querySelector("#ba-category");
+    const scopeSel = el.querySelector("#ba-scope");
+    const fileInput = el.querySelector("#ba-file");
+    const status = el.querySelector("#ba-upload-status");
+    const file = fileInput?.files[0];
+    const label = labelInput?.value.trim();
+    if (!file || !label) {
+      showToast("Selecciona un archivo y escribe un nombre");
+      return;
+    }
+    try {
+      if (status) status.textContent = "Subiendo…";
+      const fileUrl = await uploadBrandAssetFile(file);
+      await createBrandAsset({
+        label, category: categorySel.value, fileUrl, fileName: file.name,
+        shared: scopeSel.value === "shared",
+      });
+      showToast("✓ Archivo guardado en la biblioteca");
+      renderBrandAssetLibrary();
+    } catch (err) {
+      console.error(err);
+      showToast("Error al subir el archivo");
+      if (status) status.textContent = "";
+    }
+  });
+
+  el.querySelectorAll("[data-ba-copy]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      navigator.clipboard?.writeText(btn.dataset.baCopy);
+      showToast("✓ URL copiada");
+    });
+  });
+
+  el.querySelectorAll("[data-ba-delete]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.baDelete;
+      showConfirmModal("¿Eliminar este archivo de la biblioteca?", {
+        label: "Eliminar", danger: true,
+        onConfirm: async () => {
+          try {
+            await deleteBrandAsset(id);
+            showToast("✓ Archivo eliminado");
+            renderBrandAssetLibrary();
+          } catch (err) {
+            console.error(err);
+            showToast("Error al eliminar el archivo");
+          }
+        }
+      });
     });
   });
 }

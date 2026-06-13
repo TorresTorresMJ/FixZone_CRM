@@ -92,7 +92,7 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Plantillas de mensaje WhatsApp editables — tab Automatización (ahora incluye plantilla de Cotización).
 - [x] Códigos de descuento en Supabase (`discount_codes`) — válidos en Cotización, Ticket y POS, con scope, fecha de vigencia, máx. usos, activo/inactivo, tipo fijo o porcentaje.
 - [x] Marketing UI — cards compactas, links editables inline sin ticket a IT (add/edit/delete, con icono, nombre, URL y descripción).
-- [ ] Integración WhatsApp Business Cloud API — envío automático al cliente cuando cambia el estado del ticket (Listo, Pagado, Garantía). Prerequisito: Meta Business verificado + número dedicado registrado en la API. Programación lista en 1 sprint una vez que estén los accesos. - Priority
+- [ ] Integración WhatsApp Business Cloud API — envío automático al cliente cuando cambia el estado del ticket (Listo, Pagado, Garantía). **BLOQUEADO**: requiere Meta Business verificado + número dedicado registrado en la API; aún no está decidido si se va a hacer esa verificación. No iniciar desarrollo hasta que se confirme y se tengan los accesos.
 - [ ] Función para enviar recordatorios de garantía o promociones por WhatsApp / email.
 - [ ] Crear sección de plantillas de email para clientes, editable.
 - [ ] Permitir subir/gestionar imágenes y documentos desde la UI.
@@ -111,8 +111,8 @@ _Última actualización: 2026-06-11_ (sesión 7)
 ## Fase 9: Mejoras futuras
 
 - [ ] Agregar notificaciones por WhatsApp o email automáticas (ticket listo, garantía por vencer).
-- [ ] Agregar lector de códigos QR para consulta de tickets.
-- [ ] Agregar integración contable si se requiere facturación formal. Prioridad media
+- [ ] Agregar lector de códigos QR para consulta de tickets. --? Se referira a nosotros como Fixzone o a los clientes?
+- [ ] Agregar integración contable si se requiere facturación formal. Prioridad media - 
 - [ ] Actualizar logos en `assets/brand/` — los actuales son versiones antiguas.
 - [x] Recibo de impresión de largo dinámico — alto del papel se ajusta al contenido real, sin espacio en blanco al final (`doPrint()` inyecta `@page { size: Xmm auto }` antes de cada impresión, evitando el bug de `var()` en `@page` de Chrome).
 - [x] Autocomplete de equipo en tickets y cotizaciones — lista base ~100 modelos (iPhone/Samsung/Motorola/Xiaomi/Huawei), filtrado substring, opción agregar modelo nuevo.
@@ -143,9 +143,9 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Texto largo de descripción en cards — `word-break:break-word` + `-webkit-line-clamp:2` en ticket card y cotización card.
 - [ ](image-3.png)Que en el chat de notificaciones , cuando IT manda mensaje diga IT. O mejor, como hay roles repetidos, que se muestr el nombre del usuario plis, solo primer nombre. 
 - [ ] Mande mensaje en el centro de notificaciones y no le llegó a nadie, abrieron su centro de campanita y no aparecia nunfun mensaje de los que habia enviado. 
-- [ ] .photo-stage-group {} /* se usa?*/ si no, borrar la regla vacia. prioridad media - cleaning dead code 
+- [x] .photo-stage-group {} /* se usa?*/ — regla CSS vacía borrada de `ticket-track.html` (la clase sigue en el HTML, no requería estilos propios).
 - [x] Edito y guardo los mensajes rapidos en la seccion de automatizacion , pero al dar guardar, no respeta los cambios. — `renderQuickMessages()`/`renderWATemplates()` se re-renderizaban sobre el modo edición y perdían los cambios; ahora tienen guardas anti-reset y autosave.
-- [ ] En "Diseño" al guardar un logo , se cambio el icono del logo de la pagina del CRM, NO queiro eso. Queiro que ahi solo sea un fodler para rapido acceso o source of truth de los elementos de la marca. Quiero poder subir los logos monocromaticos, logo sin fondo png, logo black, varios, que sea un folder en linea que en cualquier momento se pueda acceder, descargar, copiar, para hacer uso de él. Incluso que no sea el logo si no por ejemplo el icono del telefono del logo, etc. prioridad alta 
+- [x] En "Diseño" al guardar un logo, se cambiaba el icono del logo de la página del CRM — agregada sección "📁 Biblioteca de assets de marca" (separada del "Editor de marca"). Permite subir logos en variantes (color, monocromático, sin fondo, negro), íconos sueltos, etc. a Storage (`ticket-photos/brand-assets/`), con galería para ver, copiar URL y descargar — sin afectar el branding activo del CRM. Cada archivo puede marcarse "Ambas marcas" o solo la sucursal activa. **Requiere aplicar `supabase/30_brand_assets.sql`** en el SQL Editor antes de usarse.
 - [x] cuando hago click en añadir "Compra" se abre la ventana pero despues se quita el formulario, y se queda el CRM mas tenue y tengo que presionar ESC. — Causa: `closeModal()` dejaba el modal en `.is-closing` (opacity:0) si se reabría mientras la animación de cierre anterior seguía corriendo. Fix: `openModal()` limpia el estado y reabre limpio; `closeModal()` usa un token para no pisar el modal reabierto.
 - [x] Al agregar "Compra" hace lo de que se ve la pantalla mas atenuada y solo se puede salir con ESC - mismo fix que el punto anterior.
 - [x] Insumos no tenía botón para eliminar registros — agregado ✕ Eliminar (borra de `supply_purchases`).
@@ -225,15 +225,15 @@ _Pendiente implementar — evaluación hecha en sesión 2026-06-06_
 
 _Pendiente implementar — auditoría de código hecha en sesión 2026-06-06_
 
-- [ ] **[P0] Subir tamaño mínimo de fuente a 12px** — 29 instancias de `font-size: 11px/10px` en labels, badges, report cards, ticket detail. Problema real de legibilidad en mostrador con luz ambiental.
-- [ ] **[P0] Quitar `text-transform: uppercase` de `.field label`** — Cada label de formulario está en ALL CAPS 11px. Cambiar a `sentence case` o `Title Case`. Mantener uppercase solo en badges de estado/rol y `th` de tablas.
+- [x] **[P0] Subir tamaño mínimo de fuente a 12px** — todas las instancias de `font-size: 11px/10px` en labels, badges, report cards y ticket detail subidas a 12px. Se dejaron en su tamaño original solo los íconos de `.nav-item span` (glifo dentro de caja fija 22px/18px, no es texto legible).
+- [x] **[P0] Quitar `text-transform: uppercase` de `.field label`** — labels de formulario ahora en sentence case (se mantiene uppercase en badges de estado/rol y `th` de tablas, que no usan esta clase).
 - [ ] **[P1] Unificar íconos de nav a Lucide** — La navegación mezcla emoji unicode (`⌂ ✦ ◎ ◈ ◉ ₱ $ ≡ ⚙ ⚡`) con Lucide sin criterio. Tickets y Diseño usan el mismo símbolo ✦. Migrar todo a Lucide.
 - [ ] **[P1] Extender stagger de animación a todas las vistas** — `card-enter` solo existe en Dashboard y Tickets. Clientes, Productos, Finanzas, Reportes entran planos. Añadir a `.product-card`, filas de clientes, `.report-card`.
 - [ ] **[P1] Definir escala de z-index semántica** — Dos elementos con `z-index: 9999` sin escala documentada. Definir tokens: `--z-sticky`, `--z-modal`, `--z-toast`, `--z-tooltip`.
-- [ ] **[P1] Corregir colores de RefaxZone (Puebla)** — `brand-config.js` líneas 72-80 muestran `#085ACB` azul para Puebla. Debería ser naranja `#E85D04` según diseño original. El multi-branch theming no está funcionando correctamente.
+- [ ] **[P2] Diferenciador visual sutil Puebla vs Puerto Vallarta** — Ambas marcas comparten la misma paleta azul (`#085ACB`/`#2678E8`) intencionalmente; el naranja `#E85D04` fue solo un placeholder temporal. Pendiente: agregar un detalle visual sutil (línea, acento, badge) para que el personal del CRM distinga rápido en qué sucursal está sin depender del color principal.
 - [ ] **[P2] Kanban ancho adaptable en pantallas grandes** — `width: 240px` fijo desperdicia espacio en 1440px+. Cambiar a `width: clamp(240px, 22vw, 320px)`.
 - [ ] **[P2] Metric grid responsive sin breakpoints fijos** — `repeat(4, minmax(0,1fr))` se estira en pantallas anchas. Cambiar a `repeat(auto-fill, minmax(200px, 1fr))`.
 - [ ] **[P2] Toasts descartables** — Ambos toasts tienen `pointer-events: none`. El usuario no puede cerrarlos si bloquean UI. Añadir click para dismiss.
 - [ ] **[P2] Skeleton loader en carga inicial** — Durante el `Promise.all` de Supabase las vistas aparecen vacías. Añadir 3-4 cards skeleton con shimmer para mejorar percepción de velocidad.
-- [ ] **[P3] Tracking codes en monospace, no Orbitron** — `[FZ] 0001` en Orbitron es difícil de escanear repetidamente. Cambiar a `ui-monospace, 'SF Mono', monospace; font-weight: 700`.
-- [ ] **[P3] Hover de botón primario sin `filter: brightness()`** — Causa nuevo stacking context. Cambiar a variante de color directa en el `background` del `:hover`.
+- [x] **[P3] Tracking codes en monospace, no Orbitron** — `.tracking-code` ahora usa `ui-monospace, 'SF Mono', monospace; font-weight: 700`.
+- [x] **[P3] Hover de botón primario sin `filter: brightness()`** — `.primary-action:hover` ahora cambia `background` a `var(--fz-secondary)` en vez de `filter: brightness()`.

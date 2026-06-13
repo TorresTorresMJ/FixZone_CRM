@@ -60,6 +60,7 @@ There is no test suite and no linter configured.
 | `supabase/26_supply_purchase_transaction_link.sql` | Adds `transaction_id` FK to supply_purchases — vincula cada compra de insumos con su transacción de Egreso |
 | `supabase/27_invoices.sql` | `invoices` table (Contaduría) — registro de facturas emitidas/recibidas, estado pendiente/facturado, vínculo opcional a `transactions`, RLS restringido a admin/it + Kevin Mijangos |
 | `supabase/28_it_role_pos_tables.sql` | Additive `"it can manage *"` policies for `pos_sales`/`pos_sale_items` — migration 13 (POS tables) predates 08 and never got the `it` role policy, so employees with role `it` got an RLS violation on POS checkout |
+| `supabase/30_brand_assets.sql` | `brand_assets` table (Diseño) — repositorio de archivos de marca (logos en variantes, íconos), RLS abierto a empleados activos, separado del Editor de marca |
 | `supabase/functions/scan-receipt/` | Edge Function — recibe imagen base64, llama a Gemini vision API (free tier, `gemini-3.1-flash-lite`), devuelve campos extraídos del comprobante (para insumos, devuelve un array `items[]` con una línea por producto del ticket). PDFs caen a llenado manual. Requiere secret `GEMINI_API_KEY`. |
 
 ## Architecture
@@ -328,6 +329,8 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 26. `26_supply_purchase_transaction_link.sql` — add `transaction_id` FK to supply_purchases, linking each purchase to its Egreso transaction
 27. `27_invoices.sql` — `invoices` table for Contaduría, `private.is_admin_it_or_kevin()` helper, RLS
 28. `28_it_role_pos_tables.sql` — additive `"it can manage *"` policies for `pos_sales`/`pos_sale_items` (missed by migration 08, which predates the POS tables from migration 13)
+29. `29_ticket_notes_anon.sql` — anon SELECT on `ticket_events` notes + `add_ticket_note_public()` for ticket-track/ticket-tech public pages
+30. `30_brand_assets.sql` — `brand_assets` table for the Diseño brand asset library, RLS open to active employees
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -389,3 +392,4 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **Contaduría access for Kevin is name-based, not role-based**: if Kevin Mijangos is ever renamed in `employees.full_name`, both `currentPerms()` (frontend) and `private.is_admin_it_or_kevin()` (RLS) must be updated to match — they compare `lower(full_name) = 'kevin mijangos'`.
 - **POS checkout for `it`-role employees requires migration 28**: `28_it_role_pos_tables.sql` adds the missing `"it can manage *"` policies for `pos_sales`/`pos_sale_items`. Without it, employees with `role = 'it'` (never normalized to `admin`) get a "violates row-level security policy" error on `checkoutPos()`.
 - **Escaneo de comprobantes con múltiples artículos (Insumos)**: `scan-receipt` now returns `items[]` (one entry per line item) instead of a single `item`/`quantity`/`total`. When `formType === "supply"` and `fields.items.length > 1`, `openReceiptScanner()` shows a review screen (`showMultiItemReview()`) where each line can be edited/removed before saving — "Guardar todos" calls `createRemoteSupply()` once per row, all sharing the same uploaded receipt file. Single-item receipts still prefill the normal supply form.
+- **Biblioteca de assets de marca requires migration 30**: `30_brand_assets.sql` creates the `brand_assets` table. Without it, `state.brandAssets` stays `[]` and `renderBrandAssetLibrary()` (tab Diseño) renders an empty gallery — uploads will fail with a table-not-found error. This is intentionally separate from `renderBrandEditor()` (the "Editor de marca" above it): uploading here only stores a file + lists it for download/copy, it never touches `--fz-logo-src` or any active branding.
