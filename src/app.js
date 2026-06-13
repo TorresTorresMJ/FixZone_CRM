@@ -1077,7 +1077,7 @@ async function handleKanbanDrop(event, newStage) {
   }
   // WhatsApp notification when ticket is ready for pickup
   if (newStage === "Listo") {
-    const msg = fillWATemplate("listo", ticket);
+    const msg = fillWATemplate("listo", { ...ticket, link: receiptQrTarget(ticket.id) });
     showWhatsAppToast(ticket, msg);
   }
 }
@@ -1217,6 +1217,7 @@ function ticketCard(ticket, perms, idx = 0) {
     ${priceHtml}
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}" title="Opciones de impresión">🖨</button>
+      <button class="mini-button" style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);color:#25d366" data-wa-ticket="${ticket.id}" title="Enviar por WhatsApp">💬</button>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
       ${/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticket.id)?`<button class="mini-button" data-qr-ticket="${ticket.id}" title="QR Técnico">📱</button>`:""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
@@ -3774,7 +3775,7 @@ function renderWATemplates() {
 
   const tpls = getWATemplates();
   const LABELS = { cotizacion:"📋 Cotización", listo:"✅ Equipo Listo", abono:"💳 Abono recibido", pagado:"✅ Pago completo", garantia:"🛡 Garantía" };
-  const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo} {total} {items}";
+  const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo} {total} {items} {link}";
   el.innerHTML = `
     <div class="card" style="margin-top:16px">
       <div style="margin-bottom:16px">
@@ -3957,10 +3958,10 @@ function renderQuickMessages() {
 // ── Discount codes (managed via Supabase discount_codes table) ────────────────
 const WA_TEMPLATES_KEY = "fixzone-wa-templates-v1";
 const DEFAULT_WA_TEMPLATES = {
-  listo:      "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!",
-  abono:      "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.",
-  pagado:     "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!",
-  garantia:   "Hola {cliente} 👋, tu equipo {equipo} está en garantía. Folio: {folio}. Contáctanos para coordinar.",
+  listo:      "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!\n\n📲 Sigue el estado de tu reparación: {link}",
+  abono:      "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.\n\n📲 Sigue el estado de tu reparación: {link}",
+  pagado:     "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!\n\n📲 Sigue el estado de tu reparación: {link}",
+  garantia:   "Hola {cliente} 👋, tu equipo {equipo} está en garantía. Folio: {folio}. Contáctanos para coordinar.\n\n📲 Sigue el estado de tu reparación: {link}",
   cotizacion: "",
 };
 
@@ -3978,7 +3979,8 @@ function fillWATemplate(key, vars) {
     .replace(/{monto}/g,    vars.amount||"")
     .replace(/{saldo}/g,    vars.pending||"")
     .replace(/{total}/g,    vars.amount||"")
-    .replace(/{items}/g,    vars.items||"");
+    .replace(/{items}/g,    vars.items||"")
+    .replace(/{link}/g,     vars.link||"");
 }
 
 function applyDiscount(baseAmount, code, scope = "ticket") {
@@ -6736,6 +6738,7 @@ function showWAPanel(ticketId) {
     saldo:     money.format(Math.max(0, Number(ticket.repairAmount || ticket.total || 0) - Number(ticket.paidAmount || 0))),
     total:     money.format(Number(ticket.repairAmount || ticket.total || 0)),
     items:     "",
+    link:      receiptQrTarget(ticket.id),
   };
 
   const messages = [
@@ -6938,7 +6941,7 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
     const updatedTicket = state.tickets.find(t => t.id === abonoTicketId);
     showToast(`✓ Abono de ${money.format(amount)} registrado`);
     if (updatedTicket) {
-      const vars = { ...updatedTicket, amount: money.format(amount), pending: money.format(Math.max(0,(updatedTicket.repairAmount||0)-newPaid)) };
+      const vars = { ...updatedTicket, amount: money.format(amount), pending: money.format(Math.max(0,(updatedTicket.repairAmount||0)-newPaid)), link: receiptQrTarget(updatedTicket.id) };
       const waMsg = fillWATemplate(newStatus === "Pagado" ? "pagado" : "abono", vars);
       showWhatsAppToast(updatedTicket, waMsg);
     }
