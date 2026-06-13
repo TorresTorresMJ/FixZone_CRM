@@ -6792,7 +6792,14 @@ function showWAPanel(ticketId) {
           style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
       </div>
       ${noPhone}
-      <div style="display:flex;flex-direction:column;gap:8px">${btns || '<p style="color:rgba(255,255,255,.4);font-size:13px">Sin plantillas configuradas. Edítalas en Automatización.</p>'}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button onclick="shareTicketPDF('${ticket.id}')"
+          style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.25);color:#25d366;font-size:13px;font-weight:600;cursor:pointer">
+          <span style="font-size:18px">📄</span><span>Compartir ticket (PDF)</span>
+          <span style="margin-left:auto;font-size:10px;opacity:.6">Enviar ↗</span>
+        </button>
+        ${btns || '<p style="color:rgba(255,255,255,.4);font-size:13px">Sin plantillas configuradas. Edítalas en Automatización.</p>'}
+      </div>
     </div>`;
   overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
@@ -7777,6 +7784,107 @@ async function generateCotizacionImage(ticket) {
     wrap.remove();
   }
 }
+
+// Genera un PDF con el resumen del ticket (cliente, equipo, falla, total, QR
+// de seguimiento) y lo comparte vía WhatsApp usando el Web Share API
+// (abre el selector nativo en móvil); si el navegador no soporta compartir
+// archivos, descarga el PDF y deja el mensaje de texto listo para enviar.
+async function shareTicketPDF(ticketId) {
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+  if (typeof html2canvas !== "function" || !window.jspdf) {
+    showErrorToast("No se pudo generar el PDF: librería no disponible");
+    return;
+  }
+  const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
+  const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
+  const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
+  const repairAmt= Number(ticket.repairAmount ?? ticket.total ?? 0);
+  const discAmt  = Number(ticket.discountAmount || 0);
+  const total    = Math.max(0, repairAmt - discAmt);
+  const now      = new Date();
+  const timeStr  = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
+  const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const phone    = ticket.clientPhone || client?.phone || "";
+  const qrTarget = receiptQrTarget(ticket.id);
+  const qrImage  = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=4&data=${encodeURIComponent(qrTarget)}`;
+
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:640px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;padding:32px;box-sizing:border-box";
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${primary};padding-bottom:16px;margin-bottom:20px">
+      <img src="${brand.logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:48px;object-fit:contain" onerror="this.style.display='none'"/>
+      <div style="text-align:right">
+        <div style="font-size:20px;font-weight:700;letter-spacing:.04em;color:${primary}">TICKET DE SERVICIO</div>
+        <div style="font-size:13px;color:#777">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:24px;margin-bottom:20px">
+      <div style="flex:1">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Cliente</div>
+        <div style="font-size:15px;font-weight:600">${escapeHtml(ticket.client||"")}</div>
+        ${phone ? `<div style="font-size:13px;color:#777;margin-top:2px">Tel: ${escapeHtml(phone)}</div>` : ""}
+      </div>
+      <div style="flex:1">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Equipo</div>
+        <div style="font-size:15px;font-weight:600">${escapeHtml(ticket.productName||ticket.device||"")}</div>
+        <div style="font-size:13px;color:#777;margin-top:2px">Estado: ${escapeHtml(ticket.status||"")}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Falla reportada</div>
+      <div style="font-size:14px;line-height:1.4">${escapeHtml(ticket.issue||"Sin especificar")}</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eee;padding-top:16px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <img src="${qrImage}" alt="QR" style="width:90px;height:90px"/>
+        <div style="font-size:12px;color:#777;max-width:180px">Escanea para ver el estado de tu reparación en tiempo real.</div>
+      </div>
+      <div style="text-align:right">
+        ${discAmt > 0 ? `<div style="font-size:13px;color:#777">Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}: -${money.format(discAmt)}</div>` : ""}
+        <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:#999">Total</div>
+        <div style="font-size:24px;font-weight:700;color:${secondary}">${money.format(total)}</div>
+      </div>
+    </div>
+    <div style="margin-top:24px;text-align:center;font-size:13px;font-weight:600;color:${primary}">
+      ★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★
+    </div>`;
+
+  document.body.appendChild(wrap);
+  try {
+    const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+    const imgData = canvas.toDataURL("image/png");
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "portrait", unit: "px", format: [canvas.width, canvas.height] });
+    pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+    const blob = pdf.output("blob");
+    const fileName = `ticket-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.pdf`;
+    const file = new File([blob], fileName, { type: "application/pdf" });
+    const shareText = `Ticket ${ticket.tracking} — ${brand.displayName}`;
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: shareText, text: shareText });
+        return;
+      } catch (err) {
+        if (err.name === "AbortError") return;
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("✓ PDF descargado — adjúntalo en el chat de WhatsApp");
+  } catch (err) {
+    console.error(err);
+    showErrorToast("No se pudo generar el PDF");
+  } finally {
+    wrap.remove();
+  }
+}
+window.shareTicketPDF = shareTicketPDF;
 
 // ── Centro de notificaciones (Supabase, tabla `notifications`) ──────────────
 // Antes vivía en localStorage (por navegador): los avisos no llegaban a nadie
