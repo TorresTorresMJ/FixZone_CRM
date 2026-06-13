@@ -7855,8 +7855,14 @@ async function shareTicketPDF(ticketId) {
     const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
     const imgData = canvas.toDataURL("image/png");
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: "portrait", unit: "px", format: [canvas.width, canvas.height] });
-    pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+    // Página A4 con márgenes de 10mm; la imagen se escala al ancho útil
+    // manteniendo proporción (el mapeo directo de px del canvas a unidades
+    // del PDF recortaba el lado derecho del contenido).
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth  = pdf.internal.pageSize.getWidth();
+    const imgWidth   = pageWidth - 20;
+    const imgHeight  = (canvas.height * imgWidth) / canvas.width;
+    pdf.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
     const blob = pdf.output("blob");
     const fileName = `ticket-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.pdf`;
     const file = new File([blob], fileName, { type: "application/pdf" });
