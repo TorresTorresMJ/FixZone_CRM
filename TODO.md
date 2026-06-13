@@ -141,8 +141,8 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Teléfono del cliente en ticket — campo `clientPhone` opcional en el form; al editar se pre-llena del registro existente.
 - [x] Auto-registrar cliente cuando hay nombre + teléfono al crear o editar un ticket (también actualiza teléfono si el cliente existe sin uno).
 - [x] Texto largo de descripción en cards — `word-break:break-word` + `-webkit-line-clamp:2` en ticket card y cotización card.
-- [ ](image-3.png)Que en el chat de notificaciones , cuando IT manda mensaje diga IT. O mejor, como hay roles repetidos, que se muestr el nombre del usuario plis, solo primer nombre. 
-- [ ] Mande mensaje en el centro de notificaciones y no le llegó a nadie, abrieron su centro de campanita y no aparecia nunfun mensaje de los que habia enviado. 
+- [x] Que en el chat de notificaciones , cuando IT manda mensaje diga IT. O mejor, como hay roles repetidos, que se muestr el nombre del usuario plis, solo primer nombre. — corregido: `addNotif()` ahora guarda `author_name` como el primer nombre real de `currentEmployee.full_name` (antes usaba `.name`, que no existía).
+- [x] Mande mensaje en el centro de notificaciones y no le llegó a nadie, abrieron su centro de campanita y no aparecia nunfun mensaje de los que habia enviado. — corregido: centro de notificaciones migrado a tabla Supabase `notifications` (migration 31), avisos ahora compartidos entre todos los usuarios en lugar de localStorage por navegador. Requiere aplicar `31_notifications.sql`.
 - [x] .photo-stage-group {} /* se usa?*/ — regla CSS vacía borrada de `ticket-track.html` (la clase sigue en el HTML, no requería estilos propios).
 - [x] Edito y guardo los mensajes rapidos en la seccion de automatizacion , pero al dar guardar, no respeta los cambios. — `renderQuickMessages()`/`renderWATemplates()` se re-renderizaban sobre el modo edición y perdían los cambios; ahora tienen guardas anti-reset y autosave.
 - [x] En "Diseño" al guardar un logo, se cambiaba el icono del logo de la página del CRM — agregada sección "📁 Biblioteca de assets de marca" (separada del "Editor de marca"). Permite subir logos en variantes (color, monocromático, sin fondo, negro), íconos sueltos, etc. a Storage (`ticket-photos/brand-assets/`), con galería para ver, copiar URL y descargar — sin afectar el branding activo del CRM. Cada archivo puede marcarse "Ambas marcas" o solo la sucursal activa. Migración `supabase/30_brand_assets.sql` ya aplicada y deployado (commit `81592b0`).
@@ -192,13 +192,13 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Toasts de éxito/error y confirm modal reemplazando alert/confirm nativos.
 - [x] **Sprint 3 — Design polish:** tipografía Outfit (body) + Orbitron solo brand mark, H1/H2 sin uppercase, iconografía unificada con Lucide, ghost-card shadows removidos, status badges con tokens de marca, marcatextos en finanzas corregido, atajos de teclado (N/P/D//, Escape), validación inline de formularios, empty states con CTAs, success toast, focus rings, scrollbar custom, reduced-motion.
 - [x] Simplificar impresión de tickets — un solo botón 🖨 por card que imprime automáticamente el recibo correcto según el estado (recepción / pago / garantía). Opciones específicas disponibles desde el detalle del ticket.
-- [ ] Centro de notificaciones — avisos en tiempo real para: ticket asignado, cambio de stage, respuesta en ticket IT. Tickets de Soporte IT con hilo de comentarios y seguimiento de estado visible para quien lo levantó.
+- [x] Centro de notificaciones — Fase 1: migrado a tabla Supabase `notifications` (migration 31), avisos broadcast compartidos entre todos los usuarios, autor con primer nombre real, polling cada 30s. Pendiente Fase 2: avisos automáticos para ticket asignado / cambio de stage / respuesta en ticket IT, y tickets de Soporte IT con hilo de comentarios y seguimiento de estado visible para quien lo levantó.
 - [x] Kanban compacto — columnas 240px, acciones ocultas/hover-reveal, tipografía reducida.
 - [x] Click en movimiento reciente en Home → abre vista Finanzas con el registro.
 - [x] Refresh mantiene la tab activa (sessionStorage).
 - [ ] Kanban tipo Hubspot — expandir card al click para leer info completa (read-only). Actualmente hay que ir a Editar.
 - [x] Revisar mobile en celular real (responsive implementado, pendiente QA).
-- [ ] Centro de notificaciones en tiempo real — ticket asignado, cambio de stage, comentarios IT.
+- [ ] Centro de notificaciones — Fase 2: avisos en tiempo real para ticket asignado, cambio de stage, comentarios IT.
 - [x] Desborde fuera del margen de los tickets y texto . Prioridad medai. *Arreglado con click en tickeet y abrir vista detalladad de ticket*
 
 ## Fase 14 - IT 

@@ -118,6 +118,7 @@ const seed = {
   servicePrices: [],
   invoices: [],
   brandAssets: [],
+  notifications: [],
 };
 
 let state = loadState();
@@ -360,6 +361,7 @@ async function reloadState() {
       servicePrices: remote.servicePrices       || [],
       invoices:      remote.invoices            || [],
       brandAssets:   remote.brandAssets         || [],
+      notifications: remote.notifications       || [],
     };
     return state;
   } finally {
@@ -385,12 +387,15 @@ async function afterLogin(authUser) {
       if (branch) activeBranchId = branch.name;
     }
     render();
+    renderNotifBadge();
+    if (!notifPollInterval) notifPollInterval = setInterval(pollNotifications, 30000);
   } catch(err) {
     console.error(err);
     supabaseClient.auth.signOut().catch(() => {});
     showLoginScreen(err.message || "Error al verificar acceso. Contacta a IT.");
   }
 }
+let notifPollInterval = null;
 
 async function resolveCurrentEmployee(authUser) {
   const user = authUser ?? (await supabaseClient.auth.getSession()).data.session?.user;
@@ -604,7 +609,7 @@ function currentPerms() {
 // REMOTE DATA
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadSupabaseState() {
-  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes,baRes] = await Promise.all([
+  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes,baRes,notifRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("name"),
     supabaseClient.from("employees").select("*").order("full_name"),
     supabaseClient.from("customers").select("*").order("created_at",{ascending:false}),
@@ -620,6 +625,7 @@ async function loadSupabaseState() {
     supabaseClient.from("service_prices").select("*"),
     supabaseClient.from("invoices").select("*").order("invoice_date",{ascending:false}),
     supabaseClient.from("brand_assets").select("*").order("created_at",{ascending:false}),
+    supabaseClient.from("notifications").select("*").order("created_at",{ascending:false}).limit(50),
   ]);
 
   const branchRows   = bRes.data  || [];
@@ -750,6 +756,15 @@ async function loadSupabaseState() {
       fileUrl:a.file_url, fileName:a.file_name||"",
       createdAt:(a.created_at||"").slice(0,10),
     })),
+    notifications: (notifRes.data||[]).map(n => ({
+      id:n.id, type:n.type||"broadcast", text:n.text,
+      authorName:n.author_name||"Equipo", authorId:n.author_id||null,
+      ticketId:n.ticket_id||null,
+      branch:branchRows.find(b=>b.id===n.branch_id)?.name||null,
+      recipientId:n.recipient_id||null,
+      readBy:Array.isArray(n.read_by) ? n.read_by : [],
+      createdAt:n.created_at,
+    })),
   };
 }
 
@@ -844,6 +859,12 @@ function branchSupplies()      { return state.supplies.filter(s => !s.branch || 
 function branchTransactions()  { return state.transactions.filter(t => !t.branch || t.branch === activeBranchId); }
 function branchInvoices()      { return (state.invoices||[]).filter(i => !i.branch || i.branch === activeBranchId); }
 function branchBrandAssets()   { return (state.brandAssets||[]).filter(a => !a.branch || a.branch === activeBranchId); }
+function visibleNotifications() {
+  const myId = currentEmployeeId();
+  return (state.notifications||[])
+    .filter(n => !n.branch || n.branch === activeBranchId)
+    .filter(n => !n.recipientId || n.recipientId === myId);
+}
 function sumByType(list, type) { return list.filter(i=>i.type===type).reduce((s,i)=>s+Number(i.amount||0),0); }
 
 function renderMetrics() {
@@ -7572,41 +7593,84 @@ function printCotizacion(ticket) {
   doPrint();
 }
 
-// ── Centro de notificaciones internas ────────────────────────────────────────
-const NOTIF_KEY = "fixzone-internal-notifs-v1";
+// ── Centro de notificaciones (Supabase, tabla `notifications`) ──────────────
+// Antes vivía en localStorage (por navegador): los avisos no llegaban a nadie
+// más. Ahora se guardan en Supabase y son visibles para todos los empleados
+// activos (recipient_id null = broadcast, branch_id null = ambas sucursales).
 
-function loadNotifs() {
-  try { return JSON.parse(localStorage.getItem(NOTIF_KEY) || "[]"); } catch { return []; }
+function firstName(fullName) {
+  return (fullName || "Equipo").trim().split(/\s+/)[0];
 }
-function saveNotifs(arr) { localStorage.setItem(NOTIF_KEY, JSON.stringify(arr)); }
 
-function addNotif({ type = "aviso", text, author, ticketId = null }) {
-  const notifs = loadNotifs();
-  notifs.unshift({ id: Date.now().toString(), type, text, author: author || currentEmployee?.name || "Sistema", ticketId, ts: new Date().toISOString(), read: false });
-  saveNotifs(notifs);
+async function addNotif({ type = "broadcast", text, ticketId = null, branchId = null, recipientId = null }) {
+  const payload = {
+    type, text,
+    author_id: currentEmployeeId(),
+    author_name: firstName(currentEmployee?.full_name),
+    ticket_id: ticketId,
+    branch_id: branchId,
+    recipient_id: recipientId,
+  };
+  const { data, error } = await supabaseClient.from("notifications").insert(payload).select().single();
+  if (error) throw error;
+  state.notifications = [{
+    id:data.id, type:data.type, text:data.text,
+    authorName:data.author_name, authorId:data.author_id,
+    ticketId:data.ticket_id,
+    branch:branchId ? activeBranchId : null,
+    recipientId:data.recipient_id,
+    readBy:Array.isArray(data.read_by) ? data.read_by : [],
+    createdAt:data.created_at,
+  }, ...(state.notifications||[])];
   renderNotifBadge();
 }
 
-function markAllNotifsRead() {
-  const notifs = loadNotifs().map(n => ({ ...n, read: true }));
-  saveNotifs(notifs);
+async function markAllNotifsRead() {
+  const myId = currentEmployeeId();
+  if (!myId) return;
+  const unread = visibleNotifications().filter(n => !n.readBy.includes(myId));
+  for (const n of unread) n.readBy = [...n.readBy, myId];
   renderNotifBadge();
+  await Promise.all(unread.map(n =>
+    supabaseClient.from("notifications").update({ read_by: n.readBy }).eq("id", n.id)
+  )).catch(err => console.warn("No se pudo marcar notificaciones como leídas:", err));
 }
 
 function renderNotifBadge() {
   const badge = document.getElementById("notif-badge");
   if (!badge) return;
-  const unread = loadNotifs().filter(n => !n.read).length;
+  const myId = currentEmployeeId();
+  const unread = visibleNotifications().filter(n => !n.readBy.includes(myId)).length;
   badge.textContent = unread > 9 ? "9+" : unread;
   badge.style.display = unread > 0 ? "" : "none";
 }
 
-function openNotifPanel() {
-  const notifs = loadNotifs();
-  markAllNotifsRead();
+async function pollNotifications() {
+  try {
+    const { data, error } = await supabaseClient.from("notifications")
+      .select("*").order("created_at",{ascending:false}).limit(50);
+    if (error) throw error;
+    state.notifications = (data||[]).map(n => ({
+      id:n.id, type:n.type||"broadcast", text:n.text,
+      authorName:n.author_name||"Equipo", authorId:n.author_id||null,
+      ticketId:n.ticket_id||null,
+      branch:(state.branches||[]).find(b=>b.id===n.branch_id)?.name||null,
+      recipientId:n.recipient_id||null,
+      readBy:Array.isArray(n.read_by) ? n.read_by : [],
+      createdAt:n.created_at,
+    }));
+    renderNotifBadge();
+  } catch (err) {
+    console.warn("No se pudieron actualizar las notificaciones:", err);
+  }
+}
 
+function openNotifPanel() {
   const existing = document.getElementById("notif-panel-overlay");
   if (existing) { existing.remove(); return; }
+
+  const notifs = visibleNotifications();
+  markAllNotifsRead();
 
   const isAdmin = ["admin","it","owner"].includes(currentEmployee?.role);
 
@@ -7614,11 +7678,11 @@ function openNotifPanel() {
     const ticket = n.ticketId ? state.tickets.find(t => t.id === n.ticketId) : null;
     const ticketRef = ticket ? `<span style="font-size:10px;color:var(--fz-primary,#085ACB);margin-left:6px">${escapeHtml(ticket.tracking)}</span>` : "";
     const typeIcon = n.type === "broadcast" ? "📢" : n.ticketId ? "🎫" : "💬";
-    const ts = n.ts ? new Date(n.ts).toLocaleString("es-MX",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
+    const ts = n.createdAt ? new Date(n.createdAt).toLocaleString("es-MX",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
     return `<div style="padding:12px;border-bottom:1px solid rgba(255,255,255,.07)">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
         <span>${typeIcon}</span>
-        <strong style="font-size:12px">${escapeHtml(n.author)}</strong>
+        <strong style="font-size:12px">${escapeHtml(n.authorName)}</strong>
         ${ticketRef}
         <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,.35)">${ts}</span>
       </div>
@@ -7638,7 +7702,7 @@ function openNotifPanel() {
 
   const overlay = document.createElement("div");
   overlay.id = "notif-panel-overlay";
-  overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;justify-content:flex-end;background:rgba(0,0,0,.4)";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:var(--z-modal);display:flex;justify-content:flex-end;background:rgba(0,0,0,.4)";
   overlay.innerHTML = `
     <div style="width:360px;max-width:95vw;height:100%;background:var(--fz-surface,#1e1e2e);display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.4)">
       <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:space-between">
@@ -7653,23 +7717,24 @@ function openNotifPanel() {
   overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
 
-  overlay.querySelector("#notif-broadcast-send")?.addEventListener("click", () => {
+  overlay.querySelector("#notif-broadcast-send")?.addEventListener("click", async () => {
     const input = overlay.querySelector("#notif-broadcast-input");
     const text  = input?.value?.trim();
     if (!text) return;
-    addNotif({ type: "broadcast", text, author: currentEmployee?.name || "Admin" });
-    input.value = "";
-    overlay.remove();
-    openNotifPanel();
-    showToast("✓ Aviso enviado al equipo");
+    try {
+      await addNotif({ type: "broadcast", text });
+      overlay.remove();
+      openNotifPanel();
+      showToast("✓ Aviso enviado al equipo");
+    } catch (err) {
+      console.error(err);
+      showErrorToast("No se pudo enviar el aviso");
+    }
   });
   overlay.querySelector("#notif-broadcast-input")?.addEventListener("keydown", e => {
     if (e.key === "Enter") overlay.querySelector("#notif-broadcast-send")?.click();
   });
 }
-
-// Inicializar badge al cargar
-renderNotifBadge();
 
 function shareQuoteWhatsApp(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
