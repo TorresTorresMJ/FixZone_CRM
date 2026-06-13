@@ -242,6 +242,7 @@ const formSchemas = {
     title: "Nueva cotización", collection: "tickets",
     fields: [
       ["client","Cliente","text"],
+      ["clientPhone","Teléfono de contacto (opcional)","tel",null,false,true],
       ["productName","Dispositivo / equipo","device-autocomplete"],
       ["branch","Sucursal","select",BRANCHES],
       ["notes","Notas","text",null,true,true],
@@ -1100,9 +1101,12 @@ function quoteCard(ticket, perms) {
   const itemsHtml = items.length
     ? `<div style="margin:8px 0 4px">
         ${items.map(i => `
-          <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:rgba(255,255,255,.72)">
-            <span>${escapeHtml(i.type)} — ${escapeHtml(i.description||"")}</span>
-            <span style="white-space:nowrap;margin-left:8px">${i.qty>1?i.qty+"× ":""}${money.format(i.qty*i.unitPrice)}</span>
+          <div style="padding:2px 0">
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,.72)">
+              <span>${escapeHtml(i.type)} — ${escapeHtml(i.description||"")}</span>
+              <span style="white-space:nowrap;margin-left:8px">${i.qty>1?i.qty+"× ":""}${money.format(i.qty*i.unitPrice)}</span>
+            </div>
+            ${i.note ? `<div style="font-size:11px;color:rgba(255,255,255,.45);font-style:italic;margin-top:1px">${escapeHtml(i.note)}</div>` : ""}
           </div>`).join("")}
         <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,.1)">
           <span>Total estimado</span><span style="color:var(--fz-secondary,#2678E8)">${money.format(repair)}</span>
@@ -1121,7 +1125,7 @@ function quoteCard(ticket, perms) {
     ${ticket.issue ? `<p style="margin:4px 0;font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;overflow-wrap:break-word">${escapeHtml(ticket.issue)}</p>` : ""}
     ${itemsHtml}
     <div class="ticket-actions">
-      <button class="mini-button" data-print-cotizacion="${ticket.id}">🖨 Imprimir</button>
+      <button class="mini-button" data-image-cotizacion="${ticket.id}">🖼️ Descargar imagen</button>
       <button class="mini-button" style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);color:#25d366" data-wa-quote="${ticket.id}">💬 WhatsApp</button>
       ${!ticket.convertedToTicket ? `<button class="primary-action" style="font-size:12px;padding:5px 12px;min-height:0" data-approve-quote="${ticket.id}">✓ Aprobar</button>` : ""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
@@ -4335,6 +4339,13 @@ function renderQuoteItemsDraft() {
           : "0 = captura precio fijo arriba"}</span>
       </div>` : "";
 
+    const noteRow = `
+      <div style="grid-column:1/-1;padding:0 0 5px 8px">
+        <input class="qi-note" data-idx="${idx}" type="text"
+          placeholder="Nota para el cliente (ej. pieza original, 3 MSI, llega en 3 días)…"
+          value="${escapeHtml(item.note||"")}" style="width:100%;font-size:11px;${INP}">
+      </div>`;
+
     return `
     <div class="qi-row" style="display:grid;grid-template-columns:100px 1fr 52px 88px 26px;gap:6px;align-items:center;margin-bottom:2px">
       <select class="qi-type" data-idx="${idx}" style="font-size:12px;padding:5px 6px;${INP}">
@@ -4346,6 +4357,7 @@ function renderQuoteItemsDraft() {
         style="font-size:13px;${INP};${hasCosto?"border-color:rgba(46,204,113,.35);background:rgba(46,204,113,.06)":""}">
       <button type="button" class="qi-del" data-idx="${idx}" title="Eliminar" style="padding:2px 5px;font-size:13px;opacity:.5;cursor:pointer;background:none;border:none;color:inherit">✕</button>
       ${insumoRow}
+      ${noteRow}
     </div>`;
   }).join("");
   updateQuoteItemsHiddenInputs();
@@ -4397,6 +4409,7 @@ function initQuoteItemsBuilder(existingItems = []) {
     if (e.target.classList.contains("qi-desc"))        quoteItemsDraft[idx].description = e.target.value;
     else if (e.target.classList.contains("qi-qty"))    quoteItemsDraft[idx].qty = Math.max(1, Number(e.target.value)||1);
     else if (e.target.classList.contains("qi-price"))  quoteItemsDraft[idx].unitPrice = Number(e.target.value)||0;
+    else if (e.target.classList.contains("qi-note"))   quoteItemsDraft[idx].note = e.target.value;
     else if (e.target.classList.contains("qi-insumo")) {
       const costo = Number(e.target.value) || 0;
       quoteItemsDraft[idx].insumoCost = costo;
@@ -6996,11 +7009,11 @@ document.addEventListener("click", async e => {
   const abonoBtn = e.target.closest("[data-abono-ticket]");
   if (abonoBtn) { openAbonoModal(abonoBtn.dataset.abonoTicket); return; }
 
-  // Print cotización
-  const printCot = e.target.closest("[data-print-cotizacion]");
-  if (printCot) {
-    const t = state.tickets.find(i => i.id === printCot.dataset.printCotizacion);
-    if (t) printCotizacion(t);
+  // Descargar imagen de cotización
+  const imageCot = e.target.closest("[data-image-cotizacion]");
+  if (imageCot) {
+    const t = state.tickets.find(i => i.id === imageCot.dataset.imageCotizacion);
+    if (t) generateCotizacionImage(t);
     return;
   }
 
@@ -7326,14 +7339,11 @@ function printRecibo(ticket, type) {
   } else if (type === "pago") {
     body = `
       <p class="rct-dash">${D}</p>
-      <p class="rct-label">CONCEPTO:</p>
+      <p class="rct-label">DESCRIPCIÓN:</p>
       <p class="rct-value">${escapeHtml(ticket.issue)}</p>
       <p class="rct-dash">${D}</p>
-      <table class="rct-table"><thead><tr><th>Descripción</th><th>Importe</th></tr></thead>
-      <tbody>
-        <tr><td>${escapeHtml(ticket.issue||"Servicio de reparación")}</td><td>${money.format(repair)}</td></tr>
-        ${discount>0?`<tr><td>Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</td><td>-${money.format(discount)}</td></tr>`:""}
-      </tbody></table>
+      <p class="rct-row"><strong>COSTO DE REPARACIÓN:</strong> <span>${money.format(repair)}</span></p>
+      ${discount>0?`<p class="rct-row"><strong>DESCUENTO${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}:</strong> <span>-${money.format(discount)}</span></p>`:""}
       <p class="rct-dash">${D}</p>
       <div class="rct-totals">
         <div class="rct-total-row rct-total-main"><span>TOTAL</span><strong>${money.format(total)}</strong></div>
@@ -7533,64 +7543,105 @@ function printTicket(ticket) {
   doPrint();
 }
 
-function printCotizacion(ticket) {
-  const brand   = window.getBranchBrand(ticket.branch || activeBranchId);
-  const items   = ticket.quoteItems || [];
-  const subtotal= Number(ticket.repairAmount || 0);
-  const discAmt = Number(ticket.discountAmount || 0);
-  const total   = Math.max(0, subtotal - discAmt);
-  const D       = "─".repeat(40);
-  const now     = new Date();
-  const timeStr = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
-  const client  = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
-  document.documentElement.style.setProperty("--receipt-width", "58mm");
+// Genera una imagen PNG de la cotización (para compartir por WhatsApp), con
+// un layout de tarjeta legible — no el formato angosto de ticket térmico.
+// Nunca incluye el costo de insumo (insumoCost): solo descripción, nota,
+// cantidad, precio e importe.
+async function generateCotizacionImage(ticket) {
+  if (typeof html2canvas !== "function") {
+    showErrorToast("No se pudo generar la imagen: librería no disponible");
+    return;
+  }
+  const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
+  const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
+  const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
+  const items    = ticket.quoteItems || [];
+  const subtotal = Number(ticket.repairAmount || 0);
+  const discAmt  = Number(ticket.discountAmount || 0);
+  const total    = Math.max(0, subtotal - discAmt);
+  const now      = new Date();
+  const timeStr  = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
+  const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const phone    = ticket.clientPhone || client?.phone || "";
 
-  document.querySelector("#print-receipt").innerHTML = `
-<div class="rct">
-  <div class="rct-logo"><img src="${brand.logoMonoSrc||brand.logoSrc}" alt="${brand.displayName}" onerror="this.src='${brand.logoSrc}';this.onerror=null"/></div>
-  <p class="rct-dash">${D}</p>
-  <p class="rct-center rct-title">COTIZACIÓN</p>
-  <p class="rct-dash">${D}</p>
-  <p class="rct-row"><strong>NO. COTIZACIÓN:</strong> <span>${escapeHtml(ticket.tracking)}</span></p>
-  <p class="rct-row"><strong>FECHA:</strong> <span>${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</span></p>
-  <p class="rct-row"><strong>SUCURSAL:</strong> <span>${escapeHtml(brand.displayName)}</span></p>
-  <p class="rct-dash">${D}</p>
-  <p class="rct-label">CLIENTE:</p>
-  <p class="rct-value">${escapeHtml(ticket.client)}</p>
-  ${client?.phone ? `<p class="rct-value">Tel: ${escapeHtml(client.phone)}</p>` : ""}
-  <p class="rct-dash">${D}</p>
-  <p class="rct-label">EQUIPO / PRODUCTO:</p>
-  <p class="rct-value">${escapeHtml(ticket.productName)}</p>
-  ${ticket.issue ? `<p class="rct-value" style="margin-top:4px"><strong>Descripción:</strong> ${escapeHtml(ticket.issue)}</p>` : ""}
-  <p class="rct-dash">${D}</p>
-  <table class="rct-table">
-    <thead><tr><th>Descripción</th><th>Cant.</th><th>Precio</th><th>Importe</th></tr></thead>
-    <tbody>
-      ${items.length
-        ? items.map(i => `<tr>
-            <td>${escapeHtml(i.description||"")} <span style="font-size:9px;opacity:.55">(${escapeHtml(i.type||"")})</span></td>
-            <td style="text-align:center">${i.qty}</td>
-            <td style="text-align:right">${money.format(i.unitPrice)}</td>
-            <td style="text-align:right">${money.format(i.qty*i.unitPrice)}</td>
-          </tr>`).join("")
-        : `<tr><td colspan="4">${escapeHtml(ticket.issue||"Servicio de reparación")}</td></tr>`
-      }
-    </tbody>
-  </table>
-  <p class="rct-dash">${D}</p>
-  <div class="rct-totals">
-    ${items.length ? `<div class="rct-total-row"><span>Subtotal</span><span>${money.format(subtotal)}</span></div>` : ""}
-    ${discAmt > 0 ? `<div class="rct-total-row"><span>Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</span><span>-${money.format(discAmt)}</span></div>` : ""}
-    <div class="rct-total-row rct-total-main"><span>TOTAL ESTIMADO</span><strong>${money.format(total)}</strong></div>
-  </div>
-  <p class="rct-dash">${D}</p>
-  <p class="rct-value" style="font-size:9pt;opacity:.65;text-align:center">Esta cotización tiene una vigencia de 15 días naturales a partir de la fecha de emisión. Los precios pueden variar según el diagnóstico definitivo.</p>
-  <p class="rct-dash">${D}</p>
-  <p class="rct-thanks">★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★</p>
-  <p class="rct-dash">${D}</p>
-  <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE AUTORIZACIÓN DEL CLIENTE</p></div>
-</div>`;
-  doPrint();
+  const rowsHtml = items.length
+    ? items.map(i => `
+        <tr>
+          <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top">
+            <div style="font-weight:600;color:#1a1a1a">${escapeHtml(i.description||"")}</div>
+            ${i.note ? `<div style="font-size:12px;color:#777;margin-top:2px;font-style:italic">${escapeHtml(i.note)}</div>` : ""}
+          </td>
+          <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;color:#1a1a1a">${i.qty}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;color:#1a1a1a">${money.format(i.unitPrice)}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;color:#1a1a1a">${money.format(i.qty*i.unitPrice)}</td>
+        </tr>`).join("")
+    : `<tr><td colspan="4" style="padding:10px 8px;border-bottom:1px solid #eee;color:#1a1a1a">${escapeHtml(ticket.issue||"Servicio de reparación")}</td></tr>`;
+
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:640px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;padding:32px;box-sizing:border-box";
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${primary};padding-bottom:16px;margin-bottom:20px">
+      <img src="${brand.logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:48px;object-fit:contain" onerror="this.style.display='none'"/>
+      <div style="text-align:right">
+        <div style="font-size:20px;font-weight:700;letter-spacing:.04em;color:${primary}">COTIZACIÓN</div>
+        <div style="font-size:13px;color:#777">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:24px;margin-bottom:20px">
+      <div style="flex:1">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Cliente</div>
+        <div style="font-size:15px;font-weight:600">${escapeHtml(ticket.client||"")}</div>
+        ${phone ? `<div style="font-size:13px;color:#777;margin-top:2px">Tel: ${escapeHtml(phone)}</div>` : ""}
+      </div>
+      <div style="flex:1">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Equipo</div>
+        <div style="font-size:15px;font-weight:600">${escapeHtml(ticket.productName||"")}</div>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead>
+        <tr style="background:${primary};color:#fff">
+          <th style="padding:8px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.03em">Descripción</th>
+          <th style="padding:8px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:.03em">Cant.</th>
+          <th style="padding:8px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.03em">Precio</th>
+          <th style="padding:8px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.03em">Importe</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;margin-top:14px;gap:4px;font-size:14px">
+      ${items.length ? `<div style="display:flex;gap:24px;color:#777"><span>Subtotal</span><span>${money.format(subtotal)}</span></div>` : ""}
+      ${discAmt > 0 ? `<div style="display:flex;gap:24px;color:#777"><span>Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</span><span>-${money.format(discAmt)}</span></div>` : ""}
+      <div style="display:flex;gap:24px;align-items:baseline;margin-top:4px">
+        <span style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.03em">Total estimado</span>
+        <span style="font-size:22px;font-weight:700;color:${secondary}">${money.format(total)}</span>
+      </div>
+    </div>
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid #eee;font-size:12px;color:#999;text-align:center">
+      Esta cotización tiene una vigencia de 15 días naturales a partir de la fecha de emisión. Los precios pueden variar según el diagnóstico definitivo.
+    </div>
+    <div style="margin-top:8px;text-align:center;font-size:13px;font-weight:600;color:${primary}">
+      ★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★
+    </div>`;
+
+  document.body.appendChild(wrap);
+  try {
+    const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("No se pudo generar la imagen");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cotizacion-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("✓ Imagen descargada");
+  } catch (err) {
+    console.error(err);
+    showErrorToast("No se pudo generar la imagen");
+  } finally {
+    wrap.remove();
+  }
 }
 
 // ── Centro de notificaciones (Supabase, tabla `notifications`) ──────────────
@@ -7746,7 +7797,7 @@ function shareQuoteWhatsApp(ticketId) {
   const total   = Math.max(0, subtotal - discAmt);
 
   const linesText = items.length
-    ? items.map(i => `  • ${i.description||i.type} — ${i.qty>1?i.qty+"×":""}${money.format(i.qty*i.unitPrice)}`).join("\n")
+    ? items.map(i => `  • ${i.description||i.type} — ${i.qty>1?i.qty+"×":""}${money.format(i.qty*i.unitPrice)}${i.note?`\n    _${i.note}_`:""}`).join("\n")
     : `  • ${ticket.issue||"Servicio"} — ${money.format(subtotal)}`;
 
   const waTemplate = getWATemplates()["cotizacion"] || null;

@@ -1321,13 +1321,14 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     text-align: left;
     color: #fff;
     background: #000;
+    box-sizing: border-box;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
 
   .rct-table th:first-child,
   .rct-table td:first-child {
-    width: auto;
+    width: calc(100% - 18mm);
     word-break: break-word;
     overflow-wrap: break-word;
   }
@@ -1347,6 +1348,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     border-bottom: 1px dotted #666;
     word-break: break-word;
     overflow-wrap: break-word;
+    box-sizing: border-box;
   }
 
   /* ── Totals block ─────────────────────────────────────── */
