@@ -125,6 +125,10 @@
                 style="width:100%;text-align:left;padding:8px 12px;font-size:13px;color:#ff6b6b">Salir</button>
             </div>
             <button class="help-button" id="help-button" title="Contactar a IT">?</button>
+            <button class="icon-button" id="my-requests-button" title="Mis solicitudes de soporte" aria-label="Mis solicitudes de soporte"
+              style="padding:0;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">
+              <i data-lucide="inbox" style="width:18px;height:18px;"></i>
+            </button>
             <button class="ghost-button is-hidden" id="logout-button">Salir</button>
           </div>
           <label class="search-box">
@@ -317,6 +321,11 @@
               <button class="mini-button fin-filter" data-fin="today">Hoy</button>
               <button class="mini-button fin-filter" data-fin="week">7 días</button>
               <button class="mini-button fin-filter" data-fin="all">Todo</button>
+            </div>
+            <div id="finance-type-bar" style="display:flex;gap:6px">
+              <button class="mini-button fin-type-filter is-active" data-fin-type="all">Todos</button>
+              <button class="mini-button fin-type-filter" data-fin-type="Ingreso">Ingresos</button>
+              <button class="mini-button fin-type-filter" data-fin-type="Egreso">Egresos</button>
             </div>
             <button class="ghost-button" data-export-sheet="transactions">XLS</button>
             <button class="mini-button" id="btn-new-ingreso" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>
@@ -709,6 +718,18 @@
         <button class="primary-action" type="submit" id="send-help">Enviar a IT</button>
       </menu>
     </form>
+  </dialog>
+
+  <!-- ── Mis solicitudes de soporte ───────────────────────────────────────── -->
+  <dialog class="modal help-modal" id="my-requests-modal">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Soporte interno</p>
+        <h2>Mis solicitudes</h2>
+      </div>
+      <button class="icon-button" type="button" id="close-my-requests-modal" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="help-form-body" id="my-requests-body" style="max-height:60vh;overflow-y:auto"></div>
   </dialog>
 
   <!-- Print options floating panel -->

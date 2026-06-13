@@ -202,7 +202,7 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Desborde fuera del margen de los tickets y texto . Prioridad medai. *Arreglado con click en tickeet y abrir vista detalladad de ticket*
 
 ## Fase 14 - IT 
-- [ ] Que en cada task de IT permita la comunciacion IT <> Usuario
+- [x] Que en cada task de IT permita la comunciacion IT <> Usuario — hilo de comentarios (`support_task_comments`, migration 32) en el modal de Editar tarea (IT) y en el nuevo modal "Mis solicitudes" (ícono 📥 junto al botón de ayuda), con aviso al centro de notificaciones cuando hay respuesta.
 - [ ] Poner que se peuda adjuntar fotos en los tickets para IT que crean los usuarios. 
 
 ---

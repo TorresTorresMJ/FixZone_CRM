@@ -721,6 +721,7 @@ async function loadSupabaseState() {
     supportTasks: (stRes.data||[]).map(t => ({
       id:t.id, title:t.title, description:t.description||"", priority:t.priority,
       status:t.status, assignedTo:t.employees?.full_name||"Sin asignar",
+      assignedToId:t.assigned_to||null, createdBy:t.created_by||null,
       createdAt:(t.created_at||"").slice(0,10),
     })),
     posSales: (psRes.data||[]).map(s => ({
@@ -2225,6 +2226,7 @@ function checkoutPos() {
 }
 
 let financePeriod = "month"; // "today" | "week" | "month" | "all"
+let financeTypeFilter = "all"; // "all" | "Ingreso" | "Egreso"
 
 function localDateMinus(days) {
   const d = new Date(); d.setDate(d.getDate() - days);
@@ -2232,11 +2234,12 @@ function localDateMinus(days) {
 }
 
 function financeFilteredTxs() {
-  const all   = branchTransactions();
+  let all   = branchTransactions();
   const today = dateStamp();
-  if (financePeriod === "today") return all.filter(t => t.date === today);
-  if (financePeriod === "week")  return all.filter(t => t.date >= localDateMinus(6));
-  if (financePeriod === "month") return all.filter(t => t.date >= today.slice(0,7)+"-01");
+  if (financePeriod === "today") all = all.filter(t => t.date === today);
+  else if (financePeriod === "week")  all = all.filter(t => t.date >= localDateMinus(6));
+  else if (financePeriod === "month") all = all.filter(t => t.date >= today.slice(0,7)+"-01");
+  if (financeTypeFilter !== "all") all = all.filter(t => t.type === financeTypeFilter);
   return all;
 }
 
@@ -2251,6 +2254,8 @@ function renderFinance() {
   // Update active filter button in the static HTML bar
   document.querySelectorAll(".fin-filter").forEach(b =>
     b.classList.toggle("is-active", b.dataset.fin === financePeriod));
+  document.querySelectorAll(".fin-type-filter").forEach(b =>
+    b.classList.toggle("is-active", b.dataset.finType === financeTypeFilter));
 
   // Show/hide action buttons based on permission
   const bi = document.querySelector("#btn-new-ingreso");
@@ -3078,6 +3083,72 @@ function supportTaskCard(task, perms) {
       ${perms.canDeleteTask?`<button class="mini-button danger-btn" data-delete-task="${task.id}">Eliminar</button>`:""}
     </div>
   </article>`;
+}
+
+// ── Hilo de comentarios (comunicación IT <> Usuario en tareas de soporte) ────
+async function renderSupportCommentThread(containerEl, task, notifyRecipientId) {
+  containerEl.innerHTML = `<p class="muted" style="font-size:12px">Cargando conversación…</p>`;
+  const { data, error } = await supabaseClient
+    .from("support_task_comments")
+    .select("*")
+    .eq("task_id", task.id)
+    .order("created_at", { ascending: true });
+  if (error) {
+    containerEl.innerHTML = `<p class="muted" style="font-size:12px">No se pudo cargar la conversación.</p>`;
+    return;
+  }
+
+  const itRoles = ["admin","it","owner"];
+  const rows = (data||[]).map(c => {
+    const author = (state.employees||[]).find(e => e.id === c.author_id);
+    const isIT = author && itRoles.includes(author.role);
+    const when = (c.created_at||"").slice(0,16).replace("T"," ");
+    return `<div style="display:flex;gap:10px;align-items:flex-start;font-size:12px;padding:6px 0">
+      <div style="width:8px;height:8px;border-radius:50%;background:${isIT?"var(--fz-primary,#2F6FFF)":"rgba(255,255,255,.25)"};margin-top:5px;flex-shrink:0"></div>
+      <div>
+        <strong>${escapeHtml(c.author_name||"Usuario")}</strong>${isIT?` <span class="status" style="font-size:9px">IT</span>`:""}
+        <span class="muted" style="margin-left:6px">${when}</span>
+        <p style="margin:2px 0 0">${escapeHtml(c.text)}</p>
+      </div>
+    </div>`;
+  }).join("") || `<p class="muted" style="font-size:12px">Sin mensajes todavía.</p>`;
+
+  containerEl.innerHTML = `
+    <div style="max-height:220px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:8px">${rows}</div>
+    <div style="display:flex;gap:8px">
+      <input type="text" placeholder="Escribe una respuesta…" class="support-comment-input" style="flex:1" />
+      <button type="button" class="mini-button support-comment-send">Enviar</button>
+    </div>`;
+
+  const input = containerEl.querySelector(".support-comment-input");
+  const sendBtn = containerEl.querySelector(".support-comment-send");
+  const send = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    sendBtn.disabled = true;
+    try {
+      const { error: insErr } = await supabaseClient.from("support_task_comments").insert({
+        task_id: task.id, text,
+        author_id: currentEmployeeId(),
+        author_name: currentEmployee?.full_name || "Usuario",
+      });
+      if (insErr) throw insErr;
+      if (notifyRecipientId && notifyRecipientId !== currentEmployeeId()) {
+        addNotif({
+          type: "support", text: `${firstName(currentEmployee?.full_name)} respondió en "${task.title}"`,
+          ticketId: null, recipientId: notifyRecipientId,
+        }).catch(err => console.warn("No se pudo notificar:", err));
+      }
+      input.value = "";
+      await renderSupportCommentThread(containerEl, task, notifyRecipientId);
+    } catch(err) {
+      showErrorToast(`No se pudo enviar: ${err.message}`);
+    } finally {
+      sendBtn.disabled = false;
+    }
+  };
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
 }
 
 // ── Contaduría ───────────────────────────────────────────────────────────────
@@ -4123,8 +4194,18 @@ function openEditSupportTask(taskId) {
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["supportTasks"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, task[name] ?? "", optional)
-  ).join("");
+  ).join("") + `<div class="field is-wide" style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">
+      <label style="font-size:12px;text-transform:uppercase;letter-spacing:.06em">Conversación</label>
+      <div id="support-task-comments" style="margin-top:8px"></div>
+    </div>`;
   openModal();
+  const commentsEl = formFields.querySelector("#support-task-comments");
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId);
+  if (commentsEl && isUUID) {
+    renderSupportCommentThread(commentsEl, task, task.createdBy);
+  } else if (commentsEl) {
+    commentsEl.innerHTML = `<p class="muted" style="font-size:12px">Disponible solo en tareas guardadas en Supabase.</p>`;
+  }
 }
 
 async function updateRemoteSupportTask(taskId, data) {
@@ -6454,7 +6535,55 @@ helpForm.addEventListener("submit", async e => {
     btn.disabled    = false;
   }
 });
- 
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MIS SOLICITUDES — hilo de comunicación del usuario con IT
+// ──────────────────────────────────────────────────────────────────────────────
+const myRequestsModal = document.querySelector("#my-requests-modal");
+document.querySelector("#my-requests-button").addEventListener("click", () => {
+  renderMyRequestsModal();
+  myRequestsModal.showModal();
+});
+document.querySelector("#close-my-requests-modal").addEventListener("click", () => myRequestsModal.close());
+
+function renderMyRequestsModal() {
+  const body = document.querySelector("#my-requests-body");
+  const myId = currentEmployeeId();
+  const tasks = (state.supportTasks||[]).filter(t => t.createdBy === myId)
+    .sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+
+  if (!tasks.length) {
+    body.innerHTML = `<p class="muted" style="font-size:13px;text-align:center;padding:24px 0">No has enviado solicitudes a IT todavía.</p>`;
+    return;
+  }
+
+  body.innerHTML = tasks.map(t => `
+    <div class="field is-wide" style="border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer" data-toggle-request="${t.id}">
+        <div>
+          <strong style="font-size:13px">${escapeHtml(t.title)}</strong>
+          <div class="muted" style="font-size:11px">${escapeHtml(t.createdAt||"")}</div>
+        </div>
+        <span class="status ${t.status==="Resuelto"?"ready":""}">${escapeHtml(t.status)}</span>
+      </div>
+      <div class="request-thread" data-thread="${t.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)"></div>
+    </div>
+  `).join("");
+
+  body.querySelectorAll("[data-toggle-request]").forEach(el => {
+    el.addEventListener("click", () => {
+      const taskId = el.dataset.toggleRequest;
+      const thread = body.querySelector(`.request-thread[data-thread="${taskId}"]`);
+      const isOpen = thread.style.display !== "none";
+      thread.style.display = isOpen ? "none" : "block";
+      if (!isOpen) {
+        const task = tasks.find(t => t.id === taskId);
+        renderSupportCommentThread(thread, task, task.assignedToId);
+      }
+    });
+  });
+}
+
 function showToast(message, html = "") {
   const existing = document.querySelector(".help-toast");
   if (existing) existing.remove();
@@ -6882,10 +7011,10 @@ document.querySelector("#reports-date-filter")?.addEventListener("click", e => {
 
 // Finance period filter — rendered dynamically so use delegated event on #finance-view parent
 document.querySelector("#finance-view")?.addEventListener("click", e => {
-  const btn = e.target.closest(".fin-filter");
-  if (!btn) return;
-  financePeriod = btn.dataset.fin;
-  renderFinance();
+  const periodBtn = e.target.closest(".fin-filter");
+  if (periodBtn) { financePeriod = periodBtn.dataset.fin; renderFinance(); return; }
+  const typeBtn = e.target.closest(".fin-type-filter");
+  if (typeBtn) { financeTypeFilter = typeBtn.dataset.finType; renderFinance(); return; }
 });
 
 document.querySelectorAll("[data-export-sheet]").forEach(btn => {
@@ -7157,6 +7286,8 @@ function handleDeleteTicket(id) {
       try {
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
         if (dataMode==="remote" && isUUID) {
+          const {error: txError} = await supabaseClient.from("transactions").delete().eq("ticket_id", id);
+          if (txError) throw txError;
           const {error} = await supabaseClient.from("service_tickets").delete().eq("id", id);
           if (error) throw error;
           await reloadState();
