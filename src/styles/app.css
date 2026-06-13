@@ -117,6 +117,10 @@ button { cursor: pointer; }
   height: 100vh;
   padding: 16px 14px;
   border-right: 1px solid rgba(255,255,255,0.08);
+  /* Acento sutil arriba del sidebar — usa --fz-dash-accent, que difiere ligeramente
+     entre FixZone (PV) y RefaxZone (Puebla), para que el personal distinga la
+     sucursal activa de un vistazo sin depender de un cambio de paleta completo. */
+  border-top: 3px solid var(--fz-dash-accent, transparent);
   background: linear-gradient(180deg, #070707 0%, #101217 58%, #08090c 100%);
   overflow-y: auto;
 }
@@ -366,7 +370,7 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 /* ── Metric grids ────────────────────────────────────────────────────────── */
 .metric-grid, .inventory-grid, .finance-summary {
   display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 14px;
 }
 /* Report-grid: columnas más densas — auto-fill para adaptarse al ancho */
@@ -381,6 +385,26 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
   border-radius: 8px;
   background: rgba(28,28,28,0.82);
   box-shadow: none;
+}
+
+/* ── Skeleton loaders — placeholder mientras cargan datos de Supabase ──────── */
+.skeleton-card {
+  height: 88px;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 8px;
+  background: linear-gradient(100deg,
+    rgba(255,255,255,0.04) 30%,
+    rgba(255,255,255,0.09) 50%,
+    rgba(255,255,255,0.04) 70%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-card { animation: none; }
 }
 
 .metric, .product-card { padding: 18px; }
@@ -852,7 +876,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .field option { color: #101217; }
 
 /* ── Kanban: columnas compactas, acciones revelan en hover ───────────────── */
-.kanban-column { min-width: 240px; width: 240px; padding: 12px 10px; }
+.kanban-column { min-width: 240px; width: clamp(240px, 22vw, 320px); padding: 12px 10px; }
 
 /* Acciones: se expanden en hover via max-height, overflow:hidden en card las contiene */
 .ticket-card .ticket-actions {
@@ -882,7 +906,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   .sidebar {
     position: sticky;
     top: 0;
-    z-index: 90;
+    z-index: var(--z-sticky);
     height: auto;
     flex-direction: row;
     align-items: center;
@@ -1123,9 +1147,10 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   color: #7af0b1;
   font-size: 14px;
   font-weight: 600;
-  z-index: 9999;
+  z-index: var(--z-toast);
   animation: toast-in 0.25s ease;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 @keyframes toast-in {
@@ -1136,7 +1161,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   background: rgba(231,76,60,0.18);
   border-color: rgba(231,76,60,0.45);
   color: #ff9f9f;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 @keyframes loadingBar {
   0%   { background-position: 200% 0; }
@@ -1678,7 +1704,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   position: absolute;
   top: calc(100% + 3px);
   left: 0; right: 0;
-  z-index: 9999;
+  z-index: var(--z-tooltip);
   background: #1a1a2e;
   border: 1px solid rgba(255,255,255,.15);
   border-radius: 8px;
@@ -1732,6 +1758,14 @@ input[type=number].pv-price { -moz-appearance: textfield; appearance: textfield;
   --ease-in-quart:  cubic-bezier(0.5, 0, 0.75, 0);
 }
 
+/* ── Z-index scale ───────────────────────────────────────────────────────── */
+:root {
+  --z-sticky:  90;   /* barras/encabezados sticky (sidebar móvil, thead) */
+  --z-tooltip: 1000; /* dropdowns y tooltips flotantes */
+  --z-modal:   2000; /* overlays propios (dialog usa top-layer del navegador) */
+  --z-toast:   9999; /* toasts, siempre por encima de todo */
+}
+
 /* ── View transitions ───────────────────────────────────────────────────── */
 @keyframes view-enter {
   from { opacity: 0; transform: translateY(10px); }
@@ -1760,6 +1794,15 @@ input[type=number].pv-price { -moz-appearance: textfield; appearance: textfield;
 }
 #tickets-view.is-entering .ticket-card {
   animation: card-enter 300ms var(--ease-out-expo) calc(var(--i, 0) * 28ms) both;
+}
+#reports-view.is-entering .report-card {
+  animation: card-enter 320ms var(--ease-out-expo) calc(min(var(--i, 0), 10) * 40ms) both;
+}
+#finance-view.is-entering .metric {
+  animation: card-enter 350ms var(--ease-out-expo) calc(var(--i, 0) * 55ms) both;
+}
+#clients-view.is-entering #clients-table tr {
+  animation: card-enter 260ms var(--ease-out-expo) calc(min(var(--i, 0), 12) * 22ms) both;
 }
 
 /* ── Modal open/close ───────────────────────────────────────────────────── */

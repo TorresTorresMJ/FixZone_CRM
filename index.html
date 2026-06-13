@@ -35,55 +35,55 @@
       <nav class="nav-list">
         <!-- Operaciones diarias -->
         <button class="nav-item is-active" data-view="dashboard" title="Home">
-          <span aria-hidden="true">⌂</span> Home
+          <span aria-hidden="true"><i data-lucide="home"></i></span> Home
         </button>
         <button class="nav-item" data-view="tickets" title="Tickets">
-          <span aria-hidden="true">✦</span> Tickets
+          <span aria-hidden="true"><i data-lucide="ticket"></i></span> Tickets
         </button>
         <button class="nav-item" data-view="cotizaciones" title="Cotizaciones">
           <span aria-hidden="true"><i data-lucide="clipboard-list"></i></span> Cotizaciones
         </button>
         <button class="nav-item" data-view="pos" title="Punto de Venta">
-          <span aria-hidden="true">⊞</span> POS
+          <span aria-hidden="true"><i data-lucide="shopping-cart"></i></span> POS
         </button>
         <button class="nav-item" data-view="clients" title="Clientes">
-          <span aria-hidden="true">◎</span> Clientes
+          <span aria-hidden="true"><i data-lucide="users"></i></span> Clientes
         </button>
         <hr class="nav-divider">
         <!-- Inventario -->
         <button class="nav-item" data-view="products" title="Productos">
-          <span aria-hidden="true">◈</span> Productos
+          <span aria-hidden="true"><i data-lucide="package"></i></span> Productos
         </button>
         <button class="nav-item" data-view="supplies" title="Insumos">
-          <span aria-hidden="true">◉</span> Insumos
+          <span aria-hidden="true"><i data-lucide="package-open"></i></span> Insumos
         </button>
         <button class="nav-item" data-view="precios" title="Tabla de precios">
-          <span aria-hidden="true">₱</span> Precios
+          <span aria-hidden="true"><i data-lucide="tags"></i></span> Precios
         </button>
         <hr class="nav-divider">
         <!-- Finanzas -->
         <button class="nav-item" data-view="finance" title="Finanzas">
-          <span aria-hidden="true">$</span> Finanzas
+          <span aria-hidden="true"><i data-lucide="wallet"></i></span> Finanzas
         </button>
         <button class="nav-item" data-view="reports" title="Reportes">
-          <span aria-hidden="true">≡</span> Reportes
+          <span aria-hidden="true"><i data-lucide="bar-chart-3"></i></span> Reportes
         </button>
         <hr class="nav-divider">
         <!-- Admin / roles específicos -->
         <button class="nav-item" data-view="users" title="Usuarios">
-          <span aria-hidden="true"><i data-lucide="users"></i></span> Usuarios
+          <span aria-hidden="true"><i data-lucide="user-cog"></i></span> Usuarios
         </button>
         <button class="nav-item" data-view="soporte" title="Soporte IT">
-          <span aria-hidden="true">⚙</span> Soporte
+          <span aria-hidden="true"><i data-lucide="life-buoy"></i></span> Soporte
         </button>
         <button class="nav-item" data-view="contaduria" title="Contaduría">
-          <span aria-hidden="true">🧾</span> Contaduría
+          <span aria-hidden="true"><i data-lucide="receipt"></i></span> Contaduría
         </button>
         <button class="nav-item" data-view="diseno" title="Diseño">
-          <span aria-hidden="true">✦</span> Diseño
+          <span aria-hidden="true"><i data-lucide="palette"></i></span> Diseño
         </button>
         <button class="nav-item" data-view="automatizacion" title="Automatización">
-          <span aria-hidden="true">⚡</span> Automatización
+          <span aria-hidden="true"><i data-lucide="zap"></i></span> Automatización
         </button>
       </nav>
 
@@ -147,7 +147,13 @@
 
       <!-- ── Dashboard ─────────────────────────────────────────────────── -->
       <section class="view is-visible" id="dashboard-view" data-title="Home">
-        <div class="metric-grid" id="metric-grid"></div>
+        <!-- Contenido inicial = skeletons; renderMetrics() los reemplaza al cargar -->
+        <div class="metric-grid" id="metric-grid">
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+        </div>
         <div id="stock-alert-banner"></div>
         <div class="split-layout">
           <section class="home">
@@ -155,14 +161,22 @@
               <h2>Tickets activos</h2>
               <button class="ghost-button" data-view-target="tickets">Ver todos</button>
             </div>
-            <div class="ticket-stack" id="active-ticket-list"></div>
+            <div class="ticket-stack" id="active-ticket-list">
+              <div class="skeleton-card" style="height:56px"></div>
+              <div class="skeleton-card" style="height:56px"></div>
+              <div class="skeleton-card" style="height:56px"></div>
+            </div>
           </section>
           <section class="home">
             <div class="section-heading">
               <h2>Movimiento reciente</h2>
               <button class="ghost-button" data-view-target="finance">Finanzas</button>
             </div>
-            <div class="activity-list" id="recent-activity"></div>
+            <div class="activity-list" id="recent-activity">
+              <div class="skeleton-card" style="height:48px"></div>
+              <div class="skeleton-card" style="height:48px"></div>
+              <div class="skeleton-card" style="height:48px"></div>
+            </div>
           </section>
         </div>
       </section>

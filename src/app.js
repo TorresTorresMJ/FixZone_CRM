@@ -374,6 +374,9 @@ async function afterLogin(authUser) {
       showChangePasswordScreen();
       return;
     }
+    // Revela el shell con skeletons (ver index.html) mientras reloadState() carga
+    // los datos de Supabase, en vez de dejar la pantalla en blanco/login.
+    showApp();
     await reloadState();
     dataMode = "remote";
     if (currentEmployee?.default_branch_id) {
@@ -381,7 +384,6 @@ async function afterLogin(authUser) {
         .find(b => b.id === currentEmployee.default_branch_id);
       if (branch) activeBranchId = branch.name;
     }
-    showApp();
     render();
   } catch(err) {
     console.error(err);
@@ -888,8 +890,8 @@ function renderMetrics() {
 
 function renderClients() {
   const perms = currentPerms();
-  document.querySelector("#clients-table").innerHTML = bySearch(branchClients()).map(c=>`
-    <tr>
+  document.querySelector("#clients-table").innerHTML = bySearch(branchClients()).map((c,i)=>`
+    <tr style="--i:${i}">
       <td><strong>${c.name}</strong><br><span class="muted">${c.email}</span></td>
       <td>${c.phone}</td><td>${c.device}</td><td>${c.lastVisit}</td>
       <td><span class="status">${c.status}</span></td>
@@ -2234,19 +2236,19 @@ function renderFinance() {
   // Metrics row
   document.querySelector("#finance-metrics").innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
-      <article class="metric">
+      <article class="metric" style="--i:0">
         <span>Ingresos</span>
         <strong class="type-income" style="font-size:22px">${money.format(income)}</strong>
       </article>
-      <article class="metric">
+      <article class="metric" style="--i:1">
         <span>Egresos</span>
         <strong class="type-expense" style="font-size:22px">${money.format(expenses)}</strong>
       </article>
-      <article class="metric">
+      <article class="metric" style="--i:2">
         <span>Balance</span>
         <strong class="${bal>=0?"type-income":"type-expense"}" style="font-size:22px">${money.format(bal)}</strong>
       </article>
-      <article class="metric">
+      <article class="metric" style="--i:3">
         <span>Margen</span>
         <strong class="${margin>=0?"type-income":"type-expense"}" style="font-size:22px">${margin}%</strong>
         <small class="muted" style="font-size:11px;margin-top:4px;display:block">${txs.length} movimientos</small>
@@ -2304,7 +2306,7 @@ function renderReports() {
     ["Tickets cerrados",finished,"Listos o entregados",""],
     ["Valor inventario",money.format(invValue),"Productos activos",""],
     ["Stock bajo",lowStock.length,lowStock.length?"Requieren reposición":"Todo OK",lowStock.length?"type-expense":""],
-  ].map(([l,v,n,cls])=>`<article class="report-card"><span>${l}</span><strong class="${cls}">${v}</strong><p class="muted">${n}</p></article>`).join("");
+  ].map(([l,v,n,cls],i)=>`<article class="report-card" style="--i:${i}"><span>${l}</span><strong class="${cls}">${v}</strong><p class="muted">${n}</p></article>`).join("");
 
   // Cash detail: breakdown by category
   const byCat = {};
@@ -6427,8 +6429,11 @@ function showToast(message, html = "") {
   if (html) toast.innerHTML = `${message} ${html}`;
   else toast.textContent = message;
   document.body.appendChild(toast);
-  if (!html) _dismissToast(toast, 3500);
-  else {
+  if (!html) {
+    toast.title = "Click para cerrar";
+    toast.addEventListener("click", () => _dismissToast(toast, 0));
+    _dismissToast(toast, 3500);
+  } else {
     toast.style.cursor = "default";
     const close = document.createElement("span");
     close.textContent = " ✕";
@@ -6453,6 +6458,8 @@ function showErrorToast(msg) {
   const toast = document.createElement("div");
   toast.className = "help-toast error-toast";
   toast.textContent = msg;
+  toast.title = "Click para cerrar";
+  toast.addEventListener("click", () => _dismissToast(toast, 0));
   document.body.appendChild(toast);
   _dismissToast(toast, 4500);
 }
@@ -6463,6 +6470,8 @@ function showSuccessToast(msg) {
   const toast = document.createElement("div");
   toast.className = "help-toast success-toast";
   toast.textContent = msg;
+  toast.title = "Click para cerrar";
+  toast.addEventListener("click", () => _dismissToast(toast, 0));
   document.body.appendChild(toast);
   _dismissToast(toast, 3000);
 }
