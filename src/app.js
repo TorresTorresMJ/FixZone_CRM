@@ -7799,9 +7799,13 @@ async function shareTicketPDF(ticketId) {
   const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
   const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
   const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
+  const logoSrc  = brand.logoMonoSrc || brand.logoSrc;
+  const logoFallback = brand.logoMonoFallback || brand.logoFallback || brand.logoSrc;
   const repairAmt= Number(ticket.repairAmount ?? ticket.total ?? 0);
   const discAmt  = Number(ticket.discountAmount || 0);
   const total    = Math.max(0, repairAmt - discAmt);
+  const paidAmt  = Number(ticket.paidAmount || 0);
+  const pending  = Math.max(0, total - paidAmt);
   const now      = new Date();
   const timeStr  = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
   const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
@@ -7809,11 +7813,22 @@ async function shareTicketPDF(ticketId) {
   const qrTarget = receiptQrTarget(ticket.id);
   const qrImage  = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=4&data=${encodeURIComponent(qrTarget)}`;
 
+  const accessoriesHtml = ticket.accessories ? `
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Accesorios entregados</div>
+      <div style="font-size:14px;line-height:1.4">${escapeHtml(ticket.accessories)}</div>
+    </div>` : "";
+
+  const paymentHtml = paidAmt > 0 ? `
+      <div style="font-size:13px;color:#2ecc71;margin-bottom:2px">Abono pagado: ${money.format(paidAmt)}${ticket.paymentMethod?` (${escapeHtml(ticket.paymentMethod)})`:""}</div>
+      ${pending > 0 ? `<div style="font-size:13px;color:#e67e22;margin-bottom:6px">Saldo pendiente: ${money.format(pending)}</div>` : `<div style="font-size:13px;color:#2ecc71;font-weight:600;margin-bottom:6px">PAGADO ✓</div>`}` : "";
+
   const wrap = document.createElement("div");
   wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:640px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;padding:32px;box-sizing:border-box";
   wrap.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${primary};padding-bottom:16px;margin-bottom:20px">
-      <img src="${brand.logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:48px;object-fit:contain" onerror="this.style.display='none'"/>
+      <img src="${logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:48px;object-fit:contain"
+        onerror="this.onerror=null;this.src='${logoFallback}'"/>
       <div style="text-align:right">
         <div style="font-size:20px;font-weight:700;letter-spacing:.04em;color:${primary}">TICKET DE SERVICIO</div>
         <div style="font-size:13px;color:#777">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</div>
@@ -7835,6 +7850,7 @@ async function shareTicketPDF(ticketId) {
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Falla reportada</div>
       <div style="font-size:14px;line-height:1.4">${escapeHtml(ticket.issue||"Sin especificar")}</div>
     </div>
+    ${accessoriesHtml}
     <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eee;padding-top:16px">
       <div style="display:flex;align-items:center;gap:12px">
         <img src="${qrImage}" alt="QR" style="width:90px;height:90px"/>
@@ -7843,7 +7859,8 @@ async function shareTicketPDF(ticketId) {
       <div style="text-align:right">
         ${discAmt > 0 ? `<div style="font-size:13px;color:#777">Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}: -${money.format(discAmt)}</div>` : ""}
         <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:#999">Total</div>
-        <div style="font-size:24px;font-weight:700;color:${secondary}">${money.format(total)}</div>
+        <div style="font-size:24px;font-weight:700;color:${secondary};margin-bottom:4px">${money.format(total)}</div>
+        ${paymentHtml}
       </div>
     </div>
     <div style="margin-top:24px;text-align:center;font-size:13px;font-weight:600;color:${primary}">
