@@ -7722,7 +7722,7 @@ async function generateCotizacionImage(ticket) {
   wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:640px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;padding:32px;box-sizing:border-box";
   wrap.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${primary};padding-bottom:16px;margin-bottom:20px">
-      <img src="${brand.logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:48px;object-fit:contain" onerror="this.style.display='none'"/>
+      <img src="${brand.logoLightSrc || brand.logoMonoSrc || brand.logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:48px;object-fit:contain" onerror="this.style.display='none'"/>
       <div style="text-align:right">
         <div style="font-size:20px;font-weight:700;letter-spacing:.04em;color:${primary}">COTIZACIÓN</div>
         <div style="font-size:13px;color:#777">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</div>
@@ -7799,7 +7799,7 @@ async function shareTicketPDF(ticketId) {
   const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
   const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
   const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
-  const logoSrc  = brand.logoMonoSrc || brand.logoSrc;
+  const logoSrc  = brand.logoLightSrc || brand.logoMonoSrc || brand.logoSrc;
   const logoFallback = brand.logoMonoFallback || brand.logoFallback || brand.logoSrc;
   const repairAmt= Number(ticket.repairAmount ?? ticket.total ?? 0);
   const discAmt  = Number(ticket.discountAmount || 0);
