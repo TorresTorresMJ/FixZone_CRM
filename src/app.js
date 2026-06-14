@@ -6868,6 +6868,9 @@ function showWAPanel(ticketId) {
 
   const btns = messages.map(makeBtn).filter(Boolean).join("");
 
+  const defaultPdfMsg = fillWATemplate("listo", vars)
+    || `Hola ${vars.cliente}, te comparto el ticket de tu reparación (${vars.folio}) en ${vars.sucursal}.\n\n📲 Sigue el estado de tu reparación: ${vars.link}`;
+
   const noPhone = !phone ? `
     <div style="background:rgba(255,153,0,.1);border:1px solid rgba(255,153,0,.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#ff9f43;margin-bottom:12px">
       ⚠ Sin teléfono registrado — los mensajes se copiarán al portapapeles.
@@ -6890,11 +6893,20 @@ function showWAPanel(ticketId) {
           style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
       </div>
       ${noPhone}
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.5);margin-bottom:6px">Mensaje para el PDF</label>
+        <textarea id="wa-pdf-message" rows="3"
+          style="width:100%;box-sizing:border-box;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-family:inherit;padding:8px 10px;resize:vertical">${escapeHtml(defaultPdfMsg)}</textarea>
+      </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button onclick="shareTicketPDF('${ticket.id}')"
+        <button onclick="shareTicketPDF('${ticket.id}', { text: document.getElementById('wa-pdf-message')?.value || '' })"
           style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.25);color:#25d366;font-size:13px;font-weight:600;cursor:pointer">
           <span style="font-size:18px">📄</span><span>Compartir ticket (PDF)</span>
           <span style="margin-left:auto;font-size:10px;opacity:.6">Enviar ↗</span>
+        </button>
+        <button onclick="shareTicketPDF('${ticket.id}', { forceDownload: true })"
+          style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-weight:600;cursor:pointer">
+          <span style="font-size:18px">💾</span><span>Guardar en dispositivo</span>
         </button>
         ${btns || '<p style="color:rgba(255,255,255,.4);font-size:13px">Sin plantillas configuradas. Edítalas en Automatización.</p>'}
       </div>
@@ -7889,7 +7901,7 @@ async function generateCotizacionImage(ticket) {
 // de seguimiento) y lo comparte vía WhatsApp usando el Web Share API
 // (abre el selector nativo en móvil); si el navegador no soporta compartir
 // archivos, descarga el PDF y deja el mensaje de texto listo para enviar.
-async function shareTicketPDF(ticketId) {
+async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
   if (typeof html2canvas !== "function" || !window.jspdf) {
@@ -7978,11 +7990,18 @@ async function shareTicketPDF(ticketId) {
     const blob = pdf.output("blob");
     const fileName = `ticket-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.pdf`;
     const file = new File([blob], fileName, { type: "application/pdf" });
-    const shareText = `Ticket ${ticket.tracking} — ${brand.displayName}`;
+    const shareText = text || `Ticket ${ticket.tracking} — ${brand.displayName}`;
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (!forceDownload && navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
+        // Muchas apps (incl. WhatsApp en Android) ignoran "text" cuando hay
+        // archivos adjuntos — copiamos el mensaje al portapapeles para que
+        // el usuario pueda pegarlo manualmente en el chat.
+        if (shareText) {
+          try { await navigator.clipboard.writeText(shareText); } catch {}
+        }
         await navigator.share({ files: [file], title: shareText, text: shareText });
+        if (shareText) showToast("✓ Mensaje copiado — pégalo en el chat si no se incluyó");
         return;
       } catch (err) {
         if (err.name === "AbortError") return;
@@ -7994,7 +8013,12 @@ async function shareTicketPDF(ticketId) {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
-    showToast("✓ PDF descargado — adjúntalo en el chat de WhatsApp");
+    if (shareText) {
+      try { await navigator.clipboard.writeText(shareText); } catch {}
+      showToast("✓ PDF descargado y mensaje copiado — adjúntalos en el chat de WhatsApp");
+    } else {
+      showToast("✓ PDF descargado — adjúntalo en el chat de WhatsApp");
+    }
   } catch (err) {
     console.error(err);
     showErrorToast("No se pudo generar el PDF");
