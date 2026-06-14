@@ -169,7 +169,7 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Campo "Costo insumo" en partidas Servicio — al ingresar el costo, calcPrecio() calcula el precio final automáticamente con la fórmula de márgenes (pantalla o glass según servicio).
 - [x] Cotizador en Precios → botón "Crear cotización" pre-llenado con precio calculado.
 - [x] Traceabilidad bidireccional: al aprobar, cotización guarda folio [FZ] y ticket guarda folio [COT] de origen. Ambas referencias visibles en las cards.
-- [ ] Métricas de cotizaciones en Reportes: total por período, tasa de conversión, monto promedio, cuántas se pierden sin aprobar.
+- [x] Métricas de cotizaciones en Reportes: total por período, tasa de conversión, monto promedio, cuántas se pierden sin aprobar (`#reports-cotizaciones`).
 
 ## Fase 12: Punto de Venta (POS)
 
@@ -181,7 +181,7 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Ligar venta POS a cliente del catálogo (opcional).
 - [x] Campo de código de descuento con botón Aplicar — valida scope, fecha, usos.
 - [x] Constraint `CHECK (stock >= 0)` en DB — `supabase/17_pos_stock_constraint.sql` aplicado.
-- [ ] Reporte de ventas POS por período (separado del reporte general de Finanzas).
+- [x] Reporte de ventas POS por período (separado del reporte general de Finanzas) — `#reports-pos`.
 
 ## Fase 13: UX / Navegación
 

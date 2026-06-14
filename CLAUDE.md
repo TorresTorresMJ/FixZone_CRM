@@ -182,6 +182,10 @@ Cotizaciones are quotes stored as `service_tickets` with `stage = "Cotización"`
 - `#reports-grid` — tarjetas resumen (ingresos, egresos, balance, tickets cerrados, inventario, stock bajo)
 - `#reports-cash` — movimientos por categoría del período
 - `#reports-profit` — utilidad estimada: tarjetas ingresos/egresos/neta, barra de margen %, tabla por categoría
+- `#reports-pos` — ventas POS del período: tarjetas resumen (total, ticket promedio, # ventas, descuentos), desglose por método de pago, tabla detalle últimas 30 ventas
+- `#reports-cotizaciones` — métricas de cotizaciones del período: tasa de conversión, convertidas/pendientes/no convertidas, monto promedio (todas vs convertidas), tabla detalle últimas 20
+- `#reports-payment-methods` — ingresos por método de pago (Efectivo, Transferencia, Terminal TC/TD, Link de pago, etc.) del período
+- `#reports-ticket-payment` — tickets pagados por método de pago del período (monto cobrado y # tickets por método)
 - `#reports-monthly` — balance mensual histórico completo (ignora filtro de período)
 - `#reports-tickets` — tickets por etapa con barra de distribución
 - `#reports-devices` — top 20 equipos más frecuentes por sucursal (historial completo): tickets, cerrados, ingresos
