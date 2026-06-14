@@ -3119,6 +3119,15 @@ async function renderSupportCommentThread(containerEl, task, notifyRecipientId) 
     <div style="display:flex;gap:8px">
       <input type="text" placeholder="Escribe una respuesta…" class="support-comment-input" style="flex:1" />
       <button type="button" class="mini-button support-comment-send">Enviar</button>
+    </div>
+    <div class="task-photo-section" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)">
+      <label style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.7">Fotos adjuntas</label>
+      <div class="task-photo-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px;margin:8px 0"></div>
+      <label class="ghost-button" style="display:inline-flex;align-items:center;gap:6px;padding:0 12px;min-height:32px;cursor:pointer;font-size:12px">
+        📷 Adjuntar foto
+        <input type="file" class="task-photo-input" accept="image/*" multiple style="display:none" />
+      </label>
+      <span class="task-photo-status muted" style="font-size:11px;margin-left:8px"></span>
     </div>`;
 
   const input = containerEl.querySelector(".support-comment-input");
@@ -3150,6 +3159,63 @@ async function renderSupportCommentThread(containerEl, task, notifyRecipientId) 
   };
   sendBtn.addEventListener("click", send);
   input.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+
+  await loadTaskPhotos(containerEl, task.id);
+  initTaskPhotoUpload(containerEl, task);
+}
+
+// ── Fotos adjuntas a tareas de soporte (attachments.task_id, migration 33) ───
+async function loadTaskPhotos(containerEl, taskId) {
+  const grid = containerEl.querySelector(".task-photo-grid");
+  if (!grid) return;
+  const { data, error } = await supabaseClient
+    .from("attachments").select("*")
+    .eq("task_id", taskId).order("created_at");
+  if (error || !data?.length) { grid.innerHTML = `<p class="muted" style="font-size:11px">Sin fotos.</p>`; return; }
+  grid.innerHTML = data.map(a => `
+    <div style="position:relative">
+      <a href="${escapeHtml(a.file_url)}" target="_blank" rel="noopener">
+        <img src="${escapeHtml(a.file_url)}" alt="${escapeHtml(a.label||"")}"
+          style="width:100%;height:60px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.1)" />
+      </a>
+      <button data-delete-photo="${a.id}" data-photo-url="${escapeHtml(a.file_url)}"
+        style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;border:0;background:rgba(255,60,60,0.8);color:#fff;font-size:10px;cursor:pointer;line-height:1">✕</button>
+    </div>`).join("");
+}
+
+function initTaskPhotoUpload(containerEl, task) {
+  const input = containerEl.querySelector(".task-photo-input");
+  if (!input) return;
+  input.addEventListener("change", async () => {
+    const files = Array.from(input.files);
+    if (!files.length) return;
+    const status = containerEl.querySelector(".task-photo-status");
+    status.textContent = "Subiendo...";
+    for (const file of files) {
+      try {
+        const ext  = file.name.split(".").pop();
+        const path = `support/${task.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: upErr } = await supabaseClient.storage
+          .from("ticket-photos").upload(path, file, { upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabaseClient.storage
+          .from("ticket-photos").getPublicUrl(path);
+        await supabaseClient.from("attachments").insert({
+          task_id:    task.id,
+          file_url:   urlData.publicUrl,
+          file_type:  file.type,
+          label:      file.name,
+          created_by: currentEmployeeId(),
+        });
+      } catch(err) {
+        status.textContent = `Error: ${err.message}`;
+        return;
+      }
+    }
+    status.textContent = `✓ ${files.length} foto(s) subida(s)`;
+    input.value = "";
+    await loadTaskPhotos(containerEl, task.id);
+  });
 }
 
 // ── Contaduría ───────────────────────────────────────────────────────────────
@@ -7811,7 +7877,7 @@ async function shareTicketPDF(ticketId) {
   const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone    = ticket.clientPhone || client?.phone || "";
   const qrTarget = receiptQrTarget(ticket.id);
-  const qrImage  = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=4&data=${encodeURIComponent(qrTarget)}`;
+  const qrImage  = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=4&data=${encodeURIComponent(qrTarget)}`;
 
   const accessoriesHtml = ticket.accessories ? `
     <div style="margin-bottom:20px">
@@ -7824,44 +7890,38 @@ async function shareTicketPDF(ticketId) {
       ${pending > 0 ? `<div style="font-size:13px;color:#e67e22;margin-bottom:6px">Saldo pendiente: ${money.format(pending)}</div>` : `<div style="font-size:13px;color:#2ecc71;font-weight:600;margin-bottom:6px">PAGADO ✓</div>`}` : "";
 
   const wrap = document.createElement("div");
-  wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:640px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;padding:32px;box-sizing:border-box";
+  wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:480px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;padding:28px;box-sizing:border-box";
   wrap.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${primary};padding-bottom:16px;margin-bottom:20px">
-      <img src="${logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:48px;object-fit:contain"
+    <div style="text-align:center;border-bottom:3px solid ${primary};padding-bottom:16px;margin-bottom:20px">
+      <img src="${logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:72px;object-fit:contain"
         onerror="this.onerror=null;this.src='${logoFallback}'"/>
-      <div style="text-align:right">
-        <div style="font-size:20px;font-weight:700;letter-spacing:.04em;color:${primary}">TICKET DE SERVICIO</div>
-        <div style="font-size:13px;color:#777">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</div>
-      </div>
+      <div style="font-size:18px;font-weight:700;letter-spacing:.04em;color:${primary};margin-top:10px">TICKET DE SERVICIO</div>
+      <div style="font-size:13px;color:#777;margin-top:2px">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</div>
     </div>
-    <div style="display:flex;gap:24px;margin-bottom:20px">
-      <div style="flex:1">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Cliente</div>
-        <div style="font-size:15px;font-weight:600">${escapeHtml(ticket.client||"")}</div>
-        ${phone ? `<div style="font-size:13px;color:#777;margin-top:2px">Tel: ${escapeHtml(phone)}</div>` : ""}
-      </div>
-      <div style="flex:1">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Equipo</div>
-        <div style="font-size:15px;font-weight:600">${escapeHtml(ticket.productName||ticket.device||"")}</div>
-        <div style="font-size:13px;color:#777;margin-top:2px">Estado: ${escapeHtml(ticket.status||"")}</div>
-      </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Cliente</div>
+      <div style="font-size:16px;font-weight:600">${escapeHtml(ticket.client||"")}</div>
+      ${phone ? `<div style="font-size:13px;color:#777;margin-top:2px">Tel: ${escapeHtml(phone)}</div>` : ""}
     </div>
-    <div style="margin-bottom:20px">
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Equipo</div>
+      <div style="font-size:16px;font-weight:600">${escapeHtml(ticket.productName||ticket.device||"")}</div>
+      <div style="font-size:13px;color:#777;margin-top:2px">Estado: ${escapeHtml(ticket.status||"")}</div>
+    </div>
+    <div style="margin-bottom:16px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Falla reportada</div>
       <div style="font-size:14px;line-height:1.4">${escapeHtml(ticket.issue||"Sin especificar")}</div>
     </div>
     ${accessoriesHtml}
-    <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eee;padding-top:16px">
-      <div style="display:flex;align-items:center;gap:12px">
-        <img src="${qrImage}" alt="QR" style="width:90px;height:90px"/>
-        <div style="font-size:12px;color:#777;max-width:180px">Escanea para ver el estado de tu reparación en tiempo real.</div>
-      </div>
-      <div style="text-align:right">
-        ${discAmt > 0 ? `<div style="font-size:13px;color:#777">Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}: -${money.format(discAmt)}</div>` : ""}
-        <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:#999">Total</div>
-        <div style="font-size:24px;font-weight:700;color:${secondary};margin-bottom:4px">${money.format(total)}</div>
-        ${paymentHtml}
-      </div>
+    <div style="text-align:center;border-top:1px solid #eee;padding-top:18px;margin-top:4px">
+      ${discAmt > 0 ? `<div style="font-size:13px;color:#777">Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}: -${money.format(discAmt)}</div>` : ""}
+      <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:#999">Total</div>
+      <div style="font-size:32px;font-weight:700;color:${secondary};margin-bottom:4px">${money.format(total)}</div>
+      ${paymentHtml}
+    </div>
+    <div style="text-align:center;margin-top:16px">
+      <img src="${qrImage}" alt="QR" style="width:140px;height:140px"/>
+      <div style="font-size:12px;color:#777;margin-top:6px">Escanea para ver el estado de tu reparación en tiempo real.</div>
     </div>
     <div style="margin-top:24px;text-align:center;font-size:13px;font-weight:600;color:${primary}">
       ★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★
