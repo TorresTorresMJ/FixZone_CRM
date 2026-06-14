@@ -7852,17 +7852,18 @@ async function shareTicketPDF(ticketId) {
 
   document.body.appendChild(wrap);
   try {
-    const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+    const scale = 2;
+    const canvas = await html2canvas(wrap, { scale, backgroundColor: "#ffffff", useCORS: true });
     const imgData = canvas.toDataURL("image/png");
     const { jsPDF } = window.jspdf;
-    // Página A4 con márgenes de 10mm; la imagen se escala al ancho útil
-    // manteniendo proporción (el mapeo directo de px del canvas a unidades
-    // del PDF recortaba el lado derecho del contenido).
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageWidth  = pdf.internal.pageSize.getWidth();
-    const imgWidth   = pageWidth - 20;
-    const imgHeight  = (canvas.height * imgWidth) / canvas.width;
-    pdf.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+    // Página del PDF a la medida exacta del contenido (mm, a 96dpi), para
+    // que el ticket completo quepa sin recortes ni espacio en blanco —
+    // una página A4 fija recortaba o dejaba corto el largo del ticket.
+    const pxToMm    = 25.4 / (96 * scale);
+    const imgWidth  = canvas.width  * pxToMm;
+    const imgHeight = canvas.height * pxToMm;
+    const pdf = new jsPDF({ orientation: imgHeight > imgWidth ? "portrait" : "landscape", unit: "mm", format: [imgWidth, imgHeight] });
+    pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
     const blob = pdf.output("blob");
     const fileName = `ticket-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.pdf`;
     const file = new File([blob], fileName, { type: "application/pdf" });
