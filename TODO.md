@@ -192,18 +192,18 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Toasts de éxito/error y confirm modal reemplazando alert/confirm nativos.
 - [x] **Sprint 3 — Design polish:** tipografía Outfit (body) + Orbitron solo brand mark, H1/H2 sin uppercase, iconografía unificada con Lucide, ghost-card shadows removidos, status badges con tokens de marca, marcatextos en finanzas corregido, atajos de teclado (N/P/D//, Escape), validación inline de formularios, empty states con CTAs, success toast, focus rings, scrollbar custom, reduced-motion.
 - [x] Simplificar impresión de tickets — un solo botón 🖨 por card que imprime automáticamente el recibo correcto según el estado (recepción / pago / garantía). Opciones específicas disponibles desde el detalle del ticket.
-- [x] Centro de notificaciones — Fase 1: migrado a tabla Supabase `notifications` (migration 31), avisos broadcast compartidos entre todos los usuarios, autor con primer nombre real, polling cada 30s. Pendiente Fase 2: avisos automáticos para ticket asignado / cambio de stage / respuesta en ticket IT, y tickets de Soporte IT con hilo de comentarios y seguimiento de estado visible para quien lo levantó.
+- [x] Centro de notificaciones — Fase 1: migrado a tabla Supabase `notifications` (migration 31), avisos broadcast compartidos entre todos los usuarios, autor con primer nombre real, polling cada 30s. Fase 2 completada: avisos automáticos al asignar/cambiar de etapa un ticket y respuestas en hilos de soporte IT.
 - [x] Kanban compacto — columnas 240px, acciones ocultas/hover-reveal, tipografía reducida.
 - [x] Click en movimiento reciente en Home → abre vista Finanzas con el registro.
 - [x] Refresh mantiene la tab activa (sessionStorage).
-- [ ] Kanban tipo Hubspot — expandir card al click para leer info completa (read-only). Actualmente hay que ir a Editar.
+- [x] Kanban tipo Hubspot — expandir card al click para leer info completa (read-only). Ahora aplica a las 3 kanban: Tickets (`viewTicketDetail`), Cotizaciones (`viewQuoteDetail`) y Soporte (`viewSupportTaskDetail`, incluye hilo de conversación). Clic en botones de `.ticket-actions`/`.support-actions` no abre el detalle.
 - [x] Revisar mobile en celular real (responsive implementado, pendiente QA).
-- [ ] Centro de notificaciones — Fase 2: avisos en tiempo real para ticket asignado, cambio de stage, comentarios IT.
+- [x] Centro de notificaciones — Fase 2: avisos automáticos cuando se asigna un ticket a un técnico (al crear o editar) y cuando cambia de etapa (incluye drag&drop en kanban), dirigidos al técnico asignado. Comentarios IT ya notificaban desde Fase 13.
 - [x] Desborde fuera del margen de los tickets y texto . Prioridad medai. *Arreglado con click en tickeet y abrir vista detalladad de ticket*
 
 ## Fase 14 - IT 
 - [x] Que en cada task de IT permita la comunciacion IT <> Usuario — hilo de comentarios (`support_task_comments`, migration 32) en el modal de Editar tarea (IT) y en el nuevo modal "Mis solicitudes" (ícono 📥 junto al botón de ayuda), con aviso al centro de notificaciones cuando hay respuesta.
-- [ ] Poner que se peuda adjuntar fotos en los tickets para IT que crean los usuarios. 
+- [x] Poner que se peuda adjuntar fotos en los tickets para IT que crean los usuarios. Migration 33 agrega `attachments.task_id` + policy adicional para que cualquier empleado activo gestione adjuntos de sus tareas de soporte (reutiliza bucket `ticket-photos`, prefijo `support/`). UI integrada en `renderSupportCommentThread()` — visible tanto en "Editar tarea" (IT) como en "Mis solicitudes" (usuario).
 
 ---
 

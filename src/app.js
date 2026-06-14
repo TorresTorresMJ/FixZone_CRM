@@ -1063,7 +1063,7 @@ async function handleKanbanDrop(event, newStage) {
   if (dataMode === "remote" && isUUID) {
     setLoading(true, "Guardando…");
     try {
-      await updateRemoteTicket(ticketId, { ...ticket, status: newStage });
+      await updateRemoteTicket(ticketId, { ...ticket, status: newStage, _prevStatus: oldStatus });
       try { await reloadState(); } catch(e) { console.warn(e); }
       render();
     } catch(err) {
@@ -1119,7 +1119,7 @@ function quoteCard(ticket, perms) {
     ? `<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(46,204,113,.15);color:#2ecc71;border:1px solid rgba(46,204,113,.3)">✓ Convertida → ${escapeHtml(ticket.convertedToTicket)}</span>`
     : "";
 
-  return `<article class="ticket-card">
+  return `<article class="ticket-card" onclick="if(!event.target.closest('.ticket-actions'))viewQuoteDetail('${ticket.id}')">
     <div class="ticket-topline"><span class="tracking-code">${escapeHtml(ticket.tracking)}</span><span class="branch-pill">${escapeHtml(ticket.branch)}</span>${convertedBadge}</div>
     <div class="ticket-topline"><strong>${escapeHtml(ticket.client)}</strong><span class="muted">${escapeHtml(ticket.createdAt)}</span></div>
     <span class="muted">${escapeHtml(ticket.productName)}</span>
@@ -3067,6 +3067,7 @@ window.handleSupportDrop = handleSupportDrop;
 function supportTaskCard(task, perms) {
   perms = perms || currentPerms();
   return `<article class="ticket-card" draggable="true"
+    onclick="if(!event.target.closest('.support-actions'))viewSupportTaskDetail('${task.id}')"
     ondragstart="event.dataTransfer.setData('taskId','${task.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
     <div class="task-topline">
@@ -5694,6 +5695,15 @@ async function createRemoteTicket(r) {
   };
   state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
 
+  // Aviso: ticket nuevo asignado a otro técnico
+  if (assignedE?.id && assignedE.id !== currentEmployeeId()) {
+    addNotif({
+      type: "ticket_assigned",
+      text: `Te asignaron el ticket ${data.tracking_number} — ${r.client}`,
+      ticketId: data.id, recipientId: assignedE.id,
+    }).catch(err => console.warn("No se pudo notificar asignación:", err));
+  }
+
   // Auto-create income transaction if an upfront payment was recorded at creation
   if (Number(r.paidAmount || 0) > 0) {
     await createRemoteTransaction({
@@ -5773,19 +5783,41 @@ async function updateRemoteTicket(ticketId, r) {
   }
 
   // Log stage change event
-  const stageChanged = oldTicket?.status && r.status && oldTicket.status !== r.status;
+  // r._prevStatus permite override del estado previo cuando state.tickets ya fue
+  // actualizado de forma optimista antes de llamar a esta función (drag & drop kanban)
+  const prevStatus  = r._prevStatus ?? oldTicket?.status;
+  const stageChanged = prevStatus && r.status && prevStatus !== r.status;
   if (stageChanged) {
     await supabaseClient.from("ticket_events").insert({
       ticket_id:  ticketId,
       event_type: "stage_change",
-      from_stage: oldTicket.status,
+      from_stage: prevStatus,
       to_stage:   r.status,
       created_by: currentEmployeeId(),
     });
   }
 
+  // Aviso: ticket asignado a otro técnico
+  const assignmentChanged = assignedE?.id && r.assignedTo !== oldTicket?.assignedTo;
+  if (assignmentChanged && assignedE.id !== currentEmployeeId()) {
+    addNotif({
+      type: "ticket_assigned",
+      text: `Te asignaron el ticket ${oldTicket?.tracking || ""} — ${r.client}`,
+      ticketId, recipientId: assignedE.id,
+    }).catch(err => console.warn("No se pudo notificar asignación:", err));
+  }
+
+  // Aviso: cambio de etapa del ticket, al técnico asignado
+  if (stageChanged && assignedE?.id && assignedE.id !== currentEmployeeId()) {
+    addNotif({
+      type: "ticket_stage",
+      text: `El ticket ${oldTicket?.tracking || ""} cambió a "${r.status}"`,
+      ticketId, recipientId: assignedE.id,
+    }).catch(err => console.warn("No se pudo notificar cambio de etapa:", err));
+  }
+
   // Auto-deduct inventory when ticket is delivered (stage → Entregado)
-  if (stageChanged && r.status === "Entregado" && oldTicket.status !== "Entregado") {
+  if (stageChanged && r.status === "Entregado" && prevStatus !== "Entregado") {
     const { data: items } = await supabaseClient
       .from("ticket_items").select("product_id, quantity").eq("ticket_id", ticketId);
     if (items?.length) {
@@ -7468,6 +7500,8 @@ function setActiveBranch(name) {
 window.setActiveBranch = setActiveBranch;
 window.openTransactionForm = openTransactionForm;
 window.viewTicketDetail = viewTicketDetail;
+window.viewQuoteDetail = viewQuoteDetail;
+window.viewSupportTaskDetail = viewSupportTaskDetail;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // PRINT / EXPORT
@@ -8544,6 +8578,147 @@ function viewTicketDetail(ticketId) {
   });
   // Cleanup al cerrar
   dlg.addEventListener("close", () => dlg.remove(), { once: true });
+
+  dlg.showModal();
+}
+
+function viewQuoteDetail(ticketId) {
+  const ticket = state.tickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+
+  const perms  = currentPerms();
+  const repair = Number(ticket.repairAmount || 0);
+  const items  = ticket.quoteItems || [];
+
+  const row = (label, val) => val
+    ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
+    : "";
+
+  const itemsHtml = items.length
+    ? `<div class="tdv-issue" style="margin-bottom:10px">
+        <p class="muted" style="font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em">Conceptos</p>
+        ${items.map(i => `
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0">
+            <span>${escapeHtml(i.type)} — ${escapeHtml(i.description||"")}${i.qty>1?` (${i.qty}×)`:""}</span>
+            <span style="white-space:nowrap;margin-left:8px">${money.format(i.qty*i.unitPrice)}</span>
+          </div>`).join("")}
+        <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
+          <span>Total estimado</span><span style="color:var(--fz-secondary,#2678E8)">${money.format(repair)}</span>
+        </div>
+      </div>`
+    : "";
+
+  document.querySelector("#tdv-dialog")?.remove();
+
+  const dlg = document.createElement("dialog");
+  dlg.id    = "tdv-dialog";
+  dlg.className = "modal";
+  dlg.innerHTML = `
+    <div style="padding:20px 22px 0">
+      <div class="modal-header" style="margin-bottom:16px">
+        <div>
+          <p class="eyebrow" style="margin:0 0 4px">Detalle de cotización</p>
+          <span class="tracking-code" style="font-size:17px">${escapeHtml(ticket.tracking)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${ticket.convertedToTicket ? `<span class="status ready">✓ ${escapeHtml(ticket.convertedToTicket)}</span>` : ""}
+          <button type="button" class="icon-button" id="tdv-close" aria-label="Cerrar" style="font-size:16px">✕</button>
+        </div>
+      </div>
+      <div class="tdv-grid" style="margin-bottom:14px">
+        ${row("Cliente",  ticket.client)}
+        ${row("Equipo",   ticket.productName || ticket.device)}
+        ${row("Sucursal", ticket.branch)}
+        ${row("Fecha",    ticket.createdAt)}
+      </div>
+      ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
+      ${itemsHtml}
+    </div>
+    <menu class="modal-actions" style="padding:16px 22px">
+      <button type="button" class="ghost-button" id="tdv-close2">Cerrar</button>
+      ${!ticket.convertedToTicket ? `<button type="button" class="primary-action" id="tdv-approve" style="padding:0 20px">✓ Aprobar</button>` : ""}
+      ${perms.canEditTickets ? `<button type="button" class="primary-action" id="tdv-edit" style="padding:0 20px">Editar</button>` : ""}
+    </menu>`;
+
+  document.body.appendChild(dlg);
+
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  dlg.querySelector("#tdv-close").addEventListener("click",  () => dlg.close());
+  dlg.querySelector("#tdv-close2").addEventListener("click", () => dlg.close());
+  dlg.querySelector("#tdv-edit")?.addEventListener("click", () => {
+    dlg.close();
+    openEditTicket(ticketId);
+  });
+  dlg.querySelector("#tdv-approve")?.addEventListener("click", () => {
+    dlg.close();
+    approveQuoteToTicket(ticketId);
+  });
+  dlg.addEventListener("close", () => dlg.remove(), { once: true });
+
+  dlg.showModal();
+}
+
+function viewSupportTaskDetail(taskId) {
+  const task = (state.supportTasks||[]).find(t => t.id === taskId);
+  if (!task) return;
+
+  const perms = currentPerms();
+  const row = (label, val) => val
+    ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
+    : "";
+
+  document.querySelector("#tdv-dialog")?.remove();
+
+  const dlg = document.createElement("dialog");
+  dlg.id    = "tdv-dialog";
+  dlg.className = "modal";
+  dlg.innerHTML = `
+    <div style="padding:20px 22px 0">
+      <div class="modal-header" style="margin-bottom:16px">
+        <div>
+          <p class="eyebrow" style="margin:0 0 4px">Detalle de tarea</p>
+          <span class="tracking-code" style="font-size:15px">${escapeHtml(task.title)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="status ${task.status==="Resuelto"?"ready":""}">${escapeHtml(task.status)}</span>
+          <button type="button" class="icon-button" id="tdv-close" aria-label="Cerrar" style="font-size:16px">✕</button>
+        </div>
+      </div>
+      <div class="tdv-grid" style="margin-bottom:14px">
+        ${row("Prioridad",      task.priority)}
+        ${row("Asignado a",     task.assignedTo)}
+        ${row("Fecha",          task.createdAt)}
+      </div>
+      ${task.description ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(task.description)}</p></div>` : ""}
+      <div class="field is-wide" style="margin-top:6px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)">
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.06em">Conversación</label>
+        <div id="tdv-support-comments" style="margin-top:8px"></div>
+      </div>
+    </div>
+    <menu class="modal-actions" style="padding:16px 22px">
+      <button type="button" class="ghost-button" id="tdv-close2">Cerrar</button>
+      <button type="button" class="primary-action" id="tdv-edit" style="padding:0 20px">Editar</button>
+    </menu>`;
+
+  document.body.appendChild(dlg);
+
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  dlg.querySelector("#tdv-close").addEventListener("click",  () => dlg.close());
+  dlg.querySelector("#tdv-close2").addEventListener("click", () => dlg.close());
+  dlg.querySelector("#tdv-edit").addEventListener("click", () => {
+    dlg.close();
+    openEditSupportTask(taskId);
+  });
+  dlg.addEventListener("close", () => dlg.remove(), { once: true });
+
+  const commentsEl = dlg.querySelector("#tdv-support-comments");
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId);
+  if (commentsEl && isUUID) {
+    const recipient = task.createdBy === currentEmployeeId() ? task.assignedToId : task.createdBy;
+    renderSupportCommentThread(commentsEl, task, recipient);
+  } else if (commentsEl) {
+    commentsEl.innerHTML = `<p class="muted" style="font-size:12px">Disponible solo en tareas guardadas en Supabase.</p>`;
+  }
 
   dlg.showModal();
 }
