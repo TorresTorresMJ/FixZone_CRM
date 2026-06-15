@@ -14,6 +14,7 @@ const TX_CATEGORIES_EXPENSE = ["Inventario","Insumos","Renta","Nomina","Servicio
 const TX_CATEGORIES_ALL     = [...new Set([...TX_CATEGORIES_INCOME, ...TX_CATEGORIES_EXPENSE])];
 const PRODUCT_CATEGORIES    = ["Refaccion","Bateria","Pantalla","Accesorio","Microsoldadura","Cable","Cargador","Otro"];
 const POS_PAYMENT_METHODS   = ["Efectivo","Tarjeta","Transferencia","Otro"];
+const REFERRAL_SOURCES      = ["Instagram","Facebook","Transeúntes","Conocidos de Moni","Otro"];
 const DEVICE_MODELS_KEY = "fixzone-device-models-v1";
 const DEFAULT_DEVICE_MODELS = [
   // iPhone
@@ -170,6 +171,8 @@ const formSchemas = {
       ["device","Equipo","device-autocomplete"],["address","Direccion","text"],
       ["lastVisit","Ultima visita","date"],
       ["status","Estado","select",["Nuevo","Activo","Garantia","Inactivo"]],
+      ["howFound","¿Cómo nos conocieron?","select",["",...REFERRAL_SOURCES],false,true],
+      ["howFoundOther","Especificar (si elegiste \"Otro\")","text",null,false,true],
       ["notes","Notas","text",null,true],
     ],
   },
@@ -663,7 +666,9 @@ async function loadSupabaseState() {
         id:c.id, name:c.full_name, phone:c.phone||"", email:c.email||"",
         device:dev?.product_name||"",
         lastVisit:(c.updated_at||c.created_at||"").slice(0,10),
+        createdAt:(c.created_at||"").slice(0,10),
         status:"Activo",
+        howFound:c.how_found||"", howFoundOther:c.how_found_other||"",
         branch:branchRows.find(b=>b.id===c.branch_id)?.name||"",
       };
     }),
@@ -2771,6 +2776,46 @@ function renderReports() {
       </div>` : "";
   }
 
+  // ── ¿Cómo nos conocieron? ─────────────────────────────────────────────────────
+  {
+    const rfEl = document.querySelector("#reports-referral");
+    if (rfEl) {
+      const newClients = branchClients().filter(c => c.createdAt >= from && c.createdAt <= to);
+      const byChannel = {};
+      newClients.forEach(c => {
+        const key = c.howFound || "Sin especificar";
+        byChannel[key] = (byChannel[key]||0) + 1;
+      });
+      const total = newClients.length;
+      const sorted = Object.entries(byChannel).sort((a,b) => b[1]-a[1]);
+      const channelCards = sorted.map(([ch,n]) => {
+        const pct = total > 0 ? Math.round(n/total*100) : 0;
+        const isUnset = ch === "Sin especificar";
+        return `<div style="flex:1;min-width:120px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,${isUnset?".05":".1"});border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;color:rgba(255,255,255,${isUnset?".3":".5"});margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(ch)}</div>
+          <div style="font-size:16px;font-weight:700;color:${isUnset?"rgba(255,255,255,.25)":"var(--fz-secondary)"}">${n}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:2px">${pct}% del total</div>
+        </div>`;
+      }).join("");
+      const otherRows = newClients.filter(c => c.howFound === "Otro" && c.howFoundOther)
+        .map(c => `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:5px 8px;font-size:12px">${escapeHtml(c.name)}</td>
+          <td style="padding:5px 8px;font-size:12px">${escapeHtml(c.howFoundOther)}</td>
+        </tr>`).join("");
+      rfEl.innerHTML = total ? `
+        <div class="card" style="margin-top:16px;border-left:3px solid var(--fz-secondary)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0;font-size:14px">📣 ¿Cómo nos conocieron? — ${periodLabel}</h3>
+            <span style="font-size:11px;color:rgba(255,255,255,.4)">${total} cliente${total!==1?"s":""} nuevo${total!==1?"s":""}</span>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">${channelCards}</div>
+          ${otherRows ? `
+          <div style="font-size:11px;color:rgba(255,255,255,.45);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em">Detalle "Otro"</div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${otherRows}</tbody></table>` : ""}
+        </div>` : "";
+    }
+  }
+
   // ── Ingresos por método de pago ──────────────────────────────────────────────
   {
     const pmEl = document.querySelector("#reports-payment-methods");
@@ -4240,6 +4285,8 @@ async function updateRemoteClient(clientId, data) {
     email:     data.email || null,
     address:   data.address || null,
     notes:     data.notes || null,
+    how_found: data.howFound || null,
+    how_found_other: data.howFound==="Otro" ? (data.howFoundOther||null) : null,
   }).eq("id", clientId);
   if (error) throw error;
   // Update device if provided
@@ -5609,7 +5656,8 @@ async function saveRemoteRecord(type, record) {
 
 async function createRemoteClient(r) {
   const { data:c, error } = await supabaseClient.from("customers").insert({
-    full_name:r.name, phone:r.phone, email:r.email,
+    full_name:r.name, phone:r.phone, email:r.email, address:r.address||null, notes:r.notes||null,
+    how_found:r.howFound||null, how_found_other:r.howFound==="Otro" ? (r.howFoundOther||null) : null,
     branch_id:await branchIdByName(activeBranchId), created_by:currentEmployeeId()
   }).select().single();
   if (error) throw error;

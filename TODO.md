@@ -98,6 +98,7 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [ ] Permitir subir/gestionar imágenes y documentos desde la UI.
 - [x] Botón 📋 Copiar en cada plantilla de WhatsApp vinculada a tickets.
 - [x] Repertorio de mensajes rápidos — saludo, horarios, tiempo de reparación, garantía, equipo listo, despedida, etc. Editable, con botón copiar en cada uno.
+- [x] Campo "¿Cómo nos conocieron?" en alta/edición de cliente (Instagram, Facebook, Transeúntes, Conocidos de Moni, Otro: especificar) + métrica en Reportes (`#reports-referral`) con desglose de clientes nuevos por canal del período.
 
 ## Fase 8: Deploy interno
 
