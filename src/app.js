@@ -251,6 +251,8 @@ const formSchemas = {
       ["client","Cliente","text"],
       ["clientPhone","Teléfono de contacto (opcional)","tel",null,false,true],
       ["productName","Dispositivo / equipo","device-autocomplete"],
+      ["howFound","¿Cómo nos conocieron?","select",["",...REFERRAL_SOURCES],false,true],
+      ["howFoundOther","Especificar (si elegiste \"Otro\")","text",null,false,true],
       ["branch","Sucursal","select",BRANCHES],
       ["notes","Notas","text",null,true,true],
     ],
@@ -1044,15 +1046,23 @@ function renderTickets() {
       { v:"fecha_asc",  l:"Más antiguo ↑" },
       { v:"cliente_az", l:"Cliente A→Z" },
       { v:"prioridad",  l:"Prioridad" },
+      { v:"fecha_limite", l:"Fecha límite" },
     ];
-    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}`;
+    const assignees = [...new Set(branchTickets().map(t=>t.assignedTo).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const assigneeSelect = `<select id="kanban-assignee-filter" class="mini-button" style="font-size:11px;padding:3px 10px">
+      <option value=""${kanbanAssigneeFilter===""?" selected":""}>Todos los t&#233;cnicos</option>
+      ${assignees.map(name=>`<option value="${escapeHtml(name)}"${kanbanAssigneeFilter===name?" selected":""}>${escapeHtml(name)}</option>`).join("")}
+    </select>`;
+    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Asignado a:</span>${assigneeSelect}`;
     sortBar.querySelectorAll(".kanban-sort-btn").forEach(btn => {
       btn.addEventListener("click", () => { kanbanSort = btn.dataset.sort; renderTickets(); });
     });
+    const filterSelect = sortBar.querySelector("#kanban-assignee-filter");
+    if (filterSelect) filterSelect.addEventListener("change", () => { kanbanAssigneeFilter = filterSelect.value; renderTickets(); });
   }
 
   document.querySelector("#ticket-board").innerHTML = ticketStages.map(status=>{
-    const tickets = sortedKanbanTickets(bySearch(branchTickets()).filter(t=>t.status===status));
+    const tickets = sortedKanbanTickets(bySearch(branchTickets()).filter(t=>t.status===status && (!kanbanAssigneeFilter || t.assignedTo===kanbanAssigneeFilter)));
     return `<section class="kanban-column"
       ondragover="event.preventDefault();this.classList.add('drag-over')"
       ondragleave="this.classList.remove('drag-over')"
@@ -1201,6 +1211,20 @@ function ticketCard(ticket, perms, idx = 0) {
                 : ticket.status==="Cotizacion" ? "waiting"
                 : ticket.status==="Garantia"   ? "warranty" : "";
 
+  // Due date badge — red if overdue, orange if due today (only while the ticket is still open)
+  let dueDateHtml = "";
+  if (ticket.dueDate) {
+    const isOpen = ticket.status !== "Entregado" && ticket.status !== "Garantia";
+    const today = dateStamp();
+    const overdue = isOpen && ticket.dueDate < today;
+    const dueToday = isOpen && ticket.dueDate === today;
+    const color = overdue ? "#ff5c5c" : dueToday ? "#f39c12" : "rgba(255,255,255,.55)";
+    const bg    = overdue ? "rgba(255,92,92,.15)" : dueToday ? "rgba(243,156,18,.15)" : "rgba(255,255,255,.06)";
+    const border= overdue ? "rgba(255,92,92,.35)" : dueToday ? "rgba(243,156,18,.35)" : "rgba(255,255,255,.12)";
+    const label = overdue ? "Vencido" : dueToday ? "Vence hoy" : "Fecha límite";
+    dueDateHtml = `<div style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:${bg};border:1px solid ${border};color:${color}">📅 ${label}: ${ticket.dueDate}</div>`;
+  }
+
   // Truncate issue to 2 lines via CSS
   const issueHtml = ticket.issue
     ? `<p style="margin:3px 0 0;font-size:12px;color:rgba(255,255,255,.65);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;overflow-wrap:break-word;min-width:0;width:100%">${escapeHtml(ticket.issue)}</p>`
@@ -1231,6 +1255,7 @@ function ticketCard(ticket, perms, idx = 0) {
     <span class="muted" style="font-size:11px">${escapeHtml(ticket.productName||ticket.device)}</span>
     ${issueHtml}
     ${ticket.waitingPart ? `<div style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:rgba(243,156,18,.15);border:1px solid rgba(243,156,18,.35);color:#f39c12" title="${escapeHtml(ticket.waitingPartNote||"")}">⏳ Esperando pieza${ticket.waitingPartNote?` — ${escapeHtml(ticket.waitingPartNote)}`:""}</div>` : ""}
+    ${dueDateHtml}
     ${priceHtml}
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}" title="Opciones de impresión">🖨</button>
@@ -2794,20 +2819,30 @@ function renderReports() {
     const rfEl = document.querySelector("#reports-referral");
     if (rfEl) {
       const newClients = branchClients().filter(c => c.createdAt >= from && c.createdAt <= to);
+      // Un cliente cuenta como "activo" sólo si ya tiene un servicio concretado
+      // (algún ticket fuera de la etapa "Cotización"). Si todos sus registros
+      // son cotizaciones sin convertir, queda como "pendiente" y no se suma
+      // a los activos hasta que se concrete el servicio.
+      const hasConcretedService = c => state.tickets.some(t => t.client === c.name && t.status !== "Cotizacion");
       const byChannel = {};
       newClients.forEach(c => {
         const key = c.howFound || "Sin especificar";
-        byChannel[key] = (byChannel[key]||0) + 1;
+        if (!byChannel[key]) byChannel[key] = { active: 0, pending: 0 };
+        if (hasConcretedService(c)) byChannel[key].active++; else byChannel[key].pending++;
       });
-      const total = newClients.length;
-      const sorted = Object.entries(byChannel).sort((a,b) => b[1]-a[1]);
-      const channelCards = sorted.map(([ch,n]) => {
+      const total        = newClients.length;
+      const totalActive  = newClients.filter(hasConcretedService).length;
+      const totalPending = total - totalActive;
+      const sorted = Object.entries(byChannel).sort((a,b) => (b[1].active+b[1].pending)-(a[1].active+a[1].pending));
+      const channelCards = sorted.map(([ch,v]) => {
+        const n = v.active + v.pending;
         const pct = total > 0 ? Math.round(n/total*100) : 0;
         const isUnset = ch === "Sin especificar";
         return `<div style="flex:1;min-width:120px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,${isUnset?".05":".1"});border-radius:8px;padding:10px 12px">
           <div style="font-size:10px;color:rgba(255,255,255,${isUnset?".3":".5"});margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(ch)}</div>
-          <div style="font-size:16px;font-weight:700;color:${isUnset?"rgba(255,255,255,.25)":"var(--fz-secondary)"}">${n}</div>
-          <div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:2px">${pct}% del total</div>
+          <div style="font-size:16px;font-weight:700;color:${isUnset?"rgba(255,255,255,.25)":"var(--fz-secondary)"}">${v.active}</div>
+          ${v.pending ? `<div style="font-size:10px;color:#ff9f43;margin-top:2px">+${v.pending} en cotización</div>` : ""}
+          <div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:2px">${pct}% del total (${n})</div>
         </div>`;
       }).join("");
       const otherRows = newClients.filter(c => c.howFound === "Otro" && c.howFoundOther)
@@ -2819,7 +2854,7 @@ function renderReports() {
         <div class="card" style="margin-top:16px;border-left:3px solid var(--fz-secondary)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
             <h3 style="margin:0;font-size:14px">📣 ¿Cómo nos conocieron? — ${periodLabel}</h3>
-            <span style="font-size:11px;color:rgba(255,255,255,.4)">${total} cliente${total!==1?"s":""} nuevo${total!==1?"s":""}</span>
+            <span style="font-size:11px;color:rgba(255,255,255,.4)">${totalActive} activo${totalActive!==1?"s":""}${totalPending?` · ${totalPending} en cotización (pendiente)`:""} · ${total} nuevo${total!==1?"s":""}</span>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">${channelCards}</div>
           ${otherRows ? `
@@ -8691,6 +8726,7 @@ function viewTicketDetail(ticketId) {
         ${row("Sucursal",     ticket.branch)}
         ${row("Fecha entrada",ticket.date)}
         ${row("Fecha entrega",ticket.deliveryDate)}
+        ${row("Fecha límite", ticket.dueDate)}
         ${row("Servicio",     ticket.serviceType)}
         ${repair > 0 ? row("Precio reparación", money.format(repair)) : ""}
         ${disc   > 0 ? row("Descuento", "−" + money.format(disc))     : ""}
