@@ -1053,12 +1053,17 @@ function renderTickets() {
       <option value=""${kanbanAssigneeFilter===""?" selected":""}>Todos los t&#233;cnicos</option>
       ${assignees.map(name=>`<option value="${escapeHtml(name)}"${kanbanAssigneeFilter===name?" selected":""}>${escapeHtml(name)}</option>`).join("")}
     </select>`;
-    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Asignado a:</span>${assigneeSelect}`;
+    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Asignado a:</span>${assigneeSelect}<span style="display:flex;gap:4px;margin-left:auto"><button class="mini-button" id="kanban-scroll-left" title="Desplazar columnas a la izquierda" style="font-size:13px;padding:3px 10px">◀</button><button class="mini-button" id="kanban-scroll-right" title="Desplazar columnas a la derecha" style="font-size:13px;padding:3px 10px">▶</button></span>`;
     sortBar.querySelectorAll(".kanban-sort-btn").forEach(btn => {
       btn.addEventListener("click", () => { kanbanSort = btn.dataset.sort; renderTickets(); });
     });
     const filterSelect = sortBar.querySelector("#kanban-assignee-filter");
     if (filterSelect) filterSelect.addEventListener("change", () => { kanbanAssigneeFilter = filterSelect.value; renderTickets(); });
+    const board = document.querySelector("#ticket-board");
+    const scrollLeftBtn = sortBar.querySelector("#kanban-scroll-left");
+    const scrollRightBtn = sortBar.querySelector("#kanban-scroll-right");
+    if (board && scrollLeftBtn) scrollLeftBtn.addEventListener("click", () => board.scrollBy({ left: -320, behavior: "smooth" }));
+    if (board && scrollRightBtn) scrollRightBtn.addEventListener("click", () => board.scrollBy({ left: 320, behavior: "smooth" }));
   }
 
   document.querySelector("#ticket-board").innerHTML = ticketStages.map(status=>{
@@ -1241,12 +1246,15 @@ function ticketCard(ticket, perms, idx = 0) {
     </div>` : "";
 
   return `<article class="ticket-card" style="--i:${idx}" draggable="true"
-    onclick="if(!event.target.closest('.ticket-actions'))viewTicketDetail('${ticket.id}')"
+    onclick="if(!event.target.closest('.ticket-actions')&&!event.target.closest('[data-toggle-waiting]'))viewTicketDetail('${ticket.id}')"
     ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
     <div class="ticket-topline">
       <span class="tracking-code">${escapeHtml(ticket.tracking)}</span>
-      <span class="status ${stClass}" style="font-size:10px">${ticket.status}</span>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="mini-button ${ticket.waitingPart?"is-active":""}" style="padding:1px 5px;font-size:11px;line-height:1.4;${ticket.waitingPart?"background:rgba(243,156,18,.2);border-color:rgba(243,156,18,.5);color:#f39c12":"opacity:.5"}" data-toggle-waiting="${ticket.id}" title="${ticket.waitingPart?"Quitar marca de espera de pieza":"Marcar: esperando pieza de refacción"}">⏳</button>
+        <span class="status ${stClass}" style="font-size:10px">${ticket.status}</span>
+      </div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:2px">
       <strong style="font-size:13px">${escapeHtml(ticket.client)}</strong>
@@ -1262,7 +1270,6 @@ function ticketCard(ticket, perms, idx = 0) {
       <button class="mini-button" style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);color:#25d366" data-wa-ticket="${ticket.id}" title="Enviar por WhatsApp">💬</button>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
       ${/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticket.id)?`<button class="mini-button" data-qr-ticket="${ticket.id}" title="QR Técnico">📱</button>`:""}
-      <button class="mini-button ${ticket.waitingPart?"is-active":""}" style="${ticket.waitingPart?"background:rgba(243,156,18,.2);border-color:rgba(243,156,18,.5);color:#f39c12":""}" data-toggle-waiting="${ticket.id}" title="${ticket.waitingPart?"Quitar marca de espera de pieza":"Marcar: esperando pieza"}">⏳</button>
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">✕</button>`:""}
     </div>
