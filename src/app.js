@@ -5731,7 +5731,7 @@ async function createRemoteTicket(r) {
     if (newCust) {
       customer = { id: newCust.id };
       lookups.customersByName.set(r.client, customer);
-      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
+      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:r.productName||"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
       showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
     }
   } else if (customer) {
@@ -5741,13 +5741,21 @@ async function createRemoteTicket(r) {
       const idx = state.clients.findIndex(c=>c.id===customer.id);
       if (idx>=0) state.clients[idx].phone = r.clientPhone;
     }
-    if (r.howFound) {
+    // Sólo registra "¿Cómo nos conocieron?" la primera vez — si el cliente ya
+    // tiene un canal de referencia guardado, una cotización/ticket posterior
+    // (a veces para un equipo distinto) no debe sobrescribirlo ni afectar las métricas.
+    if (r.howFound && !state.clients.find(c=>c.id===customer.id)?.howFound) {
       await supabaseClient.from("customers").update({
         how_found: r.howFound,
         how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
       }).eq("id", customer.id);
       const idx = state.clients.findIndex(c=>c.id===customer.id);
       if (idx>=0) { state.clients[idx].howFound = r.howFound; state.clients[idx].howFoundOther = r.howFound==="Otro" ? (r.howFoundOther||"") : ""; }
+    }
+    if (r.productName && !state.clients.find(c=>c.id===customer.id)?.device) {
+      // Backfill "Equipo" on the client record from this ticket/cotización
+      const idx = state.clients.findIndex(c=>c.id===customer.id);
+      if (idx>=0) state.clients[idx].device = r.productName;
     }
   }
   const assignedE = lookups.employeesByName.get(r.assignedTo);
@@ -5769,9 +5777,11 @@ async function createRemoteTicket(r) {
   }).select().single();
   if (error) throw error;
 
-  // Create device record if any device fields were filled (customer_id is nullable)
+  // Create device record if any device info was provided (customer_id is nullable).
+  // Includes productName so cotizaciones (which only collect the device name,
+  // not IMEI/color/etc.) still link a device to the client.
   let deviceId = null;
-  if (r.imei||r.color||r.accessories||r.physicalCondition) {
+  if (r.productName||r.imei||r.color||r.accessories||r.physicalCondition) {
     const { data: dev } = await supabaseClient.from("customer_devices").insert({
       customer_id:          customer?.id||null,
       product_name:         r.productName||"Sin nombre",
@@ -5960,16 +5970,19 @@ async function updateRemoteTicket(ticketId, r) {
     }
   }
 
-  // Update device record if exists, or create one if new device fields provided
+  // Update device record if exists, or create one if device info provided
+  // (includes productName so cotizaciones, which only collect the device name,
+  // still link/backfill a device for the client).
   if (oldTicket?.deviceId) {
     await supabaseClient.from("customer_devices").update({
+      product_name:         r.productName||"Sin nombre",
       imei:                 r.imei||null,
       color:                r.color||null,
       accessories_received: r.accessories||null,
       physical_condition:   r.physicalCondition||null,
     }).eq("id", oldTicket.deviceId);
-  } else if (r.imei || r.color || r.accessories || r.physicalCondition) {
-    const customer = lookups.customersByName.get(r.client);
+  } else if (r.productName || r.imei || r.color || r.accessories || r.physicalCondition) {
+    const customer = lookups.customersByName.get(r.client) || (oldTicket?.customerId ? { id: oldTicket.customerId } : null);
     const { data: dev } = await supabaseClient.from("customer_devices").insert({
       customer_id:          customer?.id||null,
       product_name:         r.productName||"Sin nombre",
