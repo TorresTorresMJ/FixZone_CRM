@@ -200,7 +200,7 @@ const formSchemas = {
       ["issue","Falla / trabajo","text",null,true],
       ["priority","Prioridad","select",["Normal","Media","Alta","Urgente"]],
       ["repairAmount","Monto reparacion","number"],
-      ["discountCode","Código de descuento","text",null,false,true],
+      ["discountCode","Código de descuento","discount-code-select","ticket",false,true],
       ["discountAmount","Descuento ($)","number",null,false,true],
       ["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
       ["paymentMethod","Método de pago","select",["","Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"],false,true],
@@ -2123,9 +2123,11 @@ function renderPos() {
       <div class="pos-total-row" style="flex-wrap:wrap;gap:4px">
         <span class="muted" style="white-space:nowrap">Código descuento</span>
         <div style="display:flex;gap:4px;margin-left:auto">
-          <input id="pos-code-input" type="text" value="${escapeHtml(posDiscountCode)}" placeholder="PROMO10"
-            style="width:90px;text-align:center;font-size:11px;font-family:monospace;text-transform:uppercase;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:3px 6px;color:inherit"
-            oninput="posDiscountCode=this.value.toUpperCase()">
+          <select id="pos-code-input" onchange="posDiscountCode=this.value"
+            style="min-width:110px;text-align:center;font-size:11px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:3px 6px;color:inherit">
+            <option value="">— Sin código —</option>
+            ${activeDiscountCodesForScope("pos").map(c=>`<option value="${escapeHtml(c.code)}" ${c.code===posDiscountCode?"selected":""}>${escapeHtml(discountCodeOptionLabel(c))}</option>`).join("")}
+          </select>
           <button type="button" class="mini-button" id="pos-apply-code" style="font-size:11px;padding:3px 8px">Aplicar</button>
         </div>
       </div>
@@ -4162,6 +4164,23 @@ function applyDiscount(baseAmount, code, scope = "ticket") {
   return { amount: Math.min(amount, baseAmount), pct, label: d.description || d.code, valid: true, id: d.id };
 }
 
+// Códigos de descuento activos y vigentes (fecha/usos) para un alcance dado (pos|cotizacion|ticket)
+function activeDiscountCodesForScope(scope) {
+  const today = new Date().toISOString().slice(0, 10);
+  return (state.discounts || []).filter(d =>
+    d.active &&
+    (!d.validFrom  || today >= d.validFrom) &&
+    (!d.validUntil || today <= d.validUntil) &&
+    (!d.maxUses    || d.usedCount < d.maxUses) &&
+    (Array.isArray(d.scope) ? d.scope.includes(scope) : true)
+  );
+}
+
+function discountCodeOptionLabel(d) {
+  const tag = d.type === "percent" ? `${d.value}%` : `$${d.value}`;
+  return d.description ? `${d.code} — ${d.description} (${tag})` : `${d.code} (${tag})`;
+}
+
 async function markDiscountUsed(discountId) {
   if (!supabaseClient || !discountId) return;
   const disc = (state.discounts || []).find(d => d.id === discountId);
@@ -4771,7 +4790,12 @@ function initQuoteItemsBuilder(existingItems = []) {
   });
 }
 
-function buildQuoteItemsSection() {
+function buildQuoteItemsSection(currentCode = "") {
+  const code = (currentCode || "").toUpperCase();
+  const codes = activeDiscountCodesForScope("cotizacion");
+  const allCodes = (code && !codes.find(c=>c.code===code))
+    ? [...codes, ...(state.discounts||[]).filter(d=>d.code===code)]
+    : codes;
   return `
     <div class="field is-wide" id="quote-items-section" style="margin-top:4px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -4786,8 +4810,11 @@ function buildQuoteItemsSection() {
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span class="muted" style="font-size:12px;white-space:nowrap">Código descuento</span>
-          <input id="qi-code-input" type="text" placeholder="PROMO10"
-            style="width:110px;font-family:monospace;font-size:12px;text-transform:uppercase;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);border-radius:4px;padding:4px 8px;color:inherit">
+          <select id="qi-code-input"
+            style="min-width:140px;font-size:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);border-radius:4px;padding:4px 8px;color:inherit">
+            <option value="">— Sin código —</option>
+            ${allCodes.map(c=>`<option value="${escapeHtml(c.code)}" ${c.code===code?"selected":""}>${escapeHtml(discountCodeOptionLabel(c))}</option>`).join("")}
+          </select>
           <button type="button" id="qi-apply-code" class="mini-button" style="font-size:11px;padding:3px 10px">Aplicar</button>
           <span id="qi-code-status" style="font-size:11px;color:#2ed573"></span>
         </div>
@@ -4839,8 +4866,12 @@ function openForm(type, prefill = {}) {
     formFields.innerHTML += `<div id="tx-receipt-wrap" style="display:${prefill.type==="Egreso"?"block":"none"}">${buildReceiptUploadSection()}</div>`;
   }
   if (type === "cotizacion") {
-    formFields.innerHTML += buildQuoteItemsSection();
+    formFields.innerHTML += buildQuoteItemsSection(prefill.discountCode || "");
     initQuoteItemsBuilder(prefill.quoteItems || []);
+    const dcCodePrefill = formFields.querySelector("#qi-discount-code");
+    const dcAmtPrefill  = formFields.querySelector("#qi-discount-amount");
+    if (dcCodePrefill && prefill.discountCode) dcCodePrefill.value = prefill.discountCode;
+    if (dcAmtPrefill  && prefill.discountAmount) dcAmtPrefill.value = prefill.discountAmount;
   }
   initDeviceAutocomplete();
   if (type === "ticket") { initPriceAutofill(); initTicketCotizadorWidget(); }
@@ -4888,17 +4919,15 @@ function openEditTicket(ticketId) {
     const schema = formSchemas["cotizacion"];
     formFields.innerHTML = schema.fields.map(([name,label,ftype,opts,wide,optional]) =>
       fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "", optional)
-    ).join("") + buildQuoteItemsSection();
+    ).join("") + buildQuoteItemsSection(ticket.discountCode || "");
     // Pre-set branch
     const branchSel = formFields.querySelector("#branch");
     if (branchSel) branchSel.value = ticket.branch || activeBranchId;
     // Pre-set existing discount code in builder hidden inputs
     const dcCode = formFields.querySelector("#qi-discount-code");
     const dcAmt  = formFields.querySelector("#qi-discount-amount");
-    const dcInp  = formFields.querySelector("#qi-code-input");
     if (dcCode && ticket.discountCode) dcCode.value = ticket.discountCode;
     if (dcAmt  && ticket.discountAmount) dcAmt.value = ticket.discountAmount;
-    if (dcInp  && ticket.discountCode)  dcInp.value  = ticket.discountCode;
     initQuoteItemsBuilder(ticket.quoteItems || []);
     initDeviceAutocomplete();
     openModal();
@@ -5394,6 +5423,22 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
       <label for="${name}">${labelHtml}</label>
       <input id="${name}" name="${name}" type="text" value="${escapeHtml(String(val))}"
         data-device-ac autocomplete="off" placeholder="Escribe para buscar…" ${optional?"":"required"} />
+    </div>`;
+  }
+  if (ftype==="discount-code-select") {
+    const scope = opts || "ticket";
+    const val = (defaultValue ?? "").toUpperCase();
+    const codes = activeDiscountCodesForScope(scope);
+    // Si el código actual ya no está activo/vigente, lo incluimos igual para no perderlo al editar
+    const allCodes = (val && !codes.find(c=>c.code===val))
+      ? [...codes, ...(state.discounts||[]).filter(d=>d.code===val)]
+      : codes;
+    return `<div class="field ${wide?"is-wide":""}">
+      <label for="${name}">${labelHtml}</label>
+      <select id="${name}" name="${name}">
+        <option value="">— Ninguno —</option>
+        ${allCodes.map(c=>`<option value="${escapeHtml(c.code)}" ${c.code===val?"selected":""}>${escapeHtml(discountCodeOptionLabel(c))}</option>`).join("")}
+      </select>
     </div>`;
   }
   if (ftype==="service-type-select") {
@@ -7971,15 +8016,12 @@ function printTicket(ticket) {
   doPrint();
 }
 
-// Genera una imagen PNG de la cotización (para compartir por WhatsApp), con
-// un layout de tarjeta legible — no el formato angosto de ticket térmico.
-// Nunca incluye el costo de insumo (insumoCost): solo descripción, nota,
-// cantidad, precio e importe.
-async function generateCotizacionImage(ticket) {
-  if (typeof html2canvas !== "function") {
-    showErrorToast("No se pudo generar la imagen: librería no disponible");
-    return;
-  }
+// Construye el canvas con el layout de tarjeta de la cotización (para
+// descargar como imagen o adjuntar al compartir por WhatsApp). No incluye
+// el costo de insumo (insumoCost): solo descripción, nota, cantidad, precio
+// e importe. Devuelve null si html2canvas no está disponible.
+async function buildCotizacionCanvas(ticket) {
+  if (typeof html2canvas !== "function") return null;
   const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
   const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
   const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
@@ -8054,7 +8096,20 @@ async function generateCotizacionImage(ticket) {
 
   document.body.appendChild(wrap);
   try {
-    const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+    return await html2canvas(wrap, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+  } finally {
+    wrap.remove();
+  }
+}
+
+// Descarga la cotización como imagen PNG.
+async function generateCotizacionImage(ticket) {
+  const canvas = await buildCotizacionCanvas(ticket);
+  if (!canvas) {
+    showErrorToast("No se pudo generar la imagen: librería no disponible");
+    return;
+  }
+  try {
     const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("No se pudo generar la imagen");
     const url = URL.createObjectURL(blob);
@@ -8067,8 +8122,6 @@ async function generateCotizacionImage(ticket) {
   } catch (err) {
     console.error(err);
     showErrorToast("No se pudo generar la imagen");
-  } finally {
-    wrap.remove();
   }
 }
 
@@ -8346,7 +8399,7 @@ function openNotifPanel() {
   });
 }
 
-function shareQuoteWhatsApp(ticketId) {
+async function shareQuoteWhatsApp(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
   const brand   = window.getBranchBrand(ticket.branch || activeBranchId);
@@ -8360,19 +8413,21 @@ function shareQuoteWhatsApp(ticketId) {
     : `  • ${ticket.issue||"Servicio"} — ${money.format(subtotal)}`;
 
   const waTemplate = getWATemplates()["cotizacion"] || null;
+  const vars = {
+    client:      ticket.client || "",
+    productName: ticket.productName || "",
+    branch:      brand.displayName || "",
+    tracking:    ticket.tracking || "",
+    amount:      money.format(total),
+    pending:     "",
+    items:       linesText,
+    servicio:    ticket.issue || "",
+    link:        receiptQrTarget(ticket.id),
+  };
   let msg;
 
   if (waTemplate) {
-    msg = fillWATemplate("cotizacion", {
-      client:      ticket.client,
-      productName: ticket.productName,
-      branch:      brand.displayName,
-      folio:       ticket.tracking,
-      amount:      money.format(total),
-      pending:     "",
-      total:       money.format(total),
-      items:       linesText,
-    });
+    msg = fillWATemplate("cotizacion", vars);
   } else {
     msg = `Hola ${ticket.client} 👋, aquí tu cotización de *${brand.displayName}*:\n\n` +
           `📋 No. ${ticket.tracking}\n` +
@@ -8386,6 +8441,38 @@ function shareQuoteWhatsApp(ticketId) {
   const clientPhone = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase())?.phone || "";
   const phone = clientPhone.replace(/\D/g, "").replace(/^52/, "");
   const url = `https://wa.me/${phone ? "52"+phone : ""}?text=${encodeURIComponent(msg)}`;
+
+  // Adjunta la imagen de la cotización: en móviles con Web Share API se
+  // ofrece compartir imagen + texto juntos (selector nativo, incl. WhatsApp);
+  // si no es posible, se abre el chat de WhatsApp y se descarga la imagen
+  // para adjuntarla manualmente.
+  const canvas = await buildCotizacionCanvas(ticket);
+  if (canvas) {
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    const fileName = `cotizacion-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.png`;
+    if (blob) {
+      const file = new File([blob], fileName, { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          try { await navigator.clipboard.writeText(msg); } catch {}
+          await navigator.share({ files: [file], title: msg, text: msg });
+          showToast("✓ Mensaje copiado — pégalo en el chat si no se incluyó");
+          return;
+        } catch (err) {
+          if (err.name === "AbortError") return;
+        }
+      }
+      const dlUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = dlUrl;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(dlUrl);
+      window.open(url, "_blank", "noopener");
+      showToast("✓ Imagen descargada — adjúntala en el chat de WhatsApp");
+      return;
+    }
+  }
   window.open(url, "_blank", "noopener");
 }
 window.shareQuoteWhatsApp = shareQuoteWhatsApp;

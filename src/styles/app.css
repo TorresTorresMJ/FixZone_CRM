@@ -865,6 +865,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
 .field input, .field select {
   min-height: 42px;
+  min-width: 0;
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 8px;
   padding: 0 12px;
