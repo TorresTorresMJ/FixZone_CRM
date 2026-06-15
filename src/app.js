@@ -5,7 +5,8 @@
 const storageKey   = "fixzone-crm-v1";
 const money        = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entregado", "Garantia"];
-let kanbanSort = "fecha_desc"; // "fecha_desc" | "fecha_asc" | "cliente_az" | "prioridad"
+let kanbanSort = "fecha_desc"; // "fecha_desc" | "fecha_asc" | "cliente_az" | "prioridad" | "fecha_limite"
+let kanbanAssigneeFilter = ""; // "" = todos, o nombre del técnico asignado
 const supportStages = ["Pendiente", "En progreso", "Resuelto"];
 const BRANCHES     = ["Puerto Vallarta", "Puebla"];
 const ROLES        = ["it", "admin", "standard", "marketing"];
@@ -188,6 +189,8 @@ const formSchemas = {
     title: "Ticket", collection: "tickets",
     fields: [
       ["client","Cliente","text",null,false,true],["clientPhone","Teléfono cliente","tel",null,false,true],["productName","Producto / equipo","device-autocomplete"],
+      ["howFound","¿Cómo nos conocieron?","select",["",...REFERRAL_SOURCES],false,true],
+      ["howFoundOther","Especificar (si elegiste \"Otro\")","text",null,false,true],
       // Device detail fields
       ["imei","IMEI / No. Serie","text",null,false,true],
       ["color","Color","text",null,false,true],
@@ -202,6 +205,7 @@ const formSchemas = {
       ["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
       ["paymentMethod","Método de pago","select",["","Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"],false,true],
       ["paidAmount","Monto pagado","number"],["createdAt","Fecha","date"],
+      ["dueDate","Fecha límite","date",null,false,true],
       ["notes","Notas internas","text",null,true,true],
     ],
   },
@@ -699,7 +703,11 @@ async function loadSupabaseState() {
         convertedToTicket:t.converted_to_ticket||"",
         waitingPart:!!t.waiting_part,
         waitingPartNote:t.waiting_part_note||"",
+        dueDate:t.due_date||"",
         deviceId:t.device_id||null,
+        customerId:t.customer_id||null,
+        howFound:cust?.how_found||"",
+        howFoundOther:cust?.how_found_other||"",
         // Device fields — enable search by IMEI/serial and pre-populate edit form
         imei:dev?.imei||"",
         serialNumber:dev?.serial_number||"",
@@ -1021,6 +1029,7 @@ function sortedKanbanTickets(tickets) {
   if (kanbanSort === "fecha_asc")   return list.sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
   if (kanbanSort === "cliente_az")  return list.sort((a,b) => (a.client||"").localeCompare(b.client||""));
   if (kanbanSort === "prioridad")   return list.sort((a,b) => (PRIORITY_ORDER[a.priority]??9) - (PRIORITY_ORDER[b.priority]??9));
+  if (kanbanSort === "fecha_limite") return list.sort((a,b) => (a.dueDate||"9999-12-31").localeCompare(b.dueDate||"9999-12-31"));
   return list.sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||"")); // fecha_desc default
 }
 
@@ -5681,18 +5690,30 @@ async function createRemoteTicket(r) {
       full_name: r.client,
       phone: r.clientPhone,
       branch_id: await branchIdByName(r.branch||activeBranchId),
+      how_found: r.howFound||null,
+      how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
     }).select().single();
     if (newCust) {
       customer = { id: newCust.id };
       lookups.customersByName.set(r.client, customer);
-      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId });
+      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
       showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
     }
-  } else if (customer && r.clientPhone && !state.clients.find(c=>c.id===customer.id)?.phone) {
-    // Update phone if client exists but has no phone
-    await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
-    const idx = state.clients.findIndex(c=>c.id===customer.id);
-    if (idx>=0) state.clients[idx].phone = r.clientPhone;
+  } else if (customer) {
+    if (r.clientPhone && !state.clients.find(c=>c.id===customer.id)?.phone) {
+      // Update phone if client exists but has no phone
+      await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+      const idx = state.clients.findIndex(c=>c.id===customer.id);
+      if (idx>=0) state.clients[idx].phone = r.clientPhone;
+    }
+    if (r.howFound) {
+      await supabaseClient.from("customers").update({
+        how_found: r.howFound,
+        how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
+      }).eq("id", customer.id);
+      const idx = state.clients.findIndex(c=>c.id===customer.id);
+      if (idx>=0) { state.clients[idx].howFound = r.howFound; state.clients[idx].howFoundOther = r.howFound==="Otro" ? (r.howFoundOther||"") : ""; }
+    }
   }
   const assignedE = lookups.employeesByName.get(r.assignedTo);
   const branchId  = await branchIdByName(r.branch||activeBranchId);
@@ -5709,6 +5730,7 @@ async function createRemoteTicket(r) {
     assigned_employee_id:assignedE?.id||null, created_by:currentEmployeeId(),
     quote_items: r.quoteItems?.length ? r.quoteItems : null,
     service_type: r.serviceType||null,
+    due_date: r.dueDate||null,
   }).select().single();
   if (error) throw error;
 
@@ -5745,6 +5767,9 @@ async function createRemoteTicket(r) {
     accessories:r.accessories||"", physicalCondition:r.physicalCondition||"",
     quoteItems: r.quoteItems||[],
     waitingPart:false, waitingPartNote:"",
+    customerId:customer?.id||null,
+    howFound:r.howFound||"", howFoundOther:r.howFoundOther||"",
+    dueDate:r.dueDate||"",
   };
   state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
 
@@ -5773,27 +5798,39 @@ async function createRemoteTicket(r) {
 async function updateRemoteTicket(ticketId, r) {
   const oldTicket = state.tickets.find(t => t.id === ticketId);
 
-  // Auto-register or update customer phone when editing
+  // Auto-register or update customer phone/referral source when editing
   if (r.client) {
-    let customer = lookups.customersByName.get(r.client);
+    let customer = lookups.customersByName.get(r.client) || (oldTicket?.customerId ? { id: oldTicket.customerId } : null);
     if (!customer && r.clientPhone) {
       const { data: newCust } = await supabaseClient.from("customers").insert({
         full_name: r.client,
         phone: r.clientPhone,
         branch_id: await branchIdByName(r.branch||activeBranchId),
+        how_found: r.howFound||null,
+        how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
       }).select().single();
       if (newCust) {
         customer = { id: newCust.id };
         lookups.customersByName.set(r.client, customer);
-        state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId });
+        state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
         showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
       }
-    } else if (customer && r.clientPhone) {
-      const existing = state.clients.find(c=>c.id===customer.id);
-      if (!existing?.phone) {
-        await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+    } else if (customer) {
+      if (r.clientPhone) {
+        const existing = state.clients.find(c=>c.id===customer.id);
+        if (!existing?.phone) {
+          await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+          const idx = state.clients.findIndex(c=>c.id===customer.id);
+          if (idx>=0) state.clients[idx].phone = r.clientPhone;
+        }
+      }
+      if (r.howFound !== undefined && r.howFound !== oldTicket?.howFound) {
+        await supabaseClient.from("customers").update({
+          how_found: r.howFound||null,
+          how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
+        }).eq("id", customer.id);
         const idx = state.clients.findIndex(c=>c.id===customer.id);
-        if (idx>=0) state.clients[idx].phone = r.clientPhone;
+        if (idx>=0) { state.clients[idx].howFound = r.howFound||""; state.clients[idx].howFoundOther = r.howFound==="Otro" ? (r.howFoundOther||"") : ""; }
       }
     }
   }
@@ -5816,6 +5853,7 @@ async function updateRemoteTicket(ticketId, r) {
     discount_amount:      Number(r.discountAmount||0),
     discount_pct:         Number(r.discountPct||0),
     service_type:         r.serviceType||null,
+    due_date:             r.dueDate||null,
     ...(r.createdAt ? { received_at: new Date(r.createdAt + "T12:00:00").toISOString() } : {}),
     ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
   }).eq("id", ticketId);
