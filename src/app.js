@@ -7805,7 +7805,7 @@ function printRecibo(ticket, type) {
     <div class="rct-qr">
       <p class="rct-center">ESCANEA PARA VER EL ESTADO</p>
       <img src="${qrImage}" alt="QR" />
-      <p class="rct-center" style="font-size:9px;opacity:.6;margin-top:4px">Seguimiento en tiempo real de tu reparación</p>
+      <p class="rct-center" style="font-size:9pt;color:#000;margin-top:4px">Seguimiento en tiempo real de tu reparación</p>
     </div>`;
 
   document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}${qrBlock}<p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p><p class="rct-dash">${D}</p></div>`;
@@ -7937,7 +7937,7 @@ function printTicket(ticket) {
   <div class="rct-qr">
     <p class="rct-center">ESCANEA PARA VER EL ESTADO</p>
     <img src="${qrImage}" alt="QR" />
-    <p class="rct-center" style="font-size:9px;opacity:.6;margin-top:4px">Seguimiento en tiempo real de tu reparación</p>
+    <p class="rct-center" style="font-size:9pt;color:#000;margin-top:4px">Seguimiento en tiempo real de tu reparación</p>
   </div>
 
   <p class="rct-dash">${D}</p>

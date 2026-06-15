@@ -1198,7 +1198,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     background: #fff !important;
     color: #000 !important;
     font-family: "Courier New", Courier, monospace;
-    font-size: 9.5pt;
+    font-size: 10.5pt;
     line-height: 1.5;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
@@ -1223,7 +1223,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     margin: 0;
     padding: 0 2mm 4mm;
     font-family: "Courier New", Courier, monospace;
-    font-size: 9pt;
+    font-size: 10pt;
     color: #000;
     line-height: 1.5;              /* FIX 3: increased line spacing */
     box-sizing: border-box;
@@ -1268,7 +1268,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
   /* ── Title ────────────────────────────────────────────── */
   .rct-title {
-    font-size: 10pt;
+    font-size: 11.5pt;
     font-weight: 700;
     text-align: center;
     margin: 1mm 0;
@@ -1278,19 +1278,19 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   /* ── Labels & values ─────────────────────────────────── */
   .rct-label {
     font-weight: 700;
-    font-size: 9pt;
+    font-size: 10pt;
     margin: 2mm 0 0.5mm;
     padding: 0;
   }
 
   .rct-value {
-    font-size: 9pt;
+    font-size: 10pt;
     margin: 0 0 0.8mm;
     padding: 0;
   }
 
   .rct-row {
-    font-size: 9pt;
+    font-size: 10pt;
     margin: 0.8mm 0;
     padding: 0;
   }
@@ -1316,7 +1316,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
   .rct-table th {
     padding: 1.5mm 2mm;
-    font-size: 8.5pt;
+    font-size: 9.5pt;
     font-weight: 800;
     text-align: left;
     color: #fff;
@@ -1342,7 +1342,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
   .rct-table td {
     padding: 1.5mm 2mm;
-    font-size: 9pt;
+    font-size: 10pt;
     color: #000;
     vertical-align: top;
     border-bottom: 1px dotted #666;
@@ -1361,18 +1361,18 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
     justify-content: space-between;
     align-items: baseline;
     padding: 0.8mm 0;
-    font-size: 9pt;
+    font-size: 10pt;
   }
 
   .rct-total-main {
-    font-size: 11pt;
+    font-size: 12pt;
     font-weight: 800;
     padding: 1mm 0;
   }
 
   .rct-total-main span,
   .rct-total-main strong {
-    font-size: 11pt;
+    font-size: 12pt;
     font-weight: 800;
   }
 
@@ -1383,8 +1383,9 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   }
 
   .rct-qr p {
-    font-size: 8pt;
+    font-size: 9pt;
     font-weight: 700;
+    color: #000;
     margin: 0 0 1.5mm;
     letter-spacing: 1px;
   }
@@ -1398,7 +1399,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
   /* ── Policies ─────────────────────────────────────────── */
   .rct-policy {
-    font-size: 8pt;
+    font-size: 9pt;
+    color: #000;
     margin: 0.8mm 0;              /* was: 0.3mm — more space between policy lines */
     padding: 0;
     line-height: 1.5;             /* was: 1.35 */
@@ -1408,7 +1410,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   .rct-thanks {
     text-align: center;
     font-weight: 700;
-    font-size: 9pt;
+    font-size: 10pt;
     margin: 1.5mm 0;              /* was: 1mm */
     letter-spacing: 1px;
   }
@@ -1430,8 +1432,9 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   }
 
   .rct-sign p {
-    font-size: 8pt;
+    font-size: 9pt;
     font-weight: 700;
+    color: #000;
     margin: 0;
     padding-bottom: 0;
     text-transform: uppercase;
