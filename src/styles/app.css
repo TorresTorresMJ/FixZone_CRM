@@ -1734,6 +1734,30 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .device-ac-add:hover,
 .device-ac-add.is-hi { background: rgba(var(--fz-primary-rgb,8,90,203), .15); }
 
+/* ── Equipos registrados del cliente (sugerencias) ────────────────────────── */
+.device-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.device-suggestions:empty { display: none; }
+.device-suggestions-label {
+  font-size: 11px;
+  color: rgba(255,255,255,.4);
+}
+.device-suggestion-chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--fz-primary-rgb,8,90,203), .35);
+  background: rgba(var(--fz-primary-rgb,8,90,203), .1);
+  color: var(--fz-primary, #085ACB);
+  cursor: pointer;
+}
+.device-suggestion-chip:hover { background: rgba(var(--fz-primary-rgb,8,90,203), .2); }
+
 /* Ocultar flechitas de inputs numéricos en la tabla de precios */
 input[type=number].pv-price::-webkit-inner-spin-button,
 input[type=number].pv-price::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

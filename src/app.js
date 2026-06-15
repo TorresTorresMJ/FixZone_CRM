@@ -188,7 +188,7 @@ const formSchemas = {
   ticket: {
     title: "Ticket", collection: "tickets",
     fields: [
-      ["client","Cliente","text",null,false,true],["clientPhone","Teléfono cliente","tel",null,false,true],["productName","Producto / equipo","device-autocomplete"],
+      ["client","Cliente","client-autocomplete",null,false,true],["clientPhone","Teléfono cliente","tel",null,false,true],["productName","Producto / equipo","device-autocomplete"],
       ["howFound","¿Cómo nos conocieron?","select",["",...REFERRAL_SOURCES],false,true],
       ["howFoundOther","Especificar (si elegiste \"Otro\")","text",null,false,true],
       // Device detail fields
@@ -248,7 +248,7 @@ const formSchemas = {
   cotizacion: {
     title: "Nueva cotización", collection: "tickets",
     fields: [
-      ["client","Cliente","text"],
+      ["client","Cliente","client-autocomplete"],
       ["clientPhone","Teléfono de contacto (opcional)","tel",null,false,true],
       ["productName","Dispositivo / equipo","device-autocomplete"],
       ["howFound","¿Cómo nos conocieron?","select",["",...REFERRAL_SOURCES],false,true],
@@ -650,10 +650,16 @@ async function loadSupabaseState() {
     customersByName: new Map(customerRows.map(c  => [c.full_name,  c])),
   };
 
-  const deviceByCustomer = new Map();
-  const deviceById       = new Map();
+  const deviceByCustomer    = new Map();
+  const devicesByCustomer   = new Map();
+  const deviceById          = new Map();
   for (const d of deviceRows) {
     if (!deviceByCustomer.has(d.customer_id)) deviceByCustomer.set(d.customer_id, d);
+    if (d.customer_id) {
+      if (!devicesByCustomer.has(d.customer_id)) devicesByCustomer.set(d.customer_id, []);
+      const list = devicesByCustomer.get(d.customer_id);
+      if (d.product_name && !list.includes(d.product_name)) list.push(d.product_name);
+    }
     deviceById.set(d.id, d);
   }
   const customerById = new Map(customerRows.map(c => [c.id, c]));
@@ -671,6 +677,7 @@ async function loadSupabaseState() {
       return {
         id:c.id, name:c.full_name, phone:c.phone||"", email:c.email||"",
         device:dev?.product_name||"",
+        devices:devicesByCustomer.get(c.id)||[],
         lastVisit:(c.updated_at||c.created_at||"").slice(0,10),
         createdAt:(c.created_at||"").slice(0,10),
         status:"Activo",
@@ -4291,11 +4298,12 @@ function renderDiscountManager() {
     if (from && until && from > until) { showErrorToast("La fecha de inicio no puede ser posterior a la fecha de fin."); return; }
     if ((state.discounts||[]).find(d=>d.code===code)) { showErrorToast("Ese código ya existe."); return; }
     if (!supabaseClient) { showErrorToast("Se requiere conexión a Supabase para guardar códigos."); return; }
+    const branchUuid = await branchIdByName(activeBranchId);
     const { data, error } = await supabaseClient.from("discount_codes").insert({
       code, type, value, description: desc||null,
       valid_from: from, valid_until: until, max_uses: maxUses,
       scope, active: true,
-      branch_id: activeBranchId || null,
+      branch_id: branchUuid || null,
     }).select().single();
     if (error) { showErrorToast("Error al guardar: " + error.message); return; }
     state.discounts = state.discounts || [];
@@ -4881,6 +4889,7 @@ function openForm(type, prefill = {}) {
     if (dcAmtPrefill  && prefill.discountAmount) dcAmtPrefill.value = prefill.discountAmount;
   }
   initDeviceAutocomplete();
+  if (type === "ticket" || type === "cotizacion") initClientAutocomplete();
   if (type === "ticket") { initPriceAutofill(); initTicketCotizadorWidget(); }
   openModal();
 }
@@ -4937,6 +4946,7 @@ function openEditTicket(ticketId) {
     if (dcAmt  && ticket.discountAmount) dcAmt.value = ticket.discountAmount;
     initQuoteItemsBuilder(ticket.quoteItems || []);
     initDeviceAutocomplete();
+    initClientAutocomplete();
     openModal();
     return;
   }
@@ -4949,6 +4959,7 @@ function openEditTicket(ticketId) {
     fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "", optional)
   ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
   initDeviceAutocomplete();
+  initClientAutocomplete();
   initPriceAutofill();
   initTicketCotizadorWidget();
   openModal();
@@ -5235,6 +5246,109 @@ function initDeviceAutocomplete(container = formFields) {
   });
 }
 
+// Cliente recurrente: al elegir un cliente ya registrado, rellena teléfono /
+// "¿Cómo nos conocieron?" (solo si están vacíos) y sugiere sus equipos guardados
+// para el campo "Producto / equipo" — evita reescribir datos en cada ticket/cotización.
+function initClientAutocomplete(container = formFields) {
+  const input = container.querySelector("input[data-client-ac]");
+  if (!input) return;
+  const wrapper = input.closest(".device-ac-wrapper");
+  if (!wrapper) return;
+  let ddEl = null;
+  let hiIdx = -1;
+
+  const close = () => { ddEl?.remove(); ddEl = null; hiIdx = -1; };
+
+  const getOpts = (q) => {
+    const qLow = (q || "").trim().toLowerCase();
+    if (!qLow) return [];
+    return (state.clients || [])
+      .filter(c => c.name && c.name.toLowerCase().includes(qLow))
+      .slice(0, 30);
+  };
+
+  const renderDeviceSuggestions = (client) => {
+    const box = container.querySelector("#productName-suggestions");
+    if (!box) return;
+    const devices = client.devices?.length ? client.devices : (client.device ? [client.device] : []);
+    if (!devices.length) { box.innerHTML = ""; return; }
+    box.innerHTML = `<span class="device-suggestions-label">Equipos registrados:</span>` +
+      devices.map(d => `<button type="button" class="device-suggestion-chip" data-device="${escapeHtml(d)}">${escapeHtml(d)}</button>`).join("");
+    box.querySelectorAll("[data-device]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const productInput = container.querySelector("#productName");
+        if (!productInput) return;
+        productInput.value = btn.dataset.device;
+        productInput.dispatchEvent(new Event("blur"));
+      });
+    });
+  };
+
+  const applyClient = (client) => {
+    const phoneInput = container.querySelector("#clientPhone");
+    if (phoneInput && client.phone && !phoneInput.value.trim()) phoneInput.value = client.phone;
+    const howFoundSel = container.querySelector("#howFound");
+    if (howFoundSel && client.howFound && !howFoundSel.value) {
+      howFoundSel.value = client.howFound;
+      howFoundSel.dispatchEvent(new Event("change"));
+      const otherInput = container.querySelector("#howFoundOther");
+      if (otherInput && client.howFound === "Otro" && client.howFoundOther) otherInput.value = client.howFoundOther;
+    }
+    renderDeviceSuggestions(client);
+  };
+
+  const open = (q) => {
+    close();
+    const opts = getOpts(q);
+    if (!opts.length) return;
+    ddEl = document.createElement("div");
+    ddEl.className = "device-ac-dropdown";
+    ddEl.innerHTML = opts.map((c, i) => `<div class="device-ac-opt" data-idx="${i}" data-id="${escapeHtml(c.id)}">${escapeHtml(c.name)}${c.phone ? ` <span style="opacity:.5">— ${escapeHtml(c.phone)}</span>` : ""}</div>`).join("");
+    wrapper.appendChild(ddEl);
+    ddEl.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const opt = e.target.closest(".device-ac-opt");
+      if (!opt) return;
+      const client = opts.find(c => c.id === opt.dataset.id);
+      if (!client) return;
+      input.value = client.name;
+      applyClient(client);
+      close();
+    });
+  };
+
+  const highlight = (dir) => {
+    if (!ddEl) { open(input.value); return; }
+    const items = ddEl.querySelectorAll(".device-ac-opt");
+    hiIdx = Math.max(0, Math.min(hiIdx + dir, items.length - 1));
+    items.forEach((el, i) => el.classList.toggle("is-hi", i === hiIdx));
+    items[hiIdx]?.scrollIntoView({ block: "nearest" });
+  };
+
+  input.addEventListener("focus", () => open(input.value));
+  input.addEventListener("input", () => { hiIdx = -1; open(input.value); });
+  input.addEventListener("blur", () => setTimeout(close, 160));
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") { e.preventDefault(); highlight(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); highlight(-1); }
+    else if (e.key === "Enter" && ddEl) {
+      const hi = ddEl.querySelector(".is-hi");
+      if (hi) {
+        e.preventDefault();
+        const opts = getOpts(input.value);
+        const client = opts.find(c => c.id === hi.dataset.id);
+        if (client) { input.value = client.name; applyClient(client); }
+        close();
+      }
+    } else if (e.key === "Escape") close();
+  });
+
+  // Si el formulario abre con un cliente ya cargado (editar ticket/cotización),
+  // muestra de inmediato sus equipos guardados como sugerencia.
+  const existing = (state.clients || []).find(c => c.name?.toLowerCase() === input.value.trim().toLowerCase());
+  if (existing) renderDeviceSuggestions(existing);
+}
+
 function initTicketCotizadorWidget() {
   const amountField = formFields.querySelector("#repairAmount")?.closest(".field");
   if (!amountField) return;
@@ -5430,6 +5544,15 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
       <label for="${name}">${labelHtml}</label>
       <input id="${name}" name="${name}" type="text" value="${escapeHtml(String(val))}"
         data-device-ac autocomplete="off" placeholder="Escribe para buscar…" ${optional?"":"required"} />
+      <div id="${name}-suggestions" class="device-suggestions"></div>
+    </div>`;
+  }
+  if (ftype==="client-autocomplete") {
+    const val = defaultValue ?? "";
+    return `<div class="field ${wide?"is-wide":""} device-ac-wrapper">
+      <label for="${name}">${labelHtml}</label>
+      <input id="${name}" name="${name}" type="text" value="${escapeHtml(String(val))}"
+        data-client-ac autocomplete="off" placeholder="Escribe el nombre del cliente…" ${optional?"":"required"} />
     </div>`;
   }
   if (ftype==="discount-code-select") {
@@ -5784,20 +5907,21 @@ async function createRemoteTicket(r) {
     if (newCust) {
       customer = { id: newCust.id };
       lookups.customersByName.set(r.client, customer);
-      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:r.productName||"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
+      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:r.productName||"", devices:r.productName?[r.productName]:[], lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
       showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
     }
   } else if (customer) {
-    if (r.clientPhone && !state.clients.find(c=>c.id===customer.id)?.phone) {
-      // Update phone if client exists but has no phone
+    const existingClient = state.clients.find(c=>c.id===customer.id);
+    // Sincroniza teléfono si el usuario capturó uno distinto al guardado —
+    // esto permite corregir un número equivocado desde un ticket/cotización posterior.
+    if (r.clientPhone && r.clientPhone !== existingClient?.phone) {
       await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
       const idx = state.clients.findIndex(c=>c.id===customer.id);
       if (idx>=0) state.clients[idx].phone = r.clientPhone;
     }
-    // Sólo registra "¿Cómo nos conocieron?" la primera vez — si el cliente ya
-    // tiene un canal de referencia guardado, una cotización/ticket posterior
-    // (a veces para un equipo distinto) no debe sobrescribirlo ni afectar las métricas.
-    if (r.howFound && !state.clients.find(c=>c.id===customer.id)?.howFound) {
+    // Sincroniza "¿Cómo nos conocieron?" si cambió — permite corregir el canal
+    // de referencia en un ticket/cotización posterior sin perder la información.
+    if (r.howFound && r.howFound !== existingClient?.howFound) {
       await supabaseClient.from("customers").update({
         how_found: r.howFound,
         how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
@@ -5910,13 +6034,13 @@ async function updateRemoteTicket(ticketId, r) {
       if (newCust) {
         customer = { id: newCust.id };
         lookups.customersByName.set(r.client, customer);
-        state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
+        state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", devices:[], lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
         showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
       }
     } else if (customer) {
       if (r.clientPhone) {
         const existing = state.clients.find(c=>c.id===customer.id);
-        if (!existing?.phone) {
+        if (r.clientPhone !== existing?.phone) {
           await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
           const idx = state.clients.findIndex(c=>c.id===customer.id);
           if (idx>=0) state.clients[idx].phone = r.clientPhone;
