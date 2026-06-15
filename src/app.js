@@ -168,7 +168,7 @@ const formSchemas = {
     title: "Cliente", collection: "clients",
     fields: [
       ["name","Nombre","text"],["phone","Telefono","tel"],["email","Email","email",null,false,true],
-      ["device","Equipo","device-autocomplete"],["address","Direccion","text"],
+      ["device","Equipo","device-autocomplete"],["address","Direccion","text",null,false,true],
       ["lastVisit","Ultima visita","date"],
       ["status","Estado","select",["Nuevo","Activo","Garantia","Inactivo"]],
       ["howFound","¿Cómo nos conocieron?","select",["",...REFERRAL_SOURCES],false,true],
