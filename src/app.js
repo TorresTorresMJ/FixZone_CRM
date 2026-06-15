@@ -167,7 +167,7 @@ const formSchemas = {
   client: {
     title: "Cliente", collection: "clients",
     fields: [
-      ["name","Nombre","text"],["phone","Telefono","tel"],["email","Email","email"],
+      ["name","Nombre","text"],["phone","Telefono","tel"],["email","Email","email",null,false,true],
       ["device","Equipo","device-autocomplete"],["address","Direccion","text"],
       ["lastVisit","Ultima visita","date"],
       ["status","Estado","select",["Nuevo","Activo","Garantia","Inactivo"]],
@@ -190,8 +190,8 @@ const formSchemas = {
       ["client","Cliente","text",null,false,true],["clientPhone","Teléfono cliente","tel",null,false,true],["productName","Producto / equipo","device-autocomplete"],
       // Device detail fields
       ["imei","IMEI / No. Serie","text",null,false,true],
-      ["color","Color","text"],
-      ["accessories","Accesorios recibidos","text",null,true],
+      ["color","Color","text",null,false,true],
+      ["accessories","Accesorios recibidos","text",null,true,true],
       ["physicalCondition","Condición física","select",["Bueno","Regular","Con daños","Muy dañado"]],
       ["serviceType","Tipo de servicio","service-type-select",null,false,true],
       ["issue","Falla / trabajo","text",null,true],
@@ -697,6 +697,8 @@ async function loadSupabaseState() {
         paymentMethod:t.payment_method||"",
         cotizacionRef:t.cotizacion_ref||"",
         convertedToTicket:t.converted_to_ticket||"",
+        waitingPart:!!t.waiting_part,
+        waitingPartNote:t.waiting_part_note||"",
         deviceId:t.device_id||null,
         // Device fields — enable search by IMEI/serial and pre-populate edit form
         imei:dev?.imei||"",
@@ -1219,12 +1221,14 @@ function ticketCard(ticket, perms, idx = 0) {
     </div>
     <span class="muted" style="font-size:11px">${escapeHtml(ticket.productName||ticket.device)}</span>
     ${issueHtml}
+    ${ticket.waitingPart ? `<div style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:rgba(243,156,18,.15);border:1px solid rgba(243,156,18,.35);color:#f39c12" title="${escapeHtml(ticket.waitingPartNote||"")}">⏳ Esperando pieza${ticket.waitingPartNote?` — ${escapeHtml(ticket.waitingPartNote)}`:""}</div>` : ""}
     ${priceHtml}
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}" title="Opciones de impresión">🖨</button>
       <button class="mini-button" style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);color:#25d366" data-wa-ticket="${ticket.id}" title="Enviar por WhatsApp">💬</button>
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
       ${/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticket.id)?`<button class="mini-button" data-qr-ticket="${ticket.id}" title="QR Técnico">📱</button>`:""}
+      <button class="mini-button ${ticket.waitingPart?"is-active":""}" style="${ticket.waitingPart?"background:rgba(243,156,18,.2);border-color:rgba(243,156,18,.5);color:#f39c12":""}" data-toggle-waiting="${ticket.id}" title="${ticket.waitingPart?"Quitar marca de espera de pieza":"Marcar: esperando pieza"}">⏳</button>
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">✕</button>`:""}
     </div>
@@ -5740,6 +5744,7 @@ async function createRemoteTicket(r) {
     imei:r.imei||"", color:r.color||"",
     accessories:r.accessories||"", physicalCondition:r.physicalCondition||"",
     quoteItems: r.quoteItems||[],
+    waitingPart:false, waitingPartNote:"",
   };
   state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
 
@@ -5902,6 +5907,31 @@ async function updateRemoteTicket(ticketId, r) {
     }).select("id").single();
     if (dev?.id) {
       await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", ticketId);
+    }
+  }
+}
+
+// Marca rápida "esperando pieza" — independiente de la etapa del ticket
+async function toggleWaitingPart(ticketId) {
+  const idx = state.tickets.findIndex(t => t.id === ticketId);
+  if (idx === -1) return;
+  const ticket = state.tickets[idx];
+  const newVal = !ticket.waitingPart;
+  let note = ticket.waitingPartNote || "";
+  if (newVal) {
+    note = (prompt("¿Qué pieza se está esperando? (opcional)", note) ?? note).trim();
+  } else {
+    note = "";
+  }
+  state.tickets[idx] = { ...ticket, waitingPart: newVal, waitingPartNote: note };
+  render();
+  if (dataMode === "remote" && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticketId)) {
+    try {
+      await supabaseClient.from("service_tickets")
+        .update({ waiting_part: newVal, waiting_part_note: note || null })
+        .eq("id", ticketId);
+    } catch (err) {
+      showErrorToast(`Error: ${err.message}`);
     }
   }
 }
@@ -7306,6 +7336,10 @@ document.addEventListener("click", async e => {
   const abonoBtn = e.target.closest("[data-abono-ticket]");
   if (abonoBtn) { openAbonoModal(abonoBtn.dataset.abonoTicket); return; }
 
+  // Marca rápida: esperando pieza
+  const waitingBtn = e.target.closest("[data-toggle-waiting]");
+  if (waitingBtn) { toggleWaitingPart(waitingBtn.dataset.toggleWaiting); return; }
+
   // Descargar imagen de cotización
   const imageCot = e.target.closest("[data-image-cotizacion]");
   if (imageCot) {
@@ -8628,6 +8662,7 @@ function viewTicketDetail(ticketId) {
         ${row("Estado de pago", ticket.paymentStatus)}
         ${ticket.paymentMethod ? row("Método de pago", ticket.paymentMethod) : ""}
       </div>
+      ${ticket.waitingPart ? `<div class="tdv-issue" style="margin-bottom:10px;background:rgba(243,156,18,.1);border-color:rgba(243,156,18,.3)"><p style="margin:0;font-size:13px;line-height:1.5;color:#f39c12">⏳ Esperando pieza${ticket.waitingPartNote?` — ${escapeHtml(ticket.waitingPartNote)}`:""}</p></div>` : ""}
       ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${ticket.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas internas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(ticket.notes)}</p></div>` : ""}
     </div>
