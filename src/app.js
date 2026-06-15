@@ -173,7 +173,7 @@ const formSchemas = {
       ["status","Estado","select",["Nuevo","Activo","Garantia","Inactivo"]],
       ["howFound","¿Cómo nos conocieron?","select",["",...REFERRAL_SOURCES],false,true],
       ["howFoundOther","Especificar (si elegiste \"Otro\")","text",null,false,true],
-      ["notes","Notas","text",null,true],
+      ["notes","Notas","text",null,true,true],
     ],
   },
   product: {
