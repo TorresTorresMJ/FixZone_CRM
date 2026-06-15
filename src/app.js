@@ -1032,6 +1032,45 @@ document.querySelector("#product-type-bar")?.addEventListener("click", e => {
   renderProducts();
 });
 
+// Proxy scrollbar de vidrio fijo al borde inferior — sincroniza con #ticket-board
+function initKanbanScrollProxy() {
+  const board = document.querySelector("#ticket-board");
+  if (!board) return;
+
+  let strip = document.getElementById("kanban-scroll-proxy");
+  if (!strip) {
+    strip = document.createElement("div");
+    strip.id = "kanban-scroll-proxy";
+    const inner = document.createElement("div");
+    inner.id = "kanban-scroll-proxy-inner";
+    strip.appendChild(inner);
+    document.body.appendChild(strip);
+
+    let syncing = false;
+    board.addEventListener("scroll", () => {
+      if (syncing) return; syncing = true; strip.scrollLeft = board.scrollLeft; syncing = false;
+    }, { passive: true });
+    strip.addEventListener("scroll", () => {
+      if (syncing) return; syncing = true; board.scrollLeft = strip.scrollLeft; syncing = false;
+    }, { passive: true });
+  }
+
+  // Posición: a la derecha del sidebar (220px en escritorio, 0 en móvil donde el sidebar es top-bar)
+  const sidebarPx = window.innerWidth > 980 ? 220 : 0;
+  strip.style.left = sidebarPx + "px";
+  strip.style.right = "0";
+
+  // Ancho del scroll interior = ancho desplazable real del board
+  const inner = document.getElementById("kanban-scroll-proxy-inner");
+  if (inner) inner.style.width = board.scrollWidth + "px";
+  strip.scrollLeft = board.scrollLeft;
+
+  // Mostrar solo cuando hay desbordamiento real
+  const hasOverflow = board.scrollWidth > board.clientWidth + 2;
+  strip.style.opacity = hasOverflow ? "1" : "0";
+  strip.style.pointerEvents = hasOverflow ? "auto" : "none";
+}
+
 const PRIORITY_ORDER = { "Urgente":0, "Alta":1, "Media":2, "Normal":3 };
 function sortedKanbanTickets(tickets) {
   const list = [...tickets];
@@ -1060,17 +1099,12 @@ function renderTickets() {
       <option value=""${kanbanAssigneeFilter===""?" selected":""}>Todos los t&#233;cnicos</option>
       ${assignees.map(name=>`<option value="${escapeHtml(name)}"${kanbanAssigneeFilter===name?" selected":""}>${escapeHtml(name)}</option>`).join("")}
     </select>`;
-    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Asignado a:</span>${assigneeSelect}<span style="display:flex;gap:4px;margin-left:auto"><button class="mini-button" id="kanban-scroll-left" title="Desplazar columnas a la izquierda" style="font-size:13px;padding:3px 10px">◀</button><button class="mini-button" id="kanban-scroll-right" title="Desplazar columnas a la derecha" style="font-size:13px;padding:3px 10px">▶</button></span>`;
+    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Asignado a:</span>${assigneeSelect}`;
     sortBar.querySelectorAll(".kanban-sort-btn").forEach(btn => {
       btn.addEventListener("click", () => { kanbanSort = btn.dataset.sort; renderTickets(); });
     });
     const filterSelect = sortBar.querySelector("#kanban-assignee-filter");
     if (filterSelect) filterSelect.addEventListener("change", () => { kanbanAssigneeFilter = filterSelect.value; renderTickets(); });
-    const board = document.querySelector("#ticket-board");
-    const scrollLeftBtn = sortBar.querySelector("#kanban-scroll-left");
-    const scrollRightBtn = sortBar.querySelector("#kanban-scroll-right");
-    if (board && scrollLeftBtn) scrollLeftBtn.addEventListener("click", () => board.scrollBy({ left: -320, behavior: "smooth" }));
-    if (board && scrollRightBtn) scrollRightBtn.addEventListener("click", () => board.scrollBy({ left: 320, behavior: "smooth" }));
   }
 
   document.querySelector("#ticket-board").innerHTML = ticketStages.map(status=>{
@@ -1084,6 +1118,9 @@ function renderTickets() {
       <div class="ticket-stack">${tickets.map((t,i)=>ticketCard(t,perms,i)).join("")||emptyMessage("Sin tickets.")}</div>
     </section>`;
   }).join("");
+
+  // Proxy scrollbar necesita el scrollWidth real, disponible tras el paint
+  requestAnimationFrame(() => initKanbanScrollProxy());
 }
 
 async function handleKanbanDrop(event, newStage) {
@@ -4372,13 +4409,17 @@ async function updateRemoteClient(clientId, data) {
     how_found_other: data.howFound==="Otro" ? (data.howFoundOther||null) : null,
   }).eq("id", clientId);
   if (error) throw error;
-  // Update device if provided
+  // Guarda el equipo: actualiza el más reciente si ya existe, inserta si no hay ninguno
   if (data.device) {
-    const existing = await supabaseClient.from("customer_devices")
-      .select("id").eq("customer_id", clientId).maybeSingle();
-    if (existing.data?.id) {
+    const { data: existing } = await supabaseClient.from("customer_devices")
+      .select("id").eq("customer_id", clientId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (existing?.id) {
       await supabaseClient.from("customer_devices")
-        .update({ product_name: data.device }).eq("id", existing.data.id);
+        .update({ product_name: data.device }).eq("id", existing.id);
+    } else {
+      await supabaseClient.from("customer_devices")
+        .insert({ customer_id: clientId, product_name: data.device });
     }
   }
 }
@@ -9207,5 +9248,8 @@ document.addEventListener("click", e => {
     closePrintPanel();
   }
 }, true);
+
+// Re-posicionar proxy al cambiar tamaño de ventana (sidebar cambia de 220px a 0 en ≤980px)
+window.addEventListener("resize", () => initKanbanScrollProxy(), { passive: true });
 
 initializeApp();

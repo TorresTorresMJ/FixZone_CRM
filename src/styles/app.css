@@ -690,15 +690,38 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   display: flex;
   gap: 14px;
   overflow-x: auto;
-  padding-bottom: 12px;
-  /* always-visible scrollbar */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,.2) transparent;
+  padding-bottom: 16px;
+  /* ocultar scrollbar nativo — se usa el proxy de vidrio fijo al fondo */
+  scrollbar-width: none;
 }
-.kanban::-webkit-scrollbar { height: 6px; }
-.kanban::-webkit-scrollbar-track { background: transparent; }
-.kanban::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 3px; }
-.kanban::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.35); }
+.kanban::-webkit-scrollbar { display: none; }
+
+/* Proxy scrollbar fijo al borde inferior (glass) — creado por JS */
+#kanban-scroll-proxy {
+  position: fixed;
+  bottom: 0;
+  z-index: 200;
+  height: 14px;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  backdrop-filter: blur(14px) saturate(1.6);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  background: rgba(255,255,255,0.05);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.35) transparent;
+  transition: opacity .25s ease;
+}
+#kanban-scroll-proxy::-webkit-scrollbar { height: 10px; }
+#kanban-scroll-proxy::-webkit-scrollbar-track { background: transparent; }
+#kanban-scroll-proxy::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,.28);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+#kanban-scroll-proxy::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.5); border: 2px solid transparent; background-clip: padding-box; }
+#kanban-scroll-proxy-inner { height: 1px; }
 
 .kanban-column { min-height: 420px; padding: 14px; min-width: 280px; width: 280px; flex-shrink: 0; }
 
@@ -876,8 +899,11 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
 .field option { color: #101217; }
 
-/* ── Kanban: columnas compactas, acciones revelan en hover ───────────────── */
-.kanban-column { min-width: 240px; width: clamp(240px, 22vw, 320px); padding: 12px 10px; }
+/* ── Kanban: columnas compactas, auto-fill en escritorio, hover reveal ──── */
+/* En escritorio las columnas se reparten el espacio; sólo hay scroll si la
+   ventana es muy angosta (< 200px × nº columnas). En tablet/móvil el ancho
+   mínimo fijo provoca overflow que el proxy de vidrio fijo al fondo maneja. */
+.kanban-column { flex: 1 1 200px; min-width: 200px; width: auto; padding: 12px 10px; }
 
 /* Acciones: se expanden en hover via max-height, overflow:hidden en card las contiene */
 .ticket-card .ticket-actions {
@@ -989,9 +1015,9 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   .brand-tokens-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .auto-flows-grid   { grid-template-columns: 1fr; }
 
-  /* Kanban en tablet: scroll horizontal más visible */
+  /* Kanban en tablet: columnas de ancho fijo → overflow → proxy scroll */
   .kanban { gap: 10px; }
-  .kanban-column { min-width: 220px; width: 220px; }
+  .kanban-column { flex: 0 0 220px; min-width: 220px; width: 220px; }
 }
 
 /* ── Mobile (≤ 640px) ───────────────────────────────────────────────────── */
@@ -1020,8 +1046,8 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   .metric strong { font-size: 20px; }
   .report-grid { grid-template-columns: 1fr; }
 
-  /* Kanban: cards más angostas, scroll cómodo */
-  .kanban-column { min-width: calc(85vw); width: calc(85vw); }
+  /* Kanban: cards de 85vw → scroll por columna, proxy lo maneja */
+  .kanban-column { flex: 0 0 85vw; min-width: 85vw; width: 85vw; }
 
   /* Siempre mostrar acciones en mobile (no hay hover) */
   .ticket-card .ticket-actions {
