@@ -3935,7 +3935,7 @@ function renderWATemplates() {
 
   const tpls = getWATemplates();
   const LABELS = { cotizacion:"📋 Cotización", listo:"✅ Equipo Listo", abono:"💳 Abono recibido", pagado:"✅ Pago completo", garantia:"🛡 Garantía" };
-  const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo} {total} {items} {link}";
+  const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo} {total} {items} {servicio} {link}";
   el.innerHTML = `
     <div class="card" style="margin-top:16px">
       <div style="margin-bottom:16px">
@@ -4122,7 +4122,7 @@ const DEFAULT_WA_TEMPLATES = {
   abono:      "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.\n\n📲 Sigue el estado de tu reparación: {link}",
   pagado:     "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!\n\n📲 Sigue el estado de tu reparación: {link}",
   garantia:   "Hola {cliente} 👋, tu equipo {equipo} está en garantía. Folio: {folio}. Contáctanos para coordinar.\n\n📲 Sigue el estado de tu reparación: {link}",
-  cotizacion: "",
+  cotizacion: "Hola {cliente} 👋, esta es la cotización del equipo *{equipo}* para el servicio de {servicio}.\n\n💰 Total: {total}\n\n📲 Ver detalle: {link}",
 };
 
 function getWATemplates() {
@@ -4140,6 +4140,7 @@ function fillWATemplate(key, vars) {
     .replace(/{saldo}/g,    vars.pending||"")
     .replace(/{total}/g,    vars.amount||"")
     .replace(/{items}/g,    vars.items||"")
+    .replace(/{servicio}/g, vars.servicio||"")
     .replace(/{link}/g,     vars.link||"");
 }
 
@@ -6991,24 +6992,28 @@ function showWAPanel(ticketId) {
   const phone  = ticket.phone || client?.phone || "";
   const brand  = window.getBranchBrand(ticket.branch || activeBranchId);
 
+  const isQuote = ticket.status === "Cotizacion";
+
   const vars = {
-    cliente:   ticket.client || "",
-    equipo:    ticket.productName || ticket.device || "",
-    sucursal:  brand.displayName || activeBranchId,
-    folio:     ticket.tracking || "",
-    monto:     money.format(Number(ticket.repairAmount || ticket.total || 0)),
-    saldo:     money.format(Math.max(0, Number(ticket.repairAmount || ticket.total || 0) - Number(ticket.paidAmount || 0))),
-    total:     money.format(Number(ticket.repairAmount || ticket.total || 0)),
-    items:     "",
-    link:      receiptQrTarget(ticket.id),
+    client:      ticket.client || "",
+    productName: ticket.productName || ticket.device || "",
+    branch:      brand.displayName || activeBranchId,
+    tracking:    ticket.tracking || "",
+    amount:      money.format(Number(ticket.repairAmount || ticket.total || 0)),
+    pending:     money.format(Math.max(0, Number(ticket.repairAmount || ticket.total || 0) - Number(ticket.paidAmount || 0))),
+    items:       "",
+    link:        receiptQrTarget(ticket.id),
+    servicio:    ticket.issue || "",
   };
 
-  const messages = [
-    { key: "listo",    emoji: "✅", label: "Equipo listo" },
-    { key: "abono",    emoji: "💵", label: "Confirmar abono" },
-    { key: "pagado",   emoji: "🎉", label: "Pago completado" },
-    { key: "garantia", emoji: "🛡", label: "Garantía activa" },
-  ];
+  const messages = isQuote
+    ? [{ key: "cotizacion", emoji: "📋", label: "Enviar cotización" }]
+    : [
+        { key: "listo",    emoji: "✅", label: "Equipo listo" },
+        { key: "abono",    emoji: "💵", label: "Confirmar abono" },
+        { key: "pagado",   emoji: "🎉", label: "Pago completado" },
+        { key: "garantia", emoji: "🛡", label: "Garantía activa" },
+      ];
 
   const makeBtn = ({ key, emoji, label }) => {
     const msg = fillWATemplate(key, vars);
@@ -7032,8 +7037,10 @@ function showWAPanel(ticketId) {
 
   const btns = messages.map(makeBtn).filter(Boolean).join("");
 
-  const defaultPdfMsg = fillWATemplate("listo", vars)
-    || `Hola ${vars.cliente}, te comparto el ticket de tu reparación (${vars.folio}) en ${vars.sucursal}.\n\n📲 Sigue el estado de tu reparación: ${vars.link}`;
+  const defaultPdfMsg = isQuote
+    ? fillWATemplate("cotizacion", vars)
+    : (fillWATemplate("listo", vars)
+      || `Hola ${vars.client}, te comparto el ticket de tu reparación (${vars.tracking}) en ${vars.branch}.\n\n📲 Sigue el estado de tu reparación: ${vars.link}`);
 
   const noPhone = !phone ? `
     <div style="background:rgba(255,153,0,.1);border:1px solid rgba(255,153,0,.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#ff9f43;margin-bottom:12px">
