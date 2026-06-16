@@ -84,6 +84,7 @@ const PERMISSIONS = {
 
 let activeBranchId  = "Puerto Vallarta";
 let activeForm      = null;
+const cotizacionImgCache = new Map(); // ticketId → Blob — generado una sola vez, preserva fecha/hora real
 let editingTicketId = null;
 let posCart = []; // [{productId, name, qty, unitPrice, maxStock}]
 let posCatalogFilter  = "all";
@@ -702,6 +703,7 @@ async function loadSupabaseState() {
         assignedTo:employeeRows.find(e=>e.id===t.assigned_employee_id)?.full_name||"",
         createdByName:employeeRows.find(e=>e.id===t.created_by)?.full_name||"",
         createdAt:utcToLocalDate(t.received_at||t.created_at),
+        createdAtFull:t.received_at||t.created_at||"",
         notes:t.notes||"",
         discountCode:t.discount_code||"",
         discountAmount:Number(t.discount_amount||0),
@@ -727,6 +729,7 @@ async function loadSupabaseState() {
         phone:cust?.phone||"",
         clientPhone:cust?.phone||"",
         quoteItems: Array.isArray(t.quote_items) ? t.quote_items : (t.quote_items ? JSON.parse(t.quote_items) : []),
+        deliveredAt: t.delivered_at ? t.delivered_at.slice(0,10) : "",
       };
     }),
     supplies: (puRes.data||[]).map(p => ({
@@ -5596,6 +5599,18 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
         data-client-ac autocomplete="off" placeholder="Escribe el nombre del cliente…" ${optional?"":"required"} />
     </div>`;
   }
+  if (ftype==="locked-date") {
+    const val = defaultValue ?? "";
+    return `<div class="field ${wide?"is-wide":""}">
+      <label for="${name}">${labelHtml} <span title="Protegida — requiere código para editar" style="opacity:.5;font-size:11px">🔒</span></label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input id="${name}" name="${name}" type="date" value="${escapeHtml(String(val))}" readonly
+          style="flex:1;cursor:default;opacity:.75" ${optional?"":"required"} />
+        <button type="button" class="mini-button" style="font-size:11px;padding:3px 10px;white-space:nowrap"
+          onclick="window.unlockDateField('${name}')">Desbloquear</button>
+      </div>
+    </div>`;
+  }
   if (ftype==="discount-code-select") {
     const scope = opts || "ticket";
     const val = (defaultValue ?? "").toUpperCase();
@@ -6059,6 +6074,7 @@ async function createRemoteTicket(r) {
 }
 
 async function updateRemoteTicket(ticketId, r) {
+  cotizacionImgCache.delete(ticketId); // la cotización cambió: regenerar imagen la próxima vez
   const oldTicket = state.tickets.find(t => t.id === ticketId);
 
   // Auto-register or update customer phone/referral source when editing
@@ -6118,6 +6134,8 @@ async function updateRemoteTicket(ticketId, r) {
     service_type:         r.serviceType||null,
     due_date:             r.dueDate||null,
     ...(r.createdAt ? { received_at: new Date(r.createdAt + "T12:00:00").toISOString() } : {}),
+    // Sellar delivered_at solo la primera vez que pasa a Entregado — nunca sobrescribir
+    ...(!oldTicket?.deliveredAt && r.status === "Entregado" ? { delivered_at: dateStamp() } : {}),
     ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
   }).eq("id", ticketId);
   if (error) throw error;
@@ -6186,6 +6204,12 @@ async function updateRemoteTicket(ticketId, r) {
         if (pidx !== -1) state.products[pidx] = { ...state.products[pidx], stock: newStock };
       }
     }
+  }
+
+  // Actualizar deliveredAt en estado local si se acaba de sellar
+  if (!oldTicket?.deliveredAt && r.status === "Entregado") {
+    const tidx = state.tickets.findIndex(t => t.id === ticketId);
+    if (tidx !== -1) state.tickets[tidx].deliveredAt = dateStamp();
   }
 
   // Update device record if exists, or create one if device info provided
@@ -8201,8 +8225,9 @@ async function buildCotizacionCanvas(ticket) {
   const subtotal = Number(ticket.repairAmount || 0);
   const discAmt  = Number(ticket.discountAmount || 0);
   const total    = Math.max(0, subtotal - discAmt);
-  const now      = new Date();
-  const timeStr  = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
+  // Usa la fecha/hora real de creación del ticket, no la del momento de generar la imagen
+  const createdDate = ticket.createdAtFull ? new Date(ticket.createdAtFull) : new Date();
+  const timeStr  = createdDate.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
   const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone    = ticket.clientPhone || client?.phone || "";
 
@@ -8276,16 +8301,25 @@ async function buildCotizacionCanvas(ticket) {
   }
 }
 
+// Devuelve el blob de la cotización, generándolo solo la primera vez y
+// cacheándolo por ticket.id — la fecha/hora del comprobante nunca cambia.
+async function getCotizacionBlob(ticket) {
+  if (cotizacionImgCache.has(ticket.id)) return cotizacionImgCache.get(ticket.id);
+  const canvas = await buildCotizacionCanvas(ticket);
+  if (!canvas) return null;
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+  if (blob) cotizacionImgCache.set(ticket.id, blob);
+  return blob || null;
+}
+
 // Descarga la cotización como imagen PNG.
 async function generateCotizacionImage(ticket) {
-  const canvas = await buildCotizacionCanvas(ticket);
-  if (!canvas) {
+  const blob = await getCotizacionBlob(ticket);
+  if (!blob) {
     showErrorToast("No se pudo generar la imagen: librería no disponible");
     return;
   }
   try {
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
-    if (!blob) throw new Error("No se pudo generar la imagen");
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -8429,6 +8463,29 @@ async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
   }
 }
 window.shareTicketPDF = shareTicketPDF;
+
+// Desbloquea temporalmente un campo fecha protegido (locked-date ftype).
+// El código se guarda en localStorage; si nunca se configuró, se usa "FZFECHAS".
+window.unlockDateField = function(fieldId) {
+  const stored = localStorage.getItem("fixzone-date-edit-code") || "FZFECHAS";
+  const input  = document.getElementById(fieldId);
+  if (!input) return;
+  const code = prompt("Ingresa el código de autorización para editar esta fecha:");
+  if (code === null) return;
+  if (code.trim().toUpperCase() !== stored.trim().toUpperCase()) {
+    alert("Código incorrecto. La fecha no puede modificarse.");
+    return;
+  }
+  input.removeAttribute("readonly");
+  input.style.opacity  = "1";
+  input.style.cursor   = "default";
+  input.focus();
+  // Volver a bloquear si el campo pierde foco (one-time unlock)
+  input.addEventListener("blur", () => {
+    input.setAttribute("readonly", "");
+    input.style.opacity = ".75";
+  }, { once: true });
+};
 
 // ── Centro de notificaciones (Supabase, tabla `notifications`) ──────────────
 // Antes vivía en localStorage (por navegador): los avisos no llegaban a nadie
@@ -8611,7 +8668,6 @@ async function shareQuoteWhatsApp(ticketId) {
       `⏳ Vigencia: 15 días. Contáctanos para agendar tu reparación. ¡Gracias!`;
   }
 
-  let imgBlob = null;
   const imgFileName = `cotizacion-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.png`;
 
   const existing = document.getElementById("wa-quote-panel-overlay");
@@ -8679,56 +8735,51 @@ async function shareQuoteWhatsApp(ticketId) {
     navigator.clipboard.writeText(txt).then(() => showToast("✓ Mensaje copiado")).catch(() => showToast("✓ Mensaje copiado"));
   });
 
-  // Botón imagen: espera blob si aún está generándose, luego ofrece compartir o descargar
+  // Botón imagen: genera (o recupera del caché) el blob y lo comparte/descarga.
+  // Abre también el chat wa.me para que el usuario llegue al contacto correcto.
   overlay.querySelector("#wa-quote-img-btn").addEventListener("click", async () => {
     const labelEl = overlay.querySelector("#wa-quote-img-label");
     if (labelEl) labelEl.textContent = "Generando imagen…";
 
-    // Si el blob aún no está listo, construirlo ahora
-    if (!imgBlob) {
-      const canvas = await buildCotizacionCanvas(ticket);
-      if (canvas) imgBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
-    }
-    if (!imgBlob) {
+    const blob = await getCotizacionBlob(ticket);
+    if (!blob) {
       showErrorToast("No se pudo generar la imagen");
       if (labelEl) labelEl.textContent = "Error al generar imagen";
       return;
     }
 
-    const file = new File([imgBlob], imgFileName, { type: "image/png" });
-    // Web Share API con archivos (funciona en Android Chrome / Safari iOS).
-    // Copiamos el mensaje al portapapeles ANTES de abrir el selector nativo —
-    // así cuando WhatsApp abre con la imagen adjunta, el usuario solo pega el texto.
+    const msgText = msgArea?.value || defaultMsg;
+    const file = new File([blob], imgFileName, { type: "image/png" });
+
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      const msgText = msgArea?.value || defaultMsg;
+      // Copia el texto antes de abrir el selector — cuando WhatsApp abre
+      // con la imagen ya adjunta, el usuario pega el mensaje y envía.
       try { await navigator.clipboard.writeText(msgText); } catch {}
       if (labelEl) labelEl.textContent = "✓ Texto copiado — elige WhatsApp y pega el mensaje";
       try {
         await navigator.share({ files: [file], title: `Cotización ${ticket.tracking}` });
+        // Después de compartir la imagen, abre el chat directo con el número
+        if (waUrl) window.open(waUrl, "_blank", "noopener");
         if (labelEl) labelEl.textContent = "Imagen compartida ✓";
         return;
       } catch (err) {
         if (err.name === "AbortError") { if (labelEl) labelEl.textContent = "Compartir imagen cotización"; return; }
       }
     }
-    // Fallback: descarga directa
-    const dlUrl = URL.createObjectURL(imgBlob);
+    // Fallback desktop: descarga imagen + abre wa.me con texto
+    const dlUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = dlUrl; a.download = imgFileName; a.click();
     URL.revokeObjectURL(dlUrl);
+    if (waUrl) window.open(waUrl, "_blank", "noopener");
     if (labelEl) labelEl.textContent = "Imagen descargada ✓ — adjúntala en el chat";
-    showToast("✓ Imagen descargada — adjúntala en el chat de WhatsApp");
+    showToast("✓ Imagen descargada y chat abierto — adjúntala en WhatsApp");
   });
 
-  // Marcar imagen lista en cuanto se genere
-  buildCotizacionCanvas(ticket).then(canvas => {
-    if (!canvas) return;
-    canvas.toBlob(b => {
-      if (!b) return;
-      imgBlob = b;
-      const labelEl = overlay.querySelector("#wa-quote-img-label");
-      if (labelEl) labelEl.textContent = "Compartir imagen cotización";
-    }, "image/png");
+  // Pre-genera la imagen en segundo plano (primera vez: establece la fecha/hora real)
+  getCotizacionBlob(ticket).then(blob => {
+    const labelEl = overlay.querySelector("#wa-quote-img-label");
+    if (blob && labelEl) labelEl.textContent = "Compartir imagen cotización";
   });
 
   document.body.appendChild(overlay);
