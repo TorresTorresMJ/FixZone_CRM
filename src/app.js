@@ -205,7 +205,7 @@ const formSchemas = {
       ["discountAmount","Descuento ($)","number",null,false,true],
       ["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
       ["paymentMethod","Método de pago","select",["","Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"],false,true],
-      ["paidAmount","Monto pagado","number"],["createdAt","Fecha de recepción","locked-date"],
+      ["paidAmount","Monto pagado","number"],["createdAt","Fecha de recepción","date"],
       ["dueDate","Fecha límite","date",null,false,true],
       ["notes","Notas internas","text",null,true,true],
     ],
