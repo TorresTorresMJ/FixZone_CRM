@@ -1257,7 +1257,11 @@ function ticketCard(ticket, perms, idx = 0) {
   perms = perms || currentPerms();
   const paid    = ticket.paymentStatus === "Pagado";
   const repair  = Number(ticket.repairAmount ?? ticket.total ?? 0);
-  const total   = Math.max(0, repair - (ticket.discountAmount || 0));
+  // quoteItems-based tickets: repairAmount already has discount applied (set by updateQuoteItemsHiddenInputs)
+  // plain tickets: repairAmount is pre-discount, so subtract manually
+  const total   = (ticket.quoteItems?.length > 0)
+    ? repair
+    : Math.max(0, repair - (ticket.discountAmount || 0));
   const paidAmt = Number(ticket.paidAmount ?? (paid ? repair : 0));
   const stClass = ticket.status==="Listo"||ticket.status==="Entregado" ? "ready"
                 : ticket.status==="Cotizacion" ? "waiting"
@@ -8253,8 +8257,8 @@ async function buildCotizacionCanvas(ticket) {
   wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;box-sizing:border-box;overflow:hidden";
   wrap.innerHTML = `
     <div style="background:${primary};padding:18px 20px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px">
-      <img src="${brand.logoLightSrc || brand.logoMonoSrc || brand.logoSrc}" alt="${escapeHtml(brand.displayName)}"
-        style="height:34px;object-fit:contain;filter:brightness(0) invert(1)" onerror="this.style.display='none'"/>
+      <img src="${brand.logoLightSrc || brand.logoSrc}" alt="${escapeHtml(brand.displayName)}"
+        style="height:34px;object-fit:contain" onerror="this.style.display='none'"/>
       <div style="text-align:right">
         <div style="font-size:20px;font-weight:800;letter-spacing:.06em;color:#fff">COTIZACIÓN</div>
         <div style="font-size:11px;color:rgba(255,255,255,0.72);margin-top:1px">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())}</div>
@@ -8352,8 +8356,9 @@ async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
   const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
   const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
   const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
-  const logoSrc  = brand.logoLightSrc || brand.logoMonoSrc || brand.logoSrc;
-  const logoFallback = brand.logoMonoFallback || brand.logoFallback || brand.logoSrc;
+  // Header del ticket tiene fondo de color → logo para fondo oscuro, sin filtro CSS
+  const logoSrc  = brand.logoLightSrc || brand.logoSrc;
+  const logoFallback = brand.logoLightSrc || brand.logoFallback || brand.logoSrc;
   const repairAmt= Number(ticket.repairAmount ?? ticket.total ?? 0);
   const discAmt  = Number(ticket.discountAmount || 0);
   const total    = Math.max(0, repairAmt - discAmt);
@@ -8372,8 +8377,8 @@ async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
     <!-- Header -->
     <div style="background:${primary};padding:18px 20px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
       <img src="${logoSrc}" alt="${escapeHtml(brand.displayName)}"
-        style="height:32px;object-fit:contain;filter:brightness(0) invert(1)"
-        onerror="this.onerror=null;this.src='${logoFallback}';this.style.filter='brightness(0) invert(1)'"/>
+        style="height:32px;object-fit:contain"
+        onerror="this.onerror=null;this.src='${logoFallback}'"/>
       <div style="text-align:right">
         <div style="font-size:18px;font-weight:800;letter-spacing:.05em;color:#fff">TICKET DE SERVICIO</div>
         <div style="font-size:11px;color:rgba(255,255,255,0.72);margin-top:1px">${escapeHtml(ticket.tracking)}</div>

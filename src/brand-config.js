@@ -11,7 +11,14 @@ window.BRANCH_BRANDS = {
     locationLabel:    "Puerto Vallarta",
     tagline:          "WE FIX FAST. YOU RELAX.",
     crmLabel:         "CRM OPERATIVO",
+    // Reglas de uso de logo:
+    //   logoLightSrc → fondo oscuro o de color (azul, negro, etc.) — letras blancas, PNG transparente, SIN filtro CSS
+    //   logoDarkSrc  → fondo blanco o claro                        — letras oscuras, PNG transparente, SIN filtro CSS
+    //   logoSrc      → fallback genérico (se usa solo si no aplica ninguno de los anteriores)
+    //   logoMonoSrc  → recibo térmico / impresión en blanco y negro
+    //   NUNCA usar filter:brightness(0) invert(1) si el PNG tiene fondo blanco — convierte todo (logo+fondo) a blanco
     logoSrc:          "./assets/brand/fixzone/LOGO-FIXZONE.png",
+    logoDarkSrc:      "./assets/brand/fixzone/logo-dark.png",
     logoMonoSrc:      "./assets/brand/logos-mono/fixzone-monocromatico.png",
     logoLightSrc:     "./assets/brand/fixzone/fixzone-logo-light.png",
     logoFallback:     "./assets/brand/fixzone/LOGO-FIXZONE.png",
