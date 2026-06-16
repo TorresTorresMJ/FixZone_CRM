@@ -8677,39 +8677,33 @@ function openNotifPanel() {
 async function shareQuoteWhatsApp(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
-  const brand   = window.getBranchBrand(ticket.branch || activeBranchId);
-  const items   = ticket.quoteItems || [];
-  const subtotal= Number(ticket.repairAmount || 0);
-  const discAmt = Number(ticket.discountAmount || 0);
-  const total   = Math.max(0, subtotal - discAmt);
-  const client  = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
+  const items    = ticket.quoteItems || [];
+  const subtotal = Number(ticket.repairAmount || 0);
+  const discAmt  = Number(ticket.discountAmount || 0);
+  const total    = Math.max(0, subtotal - discAmt);
+  const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const rawPhone = ticket.clientPhone || ticket.phone || client?.phone || "";
-  const phone   = rawPhone.replace(/\D/g, "").replace(/^52/, "");
+  const phone    = rawPhone.replace(/\D/g, "").replace(/^52/, "");
 
   const linesText = items.length
     ? items.map(i => `  • ${i.description||i.type} — ${i.qty>1?i.qty+"×":""}${money.format(i.qty*i.unitPrice)}${i.note?`\n    _${i.note}_`:""}`).join("\n")
     : `  • ${ticket.issue||"Servicio"} — ${money.format(subtotal)}`;
 
   const vars = {
-    client:      ticket.client || "",
-    productName: ticket.productName || "",
-    branch:      brand.displayName || "",
-    tracking:    ticket.tracking || "",
-    amount:      money.format(total),
-    pending:     "",
-    items:       linesText,
-    servicio:    ticket.issue || "",
-    link:        receiptQrTarget(ticket.id),
+    client: ticket.client||"", productName: ticket.productName||"",
+    branch: brand.displayName||"", tracking: ticket.tracking||"",
+    amount: money.format(total), pending: "", items: linesText,
+    servicio: ticket.issue||"", link: receiptQrTarget(ticket.id),
   };
   let defaultMsg = fillWATemplate("cotizacion", vars);
   if (!defaultMsg) {
     defaultMsg = `Hola ${ticket.client} 👋, aquí tu cotización de *${brand.displayName}*:\n\n` +
-      `📋 No. ${ticket.tracking}\n` +
-      `📱 Equipo: ${ticket.productName}\n\n` +
+      `📋 No. ${ticket.tracking}\n📱 Equipo: ${ticket.productName}\n\n` +
       `*Detalle:*\n${linesText}\n\n` +
       (discAmt > 0 ? `💸 Descuento: -${money.format(discAmt)}\n` : "") +
       `*Total estimado: ${money.format(total)}*\n\n` +
-      `⏳ Vigencia: 15 días. Contáctanos para agendar tu reparación. ¡Gracias!`;
+      `⏳ Vigencia: 15 días. ¡Gracias!`;
   }
 
   const imgFileName = `cotizacion-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.png`;
@@ -8717,116 +8711,115 @@ async function shareQuoteWhatsApp(ticketId) {
   const existing = document.getElementById("wa-quote-panel-overlay");
   if (existing) existing.remove();
 
-  const noPhone = !rawPhone ? `
-    <div style="background:rgba(255,153,0,.1);border:1px solid rgba(255,153,0,.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#ff9f43;margin-bottom:12px">
-      ⚠ Sin teléfono registrado — copia el mensaje y ábrelo desde WhatsApp manualmente.
-    </div>` : `
-    <div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:12px">
-      📱 ${rawPhone} · <strong style="color:#25d366">${escapeHtml(ticket.client)}</strong>
-    </div>`;
-
-  const waUrl = phone ? `https://wa.me/52${phone}?text=${encodeURIComponent(defaultMsg)}` : "";
+  const phoneRow = rawPhone
+    ? `<div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:12px">📱 ${rawPhone} · <strong style="color:#25d366">${escapeHtml(ticket.client)}</strong></div>`
+    : `<div style="background:rgba(255,153,0,.1);border:1px solid rgba(255,153,0,.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#ff9f43;margin-bottom:12px">⚠ Sin teléfono registrado</div>`;
 
   const overlay = document.createElement("div");
   overlay.id = "wa-quote-panel-overlay";
   overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)";
   overlay.innerHTML = `
     <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <h3 style="margin:0;font-size:15px">💬 WhatsApp — ${escapeHtml(ticket.tracking)}</h3>
         <button id="wa-quote-close" style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
       </div>
-      ${noPhone}
-      <div style="margin-bottom:12px">
+      ${phoneRow}
+      <div style="margin-bottom:14px">
         <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.5);margin-bottom:6px">Mensaje</label>
         <textarea id="wa-quote-msg" rows="4"
           style="width:100%;box-sizing:border-box;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-family:inherit;padding:8px 10px;resize:vertical">${escapeHtml(defaultMsg)}</textarea>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${waUrl ? `<a id="wa-quote-open" href="${waUrl}" target="_blank" rel="noopener"
-            style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.25);color:#25d366;text-decoration:none;font-size:13px;font-weight:600">
-            <span style="font-size:18px">💬</span><span>Abrir chat en WhatsApp</span>
-            <span style="margin-left:auto;font-size:10px;opacity:.6">Abrir ↗</span>
-          </a>` : `
-          <button id="wa-quote-copy-only"
-            style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.25);color:#25d366;font-size:13px;font-weight:600;cursor:pointer">
-            <span style="font-size:18px">📋</span><span>Copiar mensaje</span>
-          </button>`}
-        <button id="wa-quote-img-btn"
-          style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-weight:600;cursor:pointer">
-          <span style="font-size:18px">🖼️</span><span id="wa-quote-img-label">Generar imagen cotización…</span>
-          <span style="margin-left:auto;font-size:10px;opacity:.6">Adjuntar ↗</span>
+        <!-- Botón principal: abre el chat correcto + copia la imagen al portapapeles -->
+        <button id="wa-quote-send-btn"
+          style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:10px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.4);color:#25d366;font-size:14px;font-weight:700;cursor:pointer;width:100%">
+          <span style="font-size:20px">💬</span>
+          <span id="wa-quote-send-label">Enviar cotización por WhatsApp</span>
+          <span style="margin-left:auto;font-size:10px;opacity:.6">↗</span>
+        </button>
+        <!-- Botón secundario: solo descargar la imagen -->
+        <button id="wa-quote-dl-btn"
+          style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-weight:600;cursor:pointer;width:100%">
+          <span style="font-size:18px">🖼️</span><span id="wa-quote-dl-label">Descargar imagen cotización</span>
         </button>
       </div>
-      <p style="margin:12px 0 0;font-size:11px;color:rgba(255,255,255,.35);text-align:center">Abre el chat → pega el texto → adjunta la imagen de cotización</p>
+      <p id="wa-quote-hint" style="margin:10px 0 0;font-size:11px;color:rgba(255,255,255,.35);text-align:center">
+        Abre WhatsApp con el mensaje → pega la imagen (imagen copiada automáticamente)
+      </p>
     </div>`;
 
   overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
   overlay.querySelector("#wa-quote-close").addEventListener("click", () => overlay.remove());
 
-  // Actualizar el href del botón WA con el texto editado
-  const msgArea = overlay.querySelector("#wa-quote-msg");
-  const waBtn   = overlay.querySelector("#wa-quote-open");
-  if (msgArea && waBtn && phone) {
-    msgArea.addEventListener("input", () => {
-      waBtn.href = `https://wa.me/52${phone}?text=${encodeURIComponent(msgArea.value)}`;
-    });
+  const msgArea   = overlay.querySelector("#wa-quote-msg");
+  const sendBtn   = overlay.querySelector("#wa-quote-send-btn");
+  const sendLabel = overlay.querySelector("#wa-quote-send-label");
+  const dlLabel   = overlay.querySelector("#wa-quote-dl-label");
+  const hintEl    = overlay.querySelector("#wa-quote-hint");
+
+  function getWaUrl() {
+    const txt = msgArea?.value || defaultMsg;
+    return phone ? `https://wa.me/52${phone}?text=${encodeURIComponent(txt)}` : "";
   }
 
-  // Botón copiar (cuando no hay teléfono)
-  overlay.querySelector("#wa-quote-copy-only")?.addEventListener("click", () => {
-    const txt = msgArea?.value || defaultMsg;
-    navigator.clipboard.writeText(txt).then(() => showToast("✓ Mensaje copiado")).catch(() => showToast("✓ Mensaje copiado"));
-  });
+  // Botón principal: copia imagen al portapapeles como imagen real + abre wa.me
+  sendBtn.addEventListener("click", async () => {
+    if (sendLabel) sendLabel.textContent = "Preparando…";
 
-  // Botón imagen: genera (o recupera del caché) el blob y lo comparte/descarga.
-  // Abre también el chat wa.me para que el usuario llegue al contacto correcto.
-  overlay.querySelector("#wa-quote-img-btn").addEventListener("click", async () => {
-    const labelEl = overlay.querySelector("#wa-quote-img-label");
-    if (labelEl) labelEl.textContent = "Generando imagen…";
-
+    // El blob ya está en caché (se pre-genera al abrir el panel)
     const blob = await getCotizacionBlob(ticket);
-    if (!blob) {
-      showErrorToast("No se pudo generar la imagen");
-      if (labelEl) labelEl.textContent = "Error al generar imagen";
-      return;
+
+    // Intenta copiar la imagen al portapapeles (ClipboardItem — pega como imagen en WhatsApp)
+    let imgCopied = false;
+    if (blob && window.ClipboardItem) {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        imgCopied = true;
+      } catch {}
     }
 
-    const msgText = msgArea?.value || defaultMsg;
-    const file = new File([blob], imgFileName, { type: "image/png" });
+    // Abre el chat directo con el número (dentro del mismo gesto de usuario)
+    const url = getWaUrl();
+    if (url) window.open(url, "_blank", "noopener");
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      // Copia el texto antes de abrir el selector — cuando WhatsApp abre
-      // con la imagen ya adjunta, el usuario pega el mensaje y envía.
-      try { await navigator.clipboard.writeText(msgText); } catch {}
-      if (labelEl) labelEl.textContent = "✓ Texto copiado — elige WhatsApp y pega el mensaje";
-      try {
-        await navigator.share({ files: [file], title: `Cotización ${ticket.tracking}` });
-        // Después de compartir la imagen, abre el chat directo con el número
-        if (waUrl) window.open(waUrl, "_blank", "noopener");
-        if (labelEl) labelEl.textContent = "Imagen compartida ✓";
-        return;
-      } catch (err) {
-        if (err.name === "AbortError") { if (labelEl) labelEl.textContent = "Compartir imagen cotización"; return; }
+    if (imgCopied) {
+      if (sendLabel) sendLabel.textContent = "✓ Chat abierto — pega la imagen en el chat";
+      if (hintEl)    hintEl.textContent    = "La imagen está en el portapapeles. En WhatsApp: mantén presionado el campo de texto → Pegar.";
+    } else if (blob) {
+      // ClipboardItem no disponible: descarga la imagen automáticamente
+      const dlUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = dlUrl; a.download = imgFileName; a.click();
+      URL.revokeObjectURL(dlUrl);
+      if (sendLabel) sendLabel.textContent = "✓ Chat abierto — adjunta la imagen descargada";
+      if (hintEl)    hintEl.textContent    = "Imagen descargada. En WhatsApp: presiona el clip 📎 → elige la imagen de tu galería.";
+    } else {
+      if (url) {
+        if (sendLabel) sendLabel.textContent = "✓ Chat abierto";
+      } else {
+        if (sendLabel) sendLabel.textContent = "Sin número registrado";
       }
     }
-    // Fallback desktop: descarga imagen + abre wa.me con texto
+  });
+
+  // Botón secundario: solo descarga la imagen
+  overlay.querySelector("#wa-quote-dl-btn").addEventListener("click", async () => {
+    if (dlLabel) dlLabel.textContent = "Generando…";
+    const blob = await getCotizacionBlob(ticket);
+    if (!blob) { showErrorToast("No se pudo generar la imagen"); if (dlLabel) dlLabel.textContent = "Error"; return; }
     const dlUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = dlUrl; a.download = imgFileName; a.click();
     URL.revokeObjectURL(dlUrl);
-    if (waUrl) window.open(waUrl, "_blank", "noopener");
-    if (labelEl) labelEl.textContent = "Imagen descargada ✓ — adjúntala en el chat";
-    showToast("✓ Imagen descargada y chat abierto — adjúntala en WhatsApp");
-  });
-
-  // Pre-genera la imagen en segundo plano (primera vez: establece la fecha/hora real)
-  getCotizacionBlob(ticket).then(blob => {
-    const labelEl = overlay.querySelector("#wa-quote-img-label");
-    if (blob && labelEl) labelEl.textContent = "Compartir imagen cotización";
+    if (dlLabel) dlLabel.textContent = "✓ Imagen descargada";
+    showToast("✓ Imagen descargada");
   });
 
   document.body.appendChild(overlay);
+
+  // Pre-genera la imagen en segundo plano (primera vez: fija fecha/hora real de creación)
+  getCotizacionBlob(ticket);
 }
 window.shareQuoteWhatsApp = shareQuoteWhatsApp;
 window.addNotif = addNotif;
