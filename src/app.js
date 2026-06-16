@@ -205,7 +205,7 @@ const formSchemas = {
       ["discountAmount","Descuento ($)","number",null,false,true],
       ["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
       ["paymentMethod","Método de pago","select",["","Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"],false,true],
-      ["paidAmount","Monto pagado","number"],["createdAt","Fecha","date"],
+      ["paidAmount","Monto pagado","number"],["createdAt","Fecha de recepción","locked-date"],
       ["dueDate","Fecha límite","date",null,false,true],
       ["notes","Notas internas","text",null,true,true],
     ],
@@ -8354,58 +8354,102 @@ async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
   const total    = Math.max(0, repairAmt - discAmt);
   const paidAmt  = Number(ticket.paidAmount || 0);
   const pending  = Math.max(0, total - paidAmt);
-  const now      = new Date();
-  const timeStr  = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
   const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone    = ticket.clientPhone || client?.phone || "";
   const qrTarget = receiptQrTarget(ticket.id);
-  const qrImage  = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=4&data=${encodeURIComponent(qrTarget)}`;
+  const qrImage  = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=4&data=${encodeURIComponent(qrTarget)}`;
+  const isDelivered = ticket.status === "Entregado" || ticket.status === "Garantia";
 
-  const accessoriesHtml = ticket.accessories ? `
-    <div style="margin-bottom:20px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Accesorios entregados</div>
-      <div style="font-size:14px;line-height:1.4">${escapeHtml(ticket.accessories)}</div>
-    </div>` : "";
-
-  const paymentHtml = paidAmt > 0 ? `
-      <div style="font-size:13px;color:#2ecc71;margin-bottom:2px">Abono pagado: ${money.format(paidAmt)}${ticket.paymentMethod?` (${escapeHtml(ticket.paymentMethod)})`:""}</div>
-      ${pending > 0 ? `<div style="font-size:13px;color:#e67e22;margin-bottom:6px">Saldo pendiente: ${money.format(pending)}</div>` : `<div style="font-size:13px;color:#2ecc71;font-weight:600;margin-bottom:6px">PAGADO ✓</div>`}` : "";
-
+  // Layout 390px tarjeta móvil — optimizada para WhatsApp
   const wrap = document.createElement("div");
-  wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:480px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;padding:28px;box-sizing:border-box";
+  wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;box-sizing:border-box;overflow:hidden";
   wrap.innerHTML = `
-    <div style="text-align:center;border-bottom:3px solid ${primary};padding-bottom:16px;margin-bottom:20px">
-      <img src="${logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:72px;object-fit:contain"
-        onerror="this.onerror=null;this.src='${logoFallback}'"/>
-      <div style="font-size:18px;font-weight:700;letter-spacing:.04em;color:${primary};margin-top:10px">TICKET DE SERVICIO</div>
-      <div style="font-size:13px;color:#777;margin-top:2px">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</div>
+    <!-- Header -->
+    <div style="background:${primary};padding:18px 20px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <img src="${logoSrc}" alt="${escapeHtml(brand.displayName)}"
+        style="height:32px;object-fit:contain;filter:brightness(0) invert(1)"
+        onerror="this.onerror=null;this.src='${logoFallback}';this.style.filter='brightness(0) invert(1)'"/>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:800;letter-spacing:.05em;color:#fff">TICKET DE SERVICIO</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.72);margin-top:1px">${escapeHtml(ticket.tracking)}</div>
+      </div>
     </div>
-    <div style="margin-bottom:16px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Cliente</div>
-      <div style="font-size:16px;font-weight:600">${escapeHtml(ticket.client||"")}</div>
-      ${phone ? `<div style="font-size:13px;color:#777;margin-top:2px">Tel: ${escapeHtml(phone)}</div>` : ""}
+    <div style="height:5px;background:linear-gradient(90deg,${primary},${secondary})"></div>
+
+    <!-- Cliente / Equipo -->
+    <div style="display:flex;background:#f7f8fa;border-bottom:1px solid #ebebeb">
+      <div style="flex:1;padding:12px 16px;border-right:1px solid #ebebeb;min-width:0">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;margin-bottom:2px">Cliente</div>
+        <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(ticket.client||"")}</div>
+        ${phone ? `<div style="font-size:11px;color:#888;margin-top:1px">📞 ${escapeHtml(phone)}</div>` : ""}
+      </div>
+      <div style="flex:1;padding:12px 16px;min-width:0">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;margin-bottom:2px">Equipo</div>
+        <div style="font-size:14px;font-weight:700">${escapeHtml(ticket.productName||"")}</div>
+        <div style="font-size:11px;color:#888;margin-top:1px">${escapeHtml(ticket.status||"")}</div>
+      </div>
     </div>
-    <div style="margin-bottom:16px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Equipo</div>
-      <div style="font-size:16px;font-weight:600">${escapeHtml(ticket.productName||ticket.device||"")}</div>
-      <div style="font-size:13px;color:#777;margin-top:2px">Estado: ${escapeHtml(ticket.status||"")}</div>
+
+    <!-- Fechas -->
+    <div style="display:flex;background:#fff;border-bottom:1px solid #ebebeb">
+      <div style="flex:1;padding:10px 16px;border-right:1px solid #ebebeb">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;margin-bottom:2px">Fecha de recepción</div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a">${escapeHtml(ticket.createdAt||"")}</div>
+      </div>
+      <div style="flex:1;padding:10px 16px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;margin-bottom:2px">Inicio de garantía</div>
+        <div style="font-size:13px;font-weight:600;color:${ticket.deliveredAt?primary:"#bbb"}">
+          ${ticket.deliveredAt ? escapeHtml(ticket.deliveredAt) : "Pendiente de entrega"}
+        </div>
+      </div>
     </div>
-    <div style="margin-bottom:16px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Falla reportada</div>
-      <div style="font-size:14px;line-height:1.4">${escapeHtml(ticket.issue||"Sin especificar")}</div>
+
+    <!-- Falla + Accesorios -->
+    <div style="padding:12px 16px 10px;border-bottom:1px solid #f0f0f0">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;margin-bottom:3px">Falla reportada</div>
+      <div style="font-size:14px;line-height:1.45;color:#1a1a1a">${escapeHtml(ticket.issue||"Sin especificar")}</div>
+      ${ticket.accessories ? `
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;margin:8px 0 3px">Accesorios</div>
+        <div style="font-size:12px;color:#555">${escapeHtml(ticket.accessories)}</div>` : ""}
     </div>
-    ${accessoriesHtml}
-    <div style="text-align:center;border-top:1px solid #eee;padding-top:18px;margin-top:4px">
-      ${discAmt > 0 ? `<div style="font-size:13px;color:#777">Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}: -${money.format(discAmt)}</div>` : ""}
-      <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:#999">Total</div>
-      <div style="font-size:32px;font-weight:700;color:${secondary};margin-bottom:4px">${money.format(total)}</div>
-      ${paymentHtml}
+
+    <!-- Financiero -->
+    <div style="padding:12px 16px 14px;background:#f7f8fa;border-bottom:1px solid #ebebeb">
+      ${discAmt > 0 ? `
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:#999;margin-bottom:4px">
+          <span>Subtotal</span><span>${money.format(repairAmt)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:#e74c3c;margin-bottom:6px">
+          <span>Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</span>
+          <span>−${money.format(discAmt)}</span>
+        </div>` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center;${discAmt>0?"padding-top:6px;border-top:1px solid #e5e5e5;":""}">
+        <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#777">Total</span>
+        <span style="font-size:28px;font-weight:800;color:${primary};line-height:1">${money.format(total)}</span>
+      </div>
+      ${paidAmt > 0 ? `
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:6px;color:#27ae60">
+          <span>Pagado${ticket.paymentMethod?" ("+escapeHtml(ticket.paymentMethod)+")":""}</span>
+          <span>${money.format(paidAmt)}</span>
+        </div>
+        ${pending > 0 ? `
+        <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#e67e22;margin-top:2px">
+          <span>Saldo pendiente</span><span>${money.format(pending)}</span>
+        </div>` : `
+        <div style="font-size:13px;font-weight:700;color:#27ae60;text-align:right;margin-top:2px">PAGADO ✓</div>`}` : ""}
     </div>
-    <div style="text-align:center;margin-top:16px">
-      <img src="${qrImage}" alt="QR" style="width:140px;height:140px"/>
-      <div style="font-size:12px;color:#777;margin-top:6px">Escanea para ver el estado de tu reparación en tiempo real.</div>
+
+    <!-- QR -->
+    <div style="padding:14px 16px;text-align:center;background:#fff;border-bottom:1px solid #f0f0f0">
+      <img src="${qrImage}" alt="QR" style="width:110px;height:110px"/>
+      <div style="font-size:11px;color:#999;margin-top:6px">Escanea para seguir tu reparación en tiempo real</div>
     </div>
-    <div style="margin-top:24px;text-align:center;font-size:13px;font-weight:600;color:${primary}">
+
+    <!-- Pie -->
+    <div style="background:${primary}12;border-top:1px solid ${primary}22;padding:9px 20px;font-size:11px;color:#888;text-align:center;line-height:1.5">
+      Garantía 30 días en mano de obra · No aplica por golpes, humedad o mal uso.
+    </div>
+    <div style="background:#fff;padding:10px 20px 14px;text-align:center;font-size:13px;font-weight:700;color:${primary};letter-spacing:.03em">
       ★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★
     </div>`;
 
