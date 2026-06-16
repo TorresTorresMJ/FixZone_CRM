@@ -8206,63 +8206,65 @@ async function buildCotizacionCanvas(ticket) {
   const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone    = ticket.clientPhone || client?.phone || "";
 
-  const rowsHtml = items.length
+  // Layout vertical 390px — tarjeta optimizada para compartir por WhatsApp
+  const itemsHtml = items.length
     ? items.map(i => `
-        <tr>
-          <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top">
-            <div style="font-weight:600;color:#1a1a1a">${escapeHtml(i.description||"")}</div>
-            ${i.note ? `<div style="font-size:12px;color:#777;margin-top:2px;font-style:italic">${escapeHtml(i.note)}</div>` : ""}
-          </td>
-          <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;color:#1a1a1a">${i.qty}</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;color:#1a1a1a">${money.format(i.unitPrice)}</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;color:#1a1a1a">${money.format(i.qty*i.unitPrice)}</td>
-        </tr>`).join("")
-    : `<tr><td colspan="4" style="padding:10px 8px;border-bottom:1px solid #eee;color:#1a1a1a">${escapeHtml(ticket.issue||"Servicio de reparación")}</td></tr>`;
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:11px 0;border-bottom:1px solid #f0f0f0;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700;color:#1a1a1a">${escapeHtml(i.description||"")}</div>
+          ${i.note ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic">${escapeHtml(i.note)}</div>` : ""}
+          ${i.qty > 1 ? `<div style="font-size:11px;color:#aaa;margin-top:2px">${i.qty} × ${money.format(i.unitPrice)}</div>` : ""}
+        </div>
+        <div style="font-size:16px;font-weight:800;color:#1a1a1a;white-space:nowrap">${money.format(i.qty*i.unitPrice)}</div>
+      </div>`).join("")
+    : `<div style="padding:11px 0;font-size:14px;color:#1a1a1a;border-bottom:1px solid #f0f0f0">${escapeHtml(ticket.issue||"Servicio de reparación")}</div>`;
 
   const wrap = document.createElement("div");
-  wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:640px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;padding:32px;box-sizing:border-box";
+  wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;background:#fff;font-family:'Outfit',Arial,sans-serif;color:#1a1a1a;box-sizing:border-box;overflow:hidden";
   wrap.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${primary};padding-bottom:16px;margin-bottom:20px">
-      <img src="${brand.logoLightSrc || brand.logoMonoSrc || brand.logoSrc}" alt="${escapeHtml(brand.displayName)}" style="height:48px;object-fit:contain" onerror="this.style.display='none'"/>
+    <div style="background:${primary};padding:18px 20px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <img src="${brand.logoLightSrc || brand.logoMonoSrc || brand.logoSrc}" alt="${escapeHtml(brand.displayName)}"
+        style="height:34px;object-fit:contain;filter:brightness(0) invert(1)" onerror="this.style.display='none'"/>
       <div style="text-align:right">
-        <div style="font-size:20px;font-weight:700;letter-spacing:.04em;color:${primary}">COTIZACIÓN</div>
-        <div style="font-size:13px;color:#777">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())} ${timeStr}</div>
+        <div style="font-size:20px;font-weight:800;letter-spacing:.06em;color:#fff">COTIZACIÓN</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.72);margin-top:1px">${escapeHtml(ticket.tracking)} · ${escapeHtml(ticket.createdAt||dateStamp())}</div>
       </div>
     </div>
-    <div style="display:flex;gap:24px;margin-bottom:20px">
-      <div style="flex:1">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Cliente</div>
-        <div style="font-size:15px;font-weight:600">${escapeHtml(ticket.client||"")}</div>
-        ${phone ? `<div style="font-size:13px;color:#777;margin-top:2px">Tel: ${escapeHtml(phone)}</div>` : ""}
+    <div style="height:5px;background:linear-gradient(90deg,${primary},${secondary})"></div>
+    <div style="display:flex;background:#f7f8fa;border-bottom:1px solid #ebebeb">
+      <div style="flex:1;padding:14px 16px 12px;border-right:1px solid #ebebeb;min-width:0">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;margin-bottom:3px">Cliente</div>
+        <div style="font-size:15px;font-weight:700;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(ticket.client||"")}</div>
+        ${phone ? `<div style="font-size:12px;color:#888;margin-top:2px">📞 ${escapeHtml(phone)}</div>` : ""}
       </div>
-      <div style="flex:1">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px">Equipo</div>
-        <div style="font-size:15px;font-weight:600">${escapeHtml(ticket.productName||"")}</div>
-      </div>
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:14px">
-      <thead>
-        <tr style="background:${primary};color:#fff">
-          <th style="padding:8px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.03em">Descripción</th>
-          <th style="padding:8px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:.03em">Cant.</th>
-          <th style="padding:8px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.03em">Precio</th>
-          <th style="padding:8px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.03em">Importe</th>
-        </tr>
-      </thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;margin-top:14px;gap:4px;font-size:14px">
-      ${items.length ? `<div style="display:flex;gap:24px;color:#777"><span>Subtotal</span><span>${money.format(subtotal)}</span></div>` : ""}
-      ${discAmt > 0 ? `<div style="display:flex;gap:24px;color:#777"><span>Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</span><span>-${money.format(discAmt)}</span></div>` : ""}
-      <div style="display:flex;gap:24px;align-items:baseline;margin-top:4px">
-        <span style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.03em">Total estimado</span>
-        <span style="font-size:22px;font-weight:700;color:${secondary}">${money.format(total)}</span>
+      <div style="flex:1;padding:14px 16px 12px;min-width:0">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;margin-bottom:3px">Equipo</div>
+        <div style="font-size:15px;font-weight:700;color:#1a1a1a">${escapeHtml(ticket.productName||"")}</div>
       </div>
     </div>
-    <div style="margin-top:24px;padding-top:16px;border-top:1px solid #eee;font-size:12px;color:#999;text-align:center">
-      Esta cotización tiene una vigencia de 15 días naturales a partir de la fecha de emisión. Los precios pueden variar según el diagnóstico definitivo.
+    <div style="padding:4px 20px 2px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#bbb;padding:10px 0 2px">Servicios / Productos</div>
+      ${itemsHtml}
     </div>
-    <div style="margin-top:8px;text-align:center;font-size:13px;font-weight:600;color:${primary}">
+    <div style="padding:12px 20px 16px;background:#f7f8fa;border-top:2px solid #ebebeb">
+      ${items.length > 0 && discAmt > 0 ? `
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:#999;margin-bottom:4px">
+          <span>Subtotal</span><span>${money.format(subtotal)}</span>
+        </div>` : ""}
+      ${discAmt > 0 ? `
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:#e74c3c;margin-bottom:6px">
+          <span>Descuento${ticket.discountCode?" ("+escapeHtml(ticket.discountCode)+")":""}</span>
+          <span>−${money.format(discAmt)}</span>
+        </div>` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center;${discAmt>0?"padding-top:8px;border-top:1px solid #e5e5e5;":""}">
+        <span style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#777">Total estimado</span>
+        <span style="font-size:30px;font-weight:800;color:${primary};line-height:1">${money.format(total)}</span>
+      </div>
+    </div>
+    <div style="background:${primary}12;border-top:1px solid ${primary}22;padding:9px 20px;font-size:11px;color:#999;text-align:center;line-height:1.5">
+      Vigencia 15 días · Los precios pueden variar según diagnóstico definitivo.
+    </div>
+    <div style="background:#fff;padding:10px 20px 16px;text-align:center;font-size:13px;font-weight:700;color:${primary};letter-spacing:.03em">
       ★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★
     </div>`;
 
@@ -8579,12 +8581,14 @@ async function shareQuoteWhatsApp(ticketId) {
   const subtotal= Number(ticket.repairAmount || 0);
   const discAmt = Number(ticket.discountAmount || 0);
   const total   = Math.max(0, subtotal - discAmt);
+  const client  = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const rawPhone = ticket.clientPhone || ticket.phone || client?.phone || "";
+  const phone   = rawPhone.replace(/\D/g, "").replace(/^52/, "");
 
   const linesText = items.length
     ? items.map(i => `  • ${i.description||i.type} — ${i.qty>1?i.qty+"×":""}${money.format(i.qty*i.unitPrice)}${i.note?`\n    _${i.note}_`:""}`).join("\n")
     : `  • ${ticket.issue||"Servicio"} — ${money.format(subtotal)}`;
 
-  const waTemplate = getWATemplates()["cotizacion"] || null;
   const vars = {
     client:      ticket.client || "",
     productName: ticket.productName || "",
@@ -8596,56 +8600,138 @@ async function shareQuoteWhatsApp(ticketId) {
     servicio:    ticket.issue || "",
     link:        receiptQrTarget(ticket.id),
   };
-  let msg;
-
-  if (waTemplate) {
-    msg = fillWATemplate("cotizacion", vars);
-  } else {
-    msg = `Hola ${ticket.client} 👋, aquí tu cotización de *${brand.displayName}*:\n\n` +
-          `📋 No. ${ticket.tracking}\n` +
-          `📱 Equipo: ${ticket.productName}\n\n` +
-          `*Detalle:*\n${linesText}\n\n` +
-          (discAmt > 0 ? `💸 Descuento: -${money.format(discAmt)}\n` : "") +
-          `*Total estimado: ${money.format(total)}*\n\n` +
-          `⏳ Vigencia: 15 días. Contáctanos para agendar tu reparación. ¡Gracias!`;
+  let defaultMsg = fillWATemplate("cotizacion", vars);
+  if (!defaultMsg) {
+    defaultMsg = `Hola ${ticket.client} 👋, aquí tu cotización de *${brand.displayName}*:\n\n` +
+      `📋 No. ${ticket.tracking}\n` +
+      `📱 Equipo: ${ticket.productName}\n\n` +
+      `*Detalle:*\n${linesText}\n\n` +
+      (discAmt > 0 ? `💸 Descuento: -${money.format(discAmt)}\n` : "") +
+      `*Total estimado: ${money.format(total)}*\n\n` +
+      `⏳ Vigencia: 15 días. Contáctanos para agendar tu reparación. ¡Gracias!`;
   }
 
-  const clientPhone = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase())?.phone || "";
-  const phone = clientPhone.replace(/\D/g, "").replace(/^52/, "");
-  const url = `https://wa.me/${phone ? "52"+phone : ""}?text=${encodeURIComponent(msg)}`;
+  let imgBlob = null;
+  const imgFileName = `cotizacion-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.png`;
 
-  // Adjunta la imagen de la cotización: en móviles con Web Share API se
-  // ofrece compartir imagen + texto juntos (selector nativo, incl. WhatsApp);
-  // si no es posible, se abre el chat de WhatsApp y se descarga la imagen
-  // para adjuntarla manualmente.
-  const canvas = await buildCotizacionCanvas(ticket);
-  if (canvas) {
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
-    const fileName = `cotizacion-${(ticket.tracking||"").replace(/[^\w-]+/g,"")}.png`;
-    if (blob) {
-      const file = new File([blob], fileName, { type: "image/png" });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          try { await navigator.clipboard.writeText(msg); } catch {}
-          await navigator.share({ files: [file], title: msg, text: msg });
-          showToast("✓ Mensaje copiado — pégalo en el chat si no se incluyó");
-          return;
-        } catch (err) {
-          if (err.name === "AbortError") return;
-        }
-      }
-      const dlUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = dlUrl;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(dlUrl);
-      window.open(url, "_blank", "noopener");
-      showToast("✓ Imagen descargada — adjúntala en el chat de WhatsApp");
+  const existing = document.getElementById("wa-quote-panel-overlay");
+  if (existing) existing.remove();
+
+  const noPhone = !rawPhone ? `
+    <div style="background:rgba(255,153,0,.1);border:1px solid rgba(255,153,0,.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#ff9f43;margin-bottom:12px">
+      ⚠ Sin teléfono registrado — copia el mensaje y ábrelo desde WhatsApp manualmente.
+    </div>` : `
+    <div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:12px">
+      📱 ${rawPhone} · <strong style="color:#25d366">${escapeHtml(ticket.client)}</strong>
+    </div>`;
+
+  const waUrl = phone ? `https://wa.me/52${phone}?text=${encodeURIComponent(defaultMsg)}` : "";
+
+  const overlay = document.createElement("div");
+  overlay.id = "wa-quote-panel-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)";
+  overlay.innerHTML = `
+    <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0;font-size:15px">💬 WhatsApp — ${escapeHtml(ticket.tracking)}</h3>
+        <button id="wa-quote-close" style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
+      </div>
+      ${noPhone}
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.5);margin-bottom:6px">Mensaje</label>
+        <textarea id="wa-quote-msg" rows="4"
+          style="width:100%;box-sizing:border-box;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-family:inherit;padding:8px 10px;resize:vertical">${escapeHtml(defaultMsg)}</textarea>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${waUrl ? `<a id="wa-quote-open" href="${waUrl}" target="_blank" rel="noopener"
+            style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.25);color:#25d366;text-decoration:none;font-size:13px;font-weight:600">
+            <span style="font-size:18px">💬</span><span>Abrir chat en WhatsApp</span>
+            <span style="margin-left:auto;font-size:10px;opacity:.6">Abrir ↗</span>
+          </a>` : `
+          <button id="wa-quote-copy-only"
+            style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.25);color:#25d366;font-size:13px;font-weight:600;cursor:pointer">
+            <span style="font-size:18px">📋</span><span>Copiar mensaje</span>
+          </button>`}
+        <button id="wa-quote-img-btn"
+          style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-weight:600;cursor:pointer">
+          <span style="font-size:18px">🖼️</span><span id="wa-quote-img-label">Generar imagen cotización…</span>
+          <span style="margin-left:auto;font-size:10px;opacity:.6">Adjuntar ↗</span>
+        </button>
+      </div>
+      <p style="margin:12px 0 0;font-size:11px;color:rgba(255,255,255,.35);text-align:center">Abre el chat → pega el texto → adjunta la imagen de cotización</p>
+    </div>`;
+
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector("#wa-quote-close").addEventListener("click", () => overlay.remove());
+
+  // Actualizar el href del botón WA con el texto editado
+  const msgArea = overlay.querySelector("#wa-quote-msg");
+  const waBtn   = overlay.querySelector("#wa-quote-open");
+  if (msgArea && waBtn && phone) {
+    msgArea.addEventListener("input", () => {
+      waBtn.href = `https://wa.me/52${phone}?text=${encodeURIComponent(msgArea.value)}`;
+    });
+  }
+
+  // Botón copiar (cuando no hay teléfono)
+  overlay.querySelector("#wa-quote-copy-only")?.addEventListener("click", () => {
+    const txt = msgArea?.value || defaultMsg;
+    navigator.clipboard.writeText(txt).then(() => showToast("✓ Mensaje copiado")).catch(() => showToast("✓ Mensaje copiado"));
+  });
+
+  // Botón imagen: espera blob si aún está generándose, luego ofrece compartir o descargar
+  overlay.querySelector("#wa-quote-img-btn").addEventListener("click", async () => {
+    const labelEl = overlay.querySelector("#wa-quote-img-label");
+    if (labelEl) labelEl.textContent = "Generando imagen…";
+
+    // Si el blob aún no está listo, construirlo ahora
+    if (!imgBlob) {
+      const canvas = await buildCotizacionCanvas(ticket);
+      if (canvas) imgBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    }
+    if (!imgBlob) {
+      showErrorToast("No se pudo generar la imagen");
+      if (labelEl) labelEl.textContent = "Error al generar imagen";
       return;
     }
-  }
-  window.open(url, "_blank", "noopener");
+
+    const file = new File([imgBlob], imgFileName, { type: "image/png" });
+    // Web Share API con archivos (funciona en Android Chrome / Safari iOS).
+    // Copiamos el mensaje al portapapeles ANTES de abrir el selector nativo —
+    // así cuando WhatsApp abre con la imagen adjunta, el usuario solo pega el texto.
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      const msgText = msgArea?.value || defaultMsg;
+      try { await navigator.clipboard.writeText(msgText); } catch {}
+      if (labelEl) labelEl.textContent = "✓ Texto copiado — elige WhatsApp y pega el mensaje";
+      try {
+        await navigator.share({ files: [file], title: `Cotización ${ticket.tracking}` });
+        if (labelEl) labelEl.textContent = "Imagen compartida ✓";
+        return;
+      } catch (err) {
+        if (err.name === "AbortError") { if (labelEl) labelEl.textContent = "Compartir imagen cotización"; return; }
+      }
+    }
+    // Fallback: descarga directa
+    const dlUrl = URL.createObjectURL(imgBlob);
+    const a = document.createElement("a");
+    a.href = dlUrl; a.download = imgFileName; a.click();
+    URL.revokeObjectURL(dlUrl);
+    if (labelEl) labelEl.textContent = "Imagen descargada ✓ — adjúntala en el chat";
+    showToast("✓ Imagen descargada — adjúntala en el chat de WhatsApp");
+  });
+
+  // Marcar imagen lista en cuanto se genere
+  buildCotizacionCanvas(ticket).then(canvas => {
+    if (!canvas) return;
+    canvas.toBlob(b => {
+      if (!b) return;
+      imgBlob = b;
+      const labelEl = overlay.querySelector("#wa-quote-img-label");
+      if (labelEl) labelEl.textContent = "Compartir imagen cotización";
+    }, "image/png");
+  });
+
+  document.body.appendChild(overlay);
 }
 window.shareQuoteWhatsApp = shareQuoteWhatsApp;
 window.addNotif = addNotif;
