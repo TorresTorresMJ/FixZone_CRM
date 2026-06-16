@@ -2564,7 +2564,8 @@ function renderReports() {
       if (!name) continue;
       if (!deviceMap[name]) deviceMap[name] = { count:0, revenue:0, completed:0 };
       deviceMap[name].count++;
-      deviceMap[name].revenue += Number(t.repairAmount||0);
+      // Cotizaciones no generan ingreso real; solo contar revenue de tickets reales
+      if (!t.tracking?.startsWith("[COT]")) deviceMap[name].revenue += Number(t.repairAmount||0);
       if (["Listo","Entregado"].includes(t.status)) deviceMap[name].completed++;
     }
     const deviceRanking = Object.entries(deviceMap)
@@ -2631,9 +2632,9 @@ function renderReports() {
       </table>
     </div>` : "";
 
-  // Productivity by employee
+  // Productivity by employee (cotizaciones excluded — no es trabajo completado)
   const byEmp = {};
-  for (const t of bTickets) {
+  for (const t of bTickets.filter(t => !t.tracking?.startsWith("[COT]"))) {
     const emp = t.assignedTo || "Sin asignar";
     if (!byEmp[emp]) byEmp[emp] = { tickets:0, completed:0, revenue:0 };
     byEmp[emp].tickets++;
@@ -2678,7 +2679,7 @@ function renderReports() {
     if (t.type==="Ingreso") byMonth[ym].income  += Number(t.amount||0);
     else                    byMonth[ym].expense += Number(t.amount||0);
   }
-  for (const t of branchTickets()) {
+  for (const t of branchTickets().filter(t => !t.tracking?.startsWith("[COT]"))) {
     const ym = (t.createdAt||"").slice(0,7); if (!ym) continue;
     if (!byMonth[ym]) byMonth[ym] = { income:0, expense:0, tickets:0 };
     byMonth[ym].tickets++;
@@ -2801,7 +2802,10 @@ function renderReports() {
 
   // ── Métricas de cotizaciones ─────────────────────────────────────────────────
   {
-    const allCots    = branchTickets().filter(t => t.tracking?.startsWith("[COT]"));
+    // Al aprobar una COT su tracking cambia de "[COT] XXXX" a "[FZ] XXXX",
+    // pero cotizacionRef queda con el folio original. Ambos filtros son necesarios
+    // para no perder conversiones en la tasa de conversión.
+    const allCots    = branchTickets().filter(t => t.tracking?.startsWith("[COT]") || !!t.cotizacionRef);
     const periodCots = allCots.filter(t => t.createdAt >= from && t.createdAt <= to);
     const converted  = periodCots.filter(t => t.convertedToTicket);
     const pending    = periodCots.filter(t => !t.convertedToTicket && t.status === "Cotizacion");
@@ -2815,7 +2819,7 @@ function renderReports() {
       const sl = t.convertedToTicket ? `✓ ${t.convertedToTicket}` : t.status==="Cotizacion" ? "Pendiente" : "No convertida";
       return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
         <td style="padding:5px 8px;font-size:11px;color:rgba(255,255,255,.45)">${t.createdAt}</td>
-        <td style="padding:5px 8px;font-size:11px;color:var(--fz-secondary)">${escapeHtml(t.tracking)}</td>
+        <td style="padding:5px 8px;font-size:11px;color:var(--fz-secondary)">${escapeHtml(t.cotizacionRef || t.tracking)}</td>
         <td style="padding:5px 8px;font-size:12px">${escapeHtml(t.client||"—")}</td>
         <td style="padding:5px 8px;font-size:12px">${escapeHtml(t.productName||"—")}</td>
         <td style="padding:5px 8px;text-align:right;font-weight:600">${money.format(t.repairAmount||0)}</td>
@@ -2823,8 +2827,6 @@ function renderReports() {
       </tr>`;
     }).join("")||`<tr><td colspan="6" style="padding:12px;color:rgba(255,255,255,.35);text-align:center">Sin cotizaciones en el período</td></tr>`;
 
-    const pmEl = document.querySelector("#reports-payment-methods");
-    if (pmEl) pmEl.innerHTML = "";
     document.querySelector("#reports-cotizaciones").innerHTML = (periodCots.length || allCots.length) ? `
       <div class="card" style="margin-top:16px;border-left:3px solid #a855f7">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
@@ -2879,7 +2881,7 @@ function renderReports() {
       // (algún ticket fuera de la etapa "Cotización"). Si todos sus registros
       // son cotizaciones sin convertir, queda como "pendiente" y no se suma
       // a los activos hasta que se concrete el servicio.
-      const hasConcretedService = c => state.tickets.some(t => t.client === c.name && t.status !== "Cotizacion");
+      const hasConcretedService = c => branchTickets().some(t => t.client === c.name && t.status !== "Cotizacion");
       const byChannel = {};
       newClients.forEach(c => {
         const key = c.howFound || "Sin especificar";
@@ -2965,7 +2967,7 @@ function renderReports() {
       const ORDER = ["Efectivo","Transferencia","Terminal TC","Terminal TD","Link de pago","Otro"];
       const ticketsPeriod = branchTickets().filter(t => {
         const d = (t.createdAt||"").slice(0,10);
-        return d >= from && d <= to && t.paymentMethod;
+        return d >= from && d <= to && t.paymentMethod && !t.tracking?.startsWith("[COT]");
       });
       const byMethod = {};
       ticketsPeriod.forEach(t => {
@@ -8222,8 +8224,11 @@ async function buildCotizacionCanvas(ticket) {
   const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
   const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
   const items    = ticket.quoteItems || [];
-  const subtotal = Number(ticket.repairAmount || 0);
   const discAmt  = Number(ticket.discountAmount || 0);
+  // repairAmount stores the post-discount total; derive pre-discount subtotal for display
+  const subtotal = items.length
+    ? items.reduce((s, i) => s + (i.qty || 1) * (i.unitPrice || 0), 0)
+    : Number(ticket.repairAmount || 0) + discAmt;
   const total    = Math.max(0, subtotal - discAmt);
   // Usa la fecha/hora real de creación del ticket, no la del momento de generar la imagen
   const createdDate = ticket.createdAtFull ? new Date(ticket.createdAtFull) : new Date();
@@ -8679,8 +8684,11 @@ async function shareQuoteWhatsApp(ticketId) {
   if (!ticket) return;
   const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
   const items    = ticket.quoteItems || [];
-  const subtotal = Number(ticket.repairAmount || 0);
   const discAmt  = Number(ticket.discountAmount || 0);
+  // repairAmount stores the post-discount total; derive pre-discount subtotal for display
+  const subtotal = items.length
+    ? items.reduce((s, i) => s + (i.qty || 1) * (i.unitPrice || 0), 0)
+    : Number(ticket.repairAmount || 0) + discAmt;
   const total    = Math.max(0, subtotal - discAmt);
   const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const rawPhone = ticket.clientPhone || ticket.phone || client?.phone || "";
@@ -8744,9 +8752,13 @@ async function shareQuoteWhatsApp(ticketId) {
           <span style="font-size:18px">🖼️</span><span id="wa-quote-dl-label">Descargar imagen cotización</span>
         </button>
       </div>
-      <p id="wa-quote-hint" style="margin:10px 0 0;font-size:11px;color:rgba(255,255,255,.35);text-align:center">
-        Abre WhatsApp con el mensaje → pega la imagen (imagen copiada automáticamente)
-      </p>
+      <!-- Preview de la imagen — clic derecho "Copiar imagen" en desktop, mantener presionado en móvil -->
+      <div id="wa-quote-img-preview" style="margin-top:12px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.1);display:none">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.4);padding:6px 10px;background:rgba(255,255,255,.04)">
+          🖼️ Vista previa — <strong style="color:rgba(255,255,255,.7)">Clic derecho → Copiar imagen</strong> → pega en WhatsApp con Ctrl+V
+        </div>
+        <img id="wa-quote-img-el" src="" alt="Cotización" style="width:100%;display:block;cursor:pointer" title="Clic derecho → Copiar imagen" />
+      </div>
     </div>`;
 
   overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
@@ -8818,8 +8830,21 @@ async function shareQuoteWhatsApp(ticketId) {
 
   document.body.appendChild(overlay);
 
-  // Pre-genera la imagen en segundo plano (primera vez: fija fecha/hora real de creación)
-  getCotizacionBlob(ticket);
+  // Pre-genera la imagen y muestra la preview para copiar con clic derecho
+  getCotizacionBlob(ticket).then(blob => {
+    if (!blob) return;
+    const previewEl = overlay.querySelector("#wa-quote-img-preview");
+    const imgEl     = overlay.querySelector("#wa-quote-img-el");
+    if (!previewEl || !imgEl) return;
+    const objUrl = URL.createObjectURL(blob);
+    imgEl.src = objUrl;
+    imgEl.onload = () => { previewEl.style.display = "block"; };
+    // Libera el object URL cuando se cierre el panel
+    overlay.addEventListener("click", function cleanup(e) {
+      if (e.target === overlay || e.target.id === "wa-quote-close") URL.revokeObjectURL(objUrl);
+    });
+    overlay.querySelector("#wa-quote-close")?.addEventListener("click", () => URL.revokeObjectURL(objUrl), { once: true });
+  });
 }
 window.shareQuoteWhatsApp = shareQuoteWhatsApp;
 window.addNotif = addNotif;
