@@ -4854,6 +4854,42 @@ function initQuoteItemsBuilder(existingItems = []) {
     if (dcAmt)  dcAmt.value  = result.amount.toFixed(2);
     if (dcCode) dcCode.value = code;
     if (statusEl) { statusEl.textContent = `✓ -${money.format(result.amount)}`; statusEl.style.color = "#2ed573"; }
+    const manualAmt = document.querySelector("#qi-manual-discount-amount");
+    const manualPct = document.querySelector("#qi-manual-discount-pct");
+    if (manualAmt) manualAmt.value = "";
+    if (manualPct) manualPct.value = "";
+    updateQuoteItemsHiddenInputs();
+  });
+
+  document.querySelector("#qi-manual-discount-amount")?.addEventListener("input", e => {
+    const amt = Math.max(0, Number(e.target.value) || 0);
+    const dcAmt  = document.querySelector("#qi-discount-amount");
+    const dcCode = document.querySelector("#qi-discount-code");
+    const pctInput  = document.querySelector("#qi-manual-discount-pct");
+    const codeSelect = document.querySelector("#qi-code-input");
+    const statusEl = document.querySelector("#qi-code-status");
+    if (dcAmt)  dcAmt.value  = amt.toFixed(2);
+    if (dcCode) dcCode.value = "";
+    if (pctInput) pctInput.value = "";
+    if (codeSelect) codeSelect.value = "";
+    if (statusEl) statusEl.textContent = "";
+    updateQuoteItemsHiddenInputs();
+  });
+
+  document.querySelector("#qi-manual-discount-pct")?.addEventListener("input", e => {
+    const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+    const subtotal = quoteItemsDraft.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+    const amt = subtotal * pct / 100;
+    const dcAmt  = document.querySelector("#qi-discount-amount");
+    const dcCode = document.querySelector("#qi-discount-code");
+    const amtInput  = document.querySelector("#qi-manual-discount-amount");
+    const codeSelect = document.querySelector("#qi-code-input");
+    const statusEl = document.querySelector("#qi-code-status");
+    if (dcAmt)  dcAmt.value  = amt.toFixed(2);
+    if (dcCode) dcCode.value = "";
+    if (amtInput) amtInput.value = "";
+    if (codeSelect) codeSelect.value = "";
+    if (statusEl) statusEl.textContent = "";
     updateQuoteItemsHiddenInputs();
   });
 }
@@ -4876,7 +4912,7 @@ function buildQuoteItemsSection(currentCode = "") {
       <p id="qi-empty" class="muted" style="font-size:12px;text-align:center;padding:10px 0;margin:0">Agrega servicios o productos con los botones de arriba.</p>
       <div id="qi-rows"></div>
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span class="muted" style="font-size:12px;white-space:nowrap">Código descuento</span>
           <select id="qi-code-input"
             style="min-width:140px;font-size:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);border-radius:4px;padding:4px 8px;color:inherit">
@@ -4885,6 +4921,14 @@ function buildQuoteItemsSection(currentCode = "") {
           </select>
           <button type="button" id="qi-apply-code" class="mini-button" style="font-size:11px;padding:3px 10px">Aplicar</button>
           <span id="qi-code-status" style="font-size:11px;color:#2ed573"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <span class="muted" style="font-size:12px;white-space:nowrap">O descuento manual</span>
+          <input type="number" id="qi-manual-discount-amount" placeholder="$ Monto" min="0" step="0.01"
+            style="width:100px;font-size:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);border-radius:4px;padding:4px 8px;color:inherit">
+          <span class="muted" style="font-size:12px">o</span>
+          <input type="number" id="qi-manual-discount-pct" placeholder="% Porcentaje" min="0" max="100" step="0.1"
+            style="width:100px;font-size:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);border-radius:4px;padding:4px 8px;color:inherit">
         </div>
         <div style="display:flex;justify-content:flex-end;align-items:baseline;gap:10px">
           <span id="qi-discount-label" class="muted" style="font-size:12px;display:none"></span>
@@ -4997,6 +5041,10 @@ function openEditTicket(ticketId) {
     const dcAmt  = formFields.querySelector("#qi-discount-amount");
     if (dcCode && ticket.discountCode) dcCode.value = ticket.discountCode;
     if (dcAmt  && ticket.discountAmount) dcAmt.value = ticket.discountAmount;
+    if (!ticket.discountCode && ticket.discountAmount > 0) {
+      const manualAmt = formFields.querySelector("#qi-manual-discount-amount");
+      if (manualAmt) manualAmt.value = ticket.discountAmount;
+    }
     initQuoteItemsBuilder(ticket.quoteItems || []);
     initDeviceAutocomplete();
     initClientAutocomplete();
