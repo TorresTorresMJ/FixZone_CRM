@@ -730,6 +730,9 @@ async function loadSupabaseState() {
         clientPhone:cust?.phone||"",
         quoteItems: Array.isArray(t.quote_items) ? t.quote_items : (t.quote_items ? JSON.parse(t.quote_items) : []),
         deliveredAt: t.delivered_at ? t.delivered_at.slice(0,10) : "",
+        // Fechas selladas por etapa — se fijan una sola vez al entrar a cada stage, nunca se sobrescriben automáticamente
+        quotedAt:  t.quoted_at ? t.quoted_at.slice(0,10) : "",
+        recibidoAt:t.recibido_sealed_at ? t.recibido_sealed_at.slice(0,10) : "",
       };
     }),
     supplies: (puRes.data||[]).map(p => ({
@@ -5957,11 +5960,13 @@ async function createRemoteProduct(r) {
 
 async function createRemoteTicket(r) {
   let customer = lookups.customersByName.get(r.client);
-  // Auto-register client if name + phone provided and no existing record
-  if (!customer && r.client && r.clientPhone) {
+  // Auto-register client if name provided and no existing record (phone is optional —
+  // without this, a client entered without phone never gets a customers row, and fields
+  // like "¿Cómo nos conocieron?" have nowhere to be saved and get silently discarded).
+  if (!customer && r.client) {
     const { data: newCust } = await supabaseClient.from("customers").insert({
       full_name: r.client,
-      phone: r.clientPhone,
+      phone: r.clientPhone||null,
       branch_id: await branchIdByName(r.branch||activeBranchId),
       how_found: r.howFound||null,
       how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
@@ -5969,7 +5974,7 @@ async function createRemoteTicket(r) {
     if (newCust) {
       customer = { id: newCust.id };
       lookups.customersByName.set(r.client, customer);
-      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:r.productName||"", devices:r.productName?[r.productName]:[], lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
+      state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone||"", email:"", device:r.productName||"", devices:r.productName?[r.productName]:[], lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
       showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
     }
   } else if (customer) {
@@ -5983,13 +5988,13 @@ async function createRemoteTicket(r) {
     }
     // Sincroniza "¿Cómo nos conocieron?" si cambió — permite corregir el canal
     // de referencia en un ticket/cotización posterior sin perder la información.
-    if (r.howFound && r.howFound !== existingClient?.howFound) {
+    if (r.howFound !== undefined && r.howFound !== existingClient?.howFound) {
       await supabaseClient.from("customers").update({
-        how_found: r.howFound,
+        how_found: r.howFound||null,
         how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
       }).eq("id", customer.id);
       const idx = state.clients.findIndex(c=>c.id===customer.id);
-      if (idx>=0) { state.clients[idx].howFound = r.howFound; state.clients[idx].howFoundOther = r.howFound==="Otro" ? (r.howFoundOther||"") : ""; }
+      if (idx>=0) { state.clients[idx].howFound = r.howFound||""; state.clients[idx].howFoundOther = r.howFound==="Otro" ? (r.howFoundOther||"") : ""; }
     }
     if (r.productName && !state.clients.find(c=>c.id===customer.id)?.device) {
       // Backfill "Equipo" on the client record from this ticket/cotización
@@ -6013,6 +6018,10 @@ async function createRemoteTicket(r) {
     quote_items: r.quoteItems?.length ? r.quoteItems : null,
     service_type: r.serviceType||null,
     due_date: r.dueDate||null,
+    // Sella la fecha de la etapa inicial — si después avanza de stage, las
+    // siguientes se sellan en updateRemoteTicket y nunca se sobrescriben
+    ...(r.status === "Cotizacion" ? { quoted_at: new Date().toISOString() } : {}),
+    ...(r.status === "Recibido"   ? { recibido_sealed_at: new Date().toISOString() } : {}),
   }).select().single();
   if (error) throw error;
 
@@ -6054,6 +6063,9 @@ async function createRemoteTicket(r) {
     customerId:customer?.id||null,
     howFound:r.howFound||"", howFoundOther:r.howFoundOther||"",
     dueDate:r.dueDate||"",
+    quotedAt:   data.quoted_at ? utcToLocalDate(data.quoted_at) : "",
+    recibidoAt: data.recibido_sealed_at ? utcToLocalDate(data.recibido_sealed_at) : "",
+    deliveredAt:"",
   };
   state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
 
@@ -6086,10 +6098,10 @@ async function updateRemoteTicket(ticketId, r) {
   // Auto-register or update customer phone/referral source when editing
   if (r.client) {
     let customer = lookups.customersByName.get(r.client) || (oldTicket?.customerId ? { id: oldTicket.customerId } : null);
-    if (!customer && r.clientPhone) {
+    if (!customer) {
       const { data: newCust } = await supabaseClient.from("customers").insert({
         full_name: r.client,
-        phone: r.clientPhone,
+        phone: r.clientPhone||null,
         branch_id: await branchIdByName(r.branch||activeBranchId),
         how_found: r.howFound||null,
         how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
@@ -6097,8 +6109,9 @@ async function updateRemoteTicket(ticketId, r) {
       if (newCust) {
         customer = { id: newCust.id };
         lookups.customersByName.set(r.client, customer);
-        state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone, email:"", device:"", devices:[], lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
+        state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone||"", email:"", device:"", devices:[], lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
         showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
+        await supabaseClient.from("service_tickets").update({ customer_id: newCust.id }).eq("id", ticketId);
       }
     } else if (customer) {
       if (r.clientPhone) {
@@ -6142,6 +6155,9 @@ async function updateRemoteTicket(ticketId, r) {
     ...(r.createdAt ? { received_at: new Date(r.createdAt + "T12:00:00").toISOString() } : {}),
     // Sellar delivered_at solo la primera vez que pasa a Entregado — nunca sobrescribir
     ...(!oldTicket?.deliveredAt && r.status === "Entregado" ? { delivered_at: dateStamp() } : {}),
+    // Fechas selladas por etapa — solo la primera vez que el ticket entra a cada stage, nunca se sobrescriben
+    ...(!oldTicket?.quotedAt   && r.status === "Cotizacion" ? { quoted_at: new Date().toISOString() } : {}),
+    ...(!oldTicket?.recibidoAt && r.status === "Recibido"   ? { recibido_sealed_at: new Date().toISOString() } : {}),
     ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
   }).eq("id", ticketId);
   if (error) throw error;
@@ -6217,6 +6233,14 @@ async function updateRemoteTicket(ticketId, r) {
     const tidx = state.tickets.findIndex(t => t.id === ticketId);
     if (tidx !== -1) state.tickets[tidx].deliveredAt = dateStamp();
   }
+  // Actualizar fechas selladas por etapa en estado local
+  {
+    const tidx = state.tickets.findIndex(t => t.id === ticketId);
+    if (tidx !== -1) {
+      if (!oldTicket?.quotedAt   && r.status === "Cotizacion") state.tickets[tidx].quotedAt   = dateStamp();
+      if (!oldTicket?.recibidoAt && r.status === "Recibido")   state.tickets[tidx].recibidoAt = dateStamp();
+    }
+  }
 
   // Update device record if exists, or create one if device info provided
   // (includes productName so cotizaciones, which only collect the device name,
@@ -6244,6 +6268,29 @@ async function updateRemoteTicket(ticketId, r) {
     }
   }
 }
+
+// Corrige manualmente la fecha de recepción sellada (recibido_sealed_at).
+// Update aislado — no pasa por updateRemoteTicket para no arrastrar el resto
+// del formulario; requiere clic explícito en "Guardar" en el detalle del ticket.
+async function updateTicketRecibidoDate(ticketId, newDate) {
+  if (!newDate) return;
+  try {
+    if (dataMode === "remote" && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticketId)) {
+      const { error } = await supabaseClient.from("service_tickets")
+        .update({ recibido_sealed_at: new Date(newDate + "T12:00:00").toISOString() })
+        .eq("id", ticketId);
+      if (error) throw error;
+    }
+    const idx = state.tickets.findIndex(t => t.id === ticketId);
+    if (idx !== -1) state.tickets[idx].recibidoAt = newDate;
+    showToast("✓ Fecha de recepción actualizada");
+    render();
+  } catch (err) {
+    console.error(err);
+    showErrorToast("No se pudo actualizar la fecha");
+  }
+}
+window.updateTicketRecibidoDate = updateTicketRecibidoDate;
 
 // Marca rápida "esperando pieza" — independiente de la etapa del ticket
 async function toggleWaitingPart(ticketId) {
@@ -9207,8 +9254,8 @@ function viewTicketDetail(ticketId) {
         ${row("Técnico",      ticket.assignedTo)}
         ${ticket.createdByName ? row("Registrado por", ticket.createdByName) : ""}
         ${row("Sucursal",     ticket.branch)}
-        ${row("Fecha entrada",ticket.date)}
-        ${row("Fecha entrega",ticket.deliveryDate)}
+        ${ticket.quotedAt ? row("Fecha de cotización", ticket.quotedAt) : ""}
+        ${ticket.deliveredAt ? row("Inicio de garantía", ticket.deliveredAt) : ""}
         ${row("Fecha límite", ticket.dueDate)}
         ${row("Servicio",     ticket.serviceType)}
         ${repair > 0 ? row("Precio reparación", money.format(repair)) : ""}
@@ -9219,6 +9266,16 @@ function viewTicketDetail(ticketId) {
         ${row("Estado de pago", ticket.paymentStatus)}
         ${ticket.paymentMethod ? row("Método de pago", ticket.paymentMethod) : ""}
       </div>
+      ${ticket.recibidoAt ? `
+      <div class="detail-row" style="margin-bottom:10px;align-items:center">
+        <span>Fecha de recepción</span>
+        <span style="display:flex;gap:6px;align-items:center">
+          <input type="date" id="tdv-recibido-date" value="${escapeHtml(ticket.recibidoAt)}"
+            ${perms.canEditTickets ? "" : "disabled"}
+            style="font-size:12px;padding:3px 6px;border-radius:5px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:inherit" />
+          ${perms.canEditTickets ? `<button type="button" id="tdv-recibido-save" class="mini-button" style="font-size:11px;padding:3px 9px">Guardar</button>` : ""}
+        </span>
+      </div>` : ""}
       ${ticket.waitingPart ? `<div class="tdv-issue" style="margin-bottom:10px;background:rgba(243,156,18,.1);border-color:rgba(243,156,18,.3)"><p style="margin:0;font-size:13px;line-height:1.5;color:#f39c12">⏳ Esperando pieza${ticket.waitingPartNote?` — ${escapeHtml(ticket.waitingPartNote)}`:""}</p></div>` : ""}
       ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${ticket.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas internas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(ticket.notes)}</p></div>` : ""}
@@ -9239,6 +9296,12 @@ function viewTicketDetail(ticketId) {
   dlg.querySelector("#tdv-edit")?.addEventListener("click", () => {
     dlg.close();
     openEditTicket(ticketId);
+  });
+  // Editar fecha de recepción — guarda solo este campo, requiere clic explícito en "Guardar"
+  dlg.querySelector("#tdv-recibido-save")?.addEventListener("click", async () => {
+    const val = dlg.querySelector("#tdv-recibido-date")?.value;
+    if (!val) return;
+    await updateTicketRecibidoDate(ticketId, val);
   });
   // Cleanup al cerrar
   dlg.addEventListener("close", () => dlg.remove(), { once: true });
