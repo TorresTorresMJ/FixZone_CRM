@@ -400,6 +400,7 @@ async function afterLogin(authUser) {
     render();
     renderNotifBadge();
     if (!notifPollInterval) notifPollInterval = setInterval(pollNotifications, 30000);
+    if (!ticketTimerTickInterval) ticketTimerTickInterval = setInterval(tickTicketTimers, 30000);
   } catch(err) {
     console.error(err);
     supabaseClient.auth.signOut().catch(() => {});
@@ -714,6 +715,7 @@ async function loadSupabaseState() {
         convertedToTicket:t.converted_to_ticket||"",
         waitingPart:!!t.waiting_part,
         waitingPartNote:t.waiting_part_note||"",
+        timerTargetAt:t.timer_target_at||null,
         dueDate:t.due_date||"",
         deviceId:t.device_id||null,
         customerId:t.customer_id||null,
@@ -1228,12 +1230,24 @@ function approveQuoteToTicket(ticketId) {
       const newTracking = nextTracking(nextTicketSequence());
       const cotRef      = ticket.tracking; // e.g. [COT] 0003
 
+      // The cotización form has no "Falla / trabajo" or "Tipo de servicio" fields —
+      // derive them from the quote's service line items so the converted ticket isn't blank.
+      const svcItems = (ticket.quoteItems || []).filter(i => i.type === "Servicio" && i.description);
+      const derivedIssue = !ticket.issue && svcItems.length
+        ? svcItems.map(i => i.description).join(", ")
+        : ticket.issue;
+      const derivedServiceType = !ticket.serviceType && svcItems.length === 1
+        ? (state.serviceTypes || []).find(st => st.name.toLowerCase() === svcItems[0].description.toLowerCase())?.name || ""
+        : ticket.serviceType;
+
       const idx = state.tickets.findIndex(t => t.id === ticketId);
       if (idx !== -1) state.tickets[idx] = {
         ...ticket, status: "Recibido",
         tracking: newTracking,
         cotizacionRef: cotRef,
         convertedToTicket: newTracking,
+        issue: derivedIssue,
+        serviceType: derivedServiceType,
       };
 
       if (dataMode === "remote" && isUUID) {
@@ -1243,6 +1257,8 @@ function approveQuoteToTicket(ticketId) {
             tracking_number:      newTracking,
             cotizacion_ref:       cotRef,
             converted_to_ticket:  newTracking,
+            issue_description:    derivedIssue || null,
+            service_type:         derivedServiceType || null,
           }).eq("id", ticketId);
           try { await reloadState(); } catch(e) { console.warn(e); }
         } catch(err) {
@@ -1299,13 +1315,19 @@ function ticketCard(ticket, perms, idx = 0) {
       </strong>
     </div>` : "";
 
+  const timerBadge = ticket.timerTargetAt ? timerBadgeData(ticket.timerTargetAt) : null;
+  const timerHtml = timerBadge
+    ? `<div data-timer-badge data-timer-target="${escapeHtml(ticket.timerTargetAt)}" style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:${timerBadge.bg};border:1px solid ${timerBadge.border};color:${timerBadge.color}">⏱️ ${timerBadge.label}</div>`
+    : "";
+
   return `<article class="ticket-card" style="--i:${idx}" draggable="true"
-    onclick="if(!event.target.closest('.ticket-actions')&&!event.target.closest('[data-toggle-waiting]'))viewTicketDetail('${ticket.id}')"
+    onclick="if(!event.target.closest('.ticket-actions')&&!event.target.closest('[data-toggle-waiting]')&&!event.target.closest('[data-toggle-timer]'))viewTicketDetail('${ticket.id}')"
     ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
     <div class="ticket-topline">
       <span class="tracking-code">${escapeHtml(ticket.tracking)}</span>
       <div style="display:flex;align-items:center;gap:4px">
+        <button class="mini-button ${ticket.timerTargetAt?"is-active":""}" style="padding:1px 5px;font-size:11px;line-height:1.4;${ticket.timerTargetAt?"background:rgba(52,152,219,.2);border-color:rgba(52,152,219,.5);color:#3498db":"opacity:.5"}" data-toggle-timer="${ticket.id}" title="${ticket.timerTargetAt?"Quitar cronómetro":"Iniciar cronómetro: ¿en cuánto tiempo estará listo?"}">⏱️</button>
         <button class="mini-button ${ticket.waitingPart?"is-active":""}" style="padding:1px 5px;font-size:11px;line-height:1.4;${ticket.waitingPart?"background:rgba(243,156,18,.2);border-color:rgba(243,156,18,.5);color:#f39c12":"opacity:.5"}" data-toggle-waiting="${ticket.id}" title="${ticket.waitingPart?"Quitar marca de espera de pieza":"Marcar: esperando pieza de refacción"}">⏳</button>
         <span class="status ${stClass}" style="font-size:10px">${ticket.status}</span>
       </div>
@@ -1317,6 +1339,7 @@ function ticketCard(ticket, perms, idx = 0) {
     <span class="muted" style="font-size:11px">${escapeHtml(ticket.productName||ticket.device)}</span>
     ${issueHtml}
     ${ticket.waitingPart ? `<div style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:rgba(243,156,18,.15);border:1px solid rgba(243,156,18,.35);color:#f39c12" title="${escapeHtml(ticket.waitingPartNote||"")}">⏳ Esperando pieza${ticket.waitingPartNote?` — ${escapeHtml(ticket.waitingPartNote)}`:""}</div>` : ""}
+    ${timerHtml}
     ${dueDateHtml}
     ${priceHtml}
     <div class="ticket-actions">
@@ -5255,7 +5278,20 @@ async function loadTicketPhotos(ticketId) {
       </a>
       <button data-delete-photo="${a.id}" data-photo-url="${escapeHtml(a.file_url)}"
         style="position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;border:0;background:rgba(255,60,60,0.8);color:#fff;font-size:11px;cursor:pointer;line-height:1">✕</button>
+      <select data-photo-stage-select="${a.id}"
+        style="position:absolute;bottom:3px;left:3px;right:3px;font-size:10px;padding:1px 2px;border-radius:4px;border:0;background:rgba(0,0,0,.65);color:#fff">
+        ${ticketStages.map(s => `<option value="${s}" ${a.stage===s?"selected":""}>${s}</option>`).join("")}
+      </select>
     </div>`).join("");
+  grid.querySelectorAll("[data-photo-stage-select]").forEach(sel => {
+    sel.addEventListener("change", async () => {
+      const attachId = sel.dataset.photoStageSelect;
+      try {
+        await supabaseClient.from("attachments").update({ stage: sel.value }).eq("id", attachId);
+        showToast("✓ Etapa de la foto actualizada");
+      } catch(err) { showErrorToast(`No se pudo mover la foto: ${err.message}`); }
+    });
+  });
 }
 
 // ── Device models autocomplete ────────────────────────────────────────────────
@@ -6210,6 +6246,7 @@ async function createRemoteTicket(r) {
     accessories:r.accessories||"", physicalCondition:r.physicalCondition||"",
     quoteItems: r.quoteItems||[],
     waitingPart:false, waitingPartNote:"",
+    timerTargetAt:null,
     customerId:customer?.id||null,
     howFound:r.howFound||"", howFoundOther:r.howFoundOther||"",
     dueDate:r.dueDate||"",
@@ -6441,6 +6478,74 @@ async function updateTicketRecibidoDate(ticketId, newDate) {
   }
 }
 window.updateTicketRecibidoDate = updateTicketRecibidoDate;
+
+// Cronómetro opcional de tickets — cuenta regresiva hacia timerTargetAt, y al
+// vencer sigue contando el tiempo de retraso en rojo.
+function formatTimerDuration(ms) {
+  const totalMin = Math.max(0, Math.round(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h <= 0) return `${m}min`;
+  if (m <= 0) return `${h}h`;
+  return `${h}h ${m}min`;
+}
+
+function timerBadgeData(targetIso) {
+  const diff = new Date(targetIso).getTime() - Date.now();
+  if (diff > 0) {
+    const soon = diff < 15 * 60000;
+    return {
+      label: `Listo en ${formatTimerDuration(diff)}`,
+      color: soon ? "#f39c12" : "rgba(255,255,255,.7)",
+      bg: soon ? "rgba(243,156,18,.15)" : "rgba(255,255,255,.06)",
+      border: soon ? "rgba(243,156,18,.35)" : "rgba(255,255,255,.15)",
+    };
+  }
+  return {
+    label: `${formatTimerDuration(-diff)} de retraso`,
+    color: "#ff5c5c", bg: "rgba(255,92,92,.15)", border: "rgba(255,92,92,.35)",
+  };
+}
+
+function tickTicketTimers() {
+  document.querySelectorAll("[data-timer-badge]").forEach(el => {
+    const target = el.dataset.timerTarget;
+    if (!target) return;
+    const tb = timerBadgeData(target);
+    el.style.background = tb.bg;
+    el.style.borderColor = tb.border;
+    el.style.color = tb.color;
+    el.textContent = `⏱️ ${tb.label}`;
+  });
+}
+let ticketTimerTickInterval = null;
+
+async function toggleTicketTimer(ticketId) {
+  const idx = state.tickets.findIndex(t => t.id === ticketId);
+  if (idx === -1) return;
+  const ticket = state.tickets[idx];
+  let targetIso = ticket.timerTargetAt || null;
+  if (!targetIso) {
+    const input = prompt("¿En cuántas horas estará listo? (ej: 2 o 1.5)", "1");
+    if (input === null) return;
+    const hours = parseFloat(String(input).replace(",", "."));
+    if (!hours || hours <= 0) return;
+    targetIso = new Date(Date.now() + hours * 3600000).toISOString();
+  } else {
+    targetIso = null;
+  }
+  state.tickets[idx] = { ...ticket, timerTargetAt: targetIso };
+  render();
+  if (dataMode === "remote" && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticketId)) {
+    try {
+      await supabaseClient.from("service_tickets")
+        .update({ timer_target_at: targetIso })
+        .eq("id", ticketId);
+    } catch (err) {
+      showErrorToast(`Error: ${err.message}`);
+    }
+  }
+}
 
 // Marca rápida "esperando pieza" — independiente de la etapa del ticket
 async function toggleWaitingPart(ticketId) {
@@ -7882,6 +7987,10 @@ document.addEventListener("click", async e => {
   // Marca rápida: esperando pieza
   const waitingBtn = e.target.closest("[data-toggle-waiting]");
   if (waitingBtn) { toggleWaitingPart(waitingBtn.dataset.toggleWaiting); return; }
+
+  // Cronómetro opcional del ticket
+  const timerBtn = e.target.closest("[data-toggle-timer]");
+  if (timerBtn) { toggleTicketTimer(timerBtn.dataset.toggleTimer); return; }
 
   // Descargar imagen de cotización
   const imageCot = e.target.closest("[data-image-cotizacion]");
@@ -9433,6 +9542,7 @@ function viewTicketDetail(ticketId) {
         </span>
       </div>` : ""}
       ${ticket.waitingPart ? `<div class="tdv-issue" style="margin-bottom:10px;background:rgba(243,156,18,.1);border-color:rgba(243,156,18,.3)"><p style="margin:0;font-size:13px;line-height:1.5;color:#f39c12">⏳ Esperando pieza${ticket.waitingPartNote?` — ${escapeHtml(ticket.waitingPartNote)}`:""}</p></div>` : ""}
+      ${ticket.timerTargetAt ? `<div data-timer-badge data-timer-target="${escapeHtml(ticket.timerTargetAt)}" style="margin-bottom:10px;font-size:13px;line-height:1.5;padding:10px 14px;border-radius:8px;background:${timerBadgeData(ticket.timerTargetAt).bg};border:1px solid ${timerBadgeData(ticket.timerTargetAt).border};color:${timerBadgeData(ticket.timerTargetAt).color}">⏱️ ${timerBadgeData(ticket.timerTargetAt).label}</div>` : ""}
       ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${ticket.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas internas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(ticket.notes)}</p></div>` : ""}
     </div>

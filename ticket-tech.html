@@ -173,6 +173,7 @@
       gap: 6px;
     }
     .photo-thumb {
+      position: relative;
       aspect-ratio: 1;
       border-radius: 8px;
       overflow: hidden;
@@ -184,6 +185,102 @@
       height: 100%;
       object-fit: cover;
       display: block;
+    }
+    .photo-thumb-actions {
+      position: absolute;
+      top: 0;
+      right: 0;
+      display: flex;
+      gap: 3px;
+      padding: 3px;
+    }
+    .photo-thumb-btn {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 0;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .photo-move-btn { background: rgba(0,0,0,.55); color: #fff; }
+    .photo-delete-btn { background: rgba(220,38,38,.85); color: #fff; }
+
+    /* ── Photo action sheet ── */
+    #photo-action-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      background: rgba(0,0,0,.55);
+    }
+    #photo-action-overlay.visible { display: flex; }
+    .photo-action-sheet {
+      background: var(--surface);
+      border-radius: 16px 16px 0 0;
+      width: 100%;
+      max-width: 480px;
+      padding: 18px 16px 24px;
+    }
+    .photo-action-sheet img {
+      width: 100%;
+      max-height: 220px;
+      object-fit: contain;
+      border-radius: 10px;
+      margin-bottom: 14px;
+      background: #000;
+    }
+    .photo-action-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .photo-action-stages {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .photo-action-stage-btn {
+      flex: 1;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 4px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .photo-action-stage-btn.current { border-color: var(--primary); background: rgba(8,90,203,0.12); }
+    .photo-action-delete-btn {
+      width: 100%;
+      background: rgba(220,38,38,.12);
+      border: 1px solid rgba(220,38,38,.4);
+      color: #f87171;
+      border-radius: 12px;
+      padding: 13px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .photo-action-cancel-btn {
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--muted);
+      padding: 10px;
+      font-size: 13px;
+      cursor: pointer;
     }
 
     /* ── Mensajes para el cliente ── */
@@ -309,6 +406,10 @@
 
 <div id="toast"></div>
 
+<div id="photo-action-overlay">
+  <div class="photo-action-sheet" id="photo-action-sheet"></div>
+</div>
+
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -381,7 +482,7 @@
   async function loadPhotos() {
     const { data } = await supabase
       .from('attachments')
-      .select('id, file_url, file_type, stage, created_at')
+      .select('id, file_url, file_type, stage, created_at, ticket_id')
       .eq('ticket_id', ticketId)
       .order('created_at', { ascending: true });
     photos = data || [];
@@ -435,10 +536,18 @@
 
     const photoGroups = Object.entries(photosByStage).map(([stage, imgs]) => {
       const thumbs = imgs.map(img => {
-        if ((img.file_type || '').startsWith('image/') || img.file_url.match(/\.(jpe?g|png|webp|gif)(\?|$)/i)) {
-          return `<div class="photo-thumb"><img src="${img.file_url}" loading="lazy" alt="foto"></div>`;
-        }
-        return `<div class="photo-thumb" style="display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">PDF</div>`;
+        const isImage = (img.file_type || '').startsWith('image/') || img.file_url.match(/\.(jpe?g|png|webp|gif)(\?|$)/i);
+        const inner = isImage
+          ? `<img src="${img.file_url}" loading="lazy" alt="foto">`
+          : `<div style="display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);height:100%">PDF</div>`;
+        return `
+          <div class="photo-thumb" data-photo-id="${img.id}">
+            ${inner}
+            <div class="photo-thumb-actions">
+              <button class="photo-thumb-btn photo-move-btn" data-action="move" data-photo-id="${img.id}" title="Mover a otra etapa">⇄</button>
+              <button class="photo-thumb-btn photo-delete-btn" data-action="delete" data-photo-id="${img.id}" title="Eliminar foto">✕</button>
+            </div>
+          </div>`;
       }).join('');
       const stageLabel = STAGE_MAP[stage]?.label || stage;
       return `
@@ -537,6 +646,102 @@
       document.getElementById('photo-input-gallery').click();
     });
     document.getElementById('photo-input-gallery').addEventListener('change', handlePhotoUpload);
+
+    // Wire per-photo move / delete actions
+    app.querySelectorAll('[data-action="move"]').forEach(btn => {
+      btn.addEventListener('click', () => openPhotoActions(btn.dataset.photoId));
+    });
+    app.querySelectorAll('[data-action="delete"]').forEach(btn => {
+      btn.addEventListener('click', () => confirmDeletePhoto(btn.dataset.photoId));
+    });
+  }
+
+  // ── Photo action sheet (mover de etapa / eliminar) ──────────────────────────
+  const actionOverlay = document.getElementById('photo-action-overlay');
+  const actionSheet    = document.getElementById('photo-action-sheet');
+
+  function closePhotoActions() {
+    actionOverlay.classList.remove('visible');
+    actionSheet.innerHTML = '';
+  }
+  actionOverlay.addEventListener('click', e => { if (e.target === actionOverlay) closePhotoActions(); });
+
+  function openPhotoActions(photoId) {
+    const photo = photos.find(p => p.id === photoId);
+    if (!photo) return;
+
+    const stageBtns = STAGE_ORDER.map(s => `
+      <button class="photo-action-stage-btn ${s === photo.stage ? 'current' : ''}" data-move-stage="${s}">
+        ${STAGE_MAP[s].icon} ${STAGE_MAP[s].label}
+      </button>`).join('');
+
+    actionSheet.innerHTML = `
+      <img src="${photo.file_url}" alt="foto">
+      <p class="photo-action-label">Mover foto a otra etapa</p>
+      <div class="photo-action-stages">${stageBtns}</div>
+      <button class="photo-action-delete-btn" id="photo-action-delete">🗑 Eliminar foto</button>
+      <button class="photo-action-cancel-btn" id="photo-action-cancel">Cancelar</button>
+    `;
+    actionOverlay.classList.add('visible');
+
+    actionSheet.querySelectorAll('[data-move-stage]').forEach(btn => {
+      btn.addEventListener('click', () => movePhotoStage(photoId, btn.dataset.moveStage));
+    });
+    document.getElementById('photo-action-delete').addEventListener('click', () => {
+      closePhotoActions();
+      confirmDeletePhoto(photoId);
+    });
+    document.getElementById('photo-action-cancel').addEventListener('click', closePhotoActions);
+  }
+
+  async function movePhotoStage(photoId, newStage) {
+    const photo = photos.find(p => p.id === photoId);
+    if (!photo || photo.stage === newStage) { closePhotoActions(); return; }
+
+    const { error } = await supabase
+      .from('attachments')
+      .update({ stage: newStage })
+      .eq('id', photoId);
+
+    closePhotoActions();
+    if (error) {
+      showToast('Error al mover la foto', 'error');
+      return;
+    }
+    photo.stage = newStage;
+    showToast('Foto movida a ' + (STAGE_MAP[newStage]?.label || newStage), 'success');
+    renderPage();
+  }
+
+  function confirmDeletePhoto(photoId) {
+    if (!confirm('¿Eliminar esta foto? No se puede deshacer.')) return;
+    deletePhoto(photoId);
+  }
+
+  async function deletePhoto(photoId) {
+    const photo = photos.find(p => p.id === photoId);
+    if (!photo) return;
+
+    const { error } = await supabase.from('attachments').delete().eq('id', photoId);
+    if (error) {
+      showToast('Error al eliminar la foto', 'error');
+      return;
+    }
+
+    try {
+      const urlPath = new URL(photo.file_url).pathname;
+      const bucketIdx = urlPath.indexOf('/ticket-photos/');
+      if (bucketIdx !== -1) {
+        const storagePath = decodeURIComponent(urlPath.slice(bucketIdx + '/ticket-photos/'.length));
+        await supabase.storage.from('ticket-photos').remove([storagePath]);
+      }
+    } catch (err) {
+      console.warn('No se pudo borrar el archivo del storage:', err);
+    }
+
+    photos = photos.filter(p => p.id !== photoId);
+    showToast('Foto eliminada', 'success');
+    renderPage();
   }
 
   // ── Stage change ──────────────────────────────────────────────────────────
@@ -690,20 +895,20 @@
       const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path);
       const publicUrl = urlData?.publicUrl;
 
-      const { error: dbErr } = await supabase.from('attachments').insert({
+      const { data: inserted, error: dbErr } = await supabase.from('attachments').insert({
         ticket_id: ticketId,
         file_url:  publicUrl,
         file_type: file.type,
         label:     file.name,
         stage:     currentStage,
-      });
+      }).select('id').single();
 
       if (dbErr) {
         errCount++;
         continue;
       }
 
-      photos.push({ file_url: publicUrl, file_type: file.type, stage: currentStage, created_at: new Date().toISOString() });
+      photos.push({ id: inserted?.id, file_url: publicUrl, file_type: file.type, stage: currentStage, created_at: new Date().toISOString() });
       okCount++;
     }
 
