@@ -3032,12 +3032,41 @@ function renderReports() {
 }
 
 // ── Users panel ───────────────────────────────────────────────────────────────
+function isMasterUser(e) {
+  return (e?.name||e?.full_name||"").trim().toLowerCase() === "monica torres";
+}
+
+// Internal management hierarchy (not shown in UI): lower rank cannot act on a higher-ranked employee's
+// account or permissions. Rank 0 = highest. Peers share the same rank.
+const HIERARCHY_RANK = {
+  "monica torres": 0,
+  "kevin mijangos": 1,
+  "carlos mijangos": 2,
+  "diego mijangos": 2,
+  "gigi vargas": 2,
+  "daniel mijangos": 2,
+};
+
+function hierarchyRank(e) {
+  const name = (e?.name||e?.full_name||"").trim().toLowerCase();
+  return HIERARCHY_RANK[name] ?? 2;
+}
+
+// True if the acting employee is not below the target employee in the hierarchy.
+function canManageEmployee(targetEmployee) {
+  if (!currentEmployee || !targetEmployee) return true;
+  if (currentEmployee.id === targetEmployee.id) return true;
+  return hierarchyRank(currentEmployee) <= hierarchyRank(targetEmployee);
+}
+
 function renderUsers() {
   const container = document.querySelector("#users-table");
   if (!container) return;
-  container.innerHTML = state.employees.map(e=>`
+  container.innerHTML = state.employees.map(e=>{
+    const master = isMasterUser(e);
+    return `
     <tr>
-      <td><strong>${escapeHtml(e.name||e.full_name)}</strong></td>
+      <td><strong>${escapeHtml(e.name||e.full_name)}</strong>${master?` <span class="role-badge" style="background:rgba(255,193,7,.15);color:#ffc107">Master</span>`:""}</td>
       <td>${escapeHtml(e.email||"")}</td>
       <td><span class="role-badge role-${e.role}">${ROLE_LABELS[e.role]||e.role}</span></td>
       <td>${escapeHtml(e.branch||"")}</td>
@@ -3046,10 +3075,10 @@ function renderUsers() {
         <div class="action-row" style="justify-content:flex-start;gap:6px">
           <button class="mini-button" data-edit-employee="${e.id}">Editar</button>
           <button class="mini-button" data-reset-pw="${e.id}">Reset PW</button>
-          <button class="mini-button danger-btn" data-delete-employee="${e.id}">Dar de baja</button>
+          ${master ? "" : `<button class="mini-button danger-btn" data-delete-employee="${e.id}">Dar de baja</button>`}
         </div>
       </td>
-    </tr>`).join("")||tableEmpty(6);
+    </tr>`;}).join("")||tableEmpty(6);
   renderPermissionsEditor();
 }
 
@@ -6036,6 +6065,9 @@ async function callEdgeFunction(action, payload) {
 }
 
 function deleteEmployee(employeeId) {
+  const target = state.employees.find(e=>e.id===employeeId);
+  if (isMasterUser(target)) { showErrorToast("Este usuario es la cuenta maestra y no se puede dar de baja."); return; }
+  if (!canManageEmployee(target)) { showErrorToast("No tienes permiso para dar de baja a este usuario."); return; }
   showConfirmModal("¿Dar de baja a este usuario? Se desactivará su acceso.", {
     label: "Dar de baja",
     danger: true,
@@ -6055,6 +6087,8 @@ function deleteEmployee(employeeId) {
 }
 
 function resetEmployeePassword(employeeId) {
+  const target = state.employees.find(e=>e.id===employeeId);
+  if (!canManageEmployee(target)) { showErrorToast("No tienes permiso para resetear la contraseña de este usuario."); return; }
   showConfirmModal("¿Resetear contraseña a 'miwaysillos05'? El usuario deberá cambiarla al iniciar sesión.", {
     label: "Resetear contraseña",
     danger: true,
