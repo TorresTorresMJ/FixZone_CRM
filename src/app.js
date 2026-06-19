@@ -8281,7 +8281,7 @@ function printRecibo(ticket, type) {
   const brand     = window.getBranchBrand(ticket.branch || activeBranchId);
   const D         = "────────────────────────────────────────";
   const now       = new Date();
-  const timeStr   = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
+  const timeStr   = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", hour12:false });
   document.documentElement.style.setProperty("--receipt-width", "58mm");
 
   const header = `
@@ -8369,9 +8369,8 @@ function printRecibo(ticket, type) {
   const qrBlock = `
     <p class="rct-dash">${D}</p>
     <div class="rct-qr">
-      <p class="rct-center">ESCANEA PARA VER EL ESTADO</p>
-      <img src="${qrImage}" alt="QR" />
-      <p class="rct-center" style="font-size:9pt;color:#000;margin-top:4px">Seguimiento en tiempo real de tu reparación</p>
+      <p class="rct-center">ESCANEA PARA SEGUIR TU REPARACIÓN</p>
+      <img src="${qrImage}" alt="QR" width="160" height="160" />
     </div>`;
 
   document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}${qrBlock}<p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p><p class="rct-dash">${D}</p></div>`;
@@ -8424,7 +8423,7 @@ function printTicket(ticket) {
   const received  = Number(ticket.amountReceived ?? paidAmt ?? 0);
   const change    = Number(ticket.changeAmount ?? 0);
   const now       = new Date();
-  const timeStr   = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+  const timeStr   = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
   const qrTarget  = receiptQrTarget(ticket.id);
   const qrImage   = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(qrTarget)}`;
   const D         = "----------------------------------------";
@@ -8501,9 +8500,8 @@ function printTicket(ticket) {
   <p class="rct-dash">${D}</p>
 
   <div class="rct-qr">
-    <p class="rct-center">ESCANEA PARA VER EL ESTADO</p>
-    <img src="${qrImage}" alt="QR" />
-    <p class="rct-center" style="font-size:9pt;color:#000;margin-top:4px">Seguimiento en tiempo real de tu reparación</p>
+    <p class="rct-center">ESCANEA PARA SEGUIR TU REPARACIÓN</p>
+    <img src="${qrImage}" alt="QR" width="200" height="200" />
   </div>
 
   <p class="rct-dash">${D}</p>
@@ -8548,7 +8546,7 @@ async function buildCotizacionCanvas(ticket) {
   const total    = Math.max(0, subtotal - discAmt);
   // Usa la fecha/hora real de creación del ticket, no la del momento de generar la imagen
   const createdDate = ticket.createdAtFull ? new Date(ticket.createdAtFull) : new Date();
-  const timeStr  = createdDate.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
+  const timeStr  = createdDate.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", hour12:false });
   const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone    = ticket.clientPhone || client?.phone || "";
 

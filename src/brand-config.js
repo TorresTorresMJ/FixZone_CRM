@@ -20,7 +20,7 @@ window.BRANCH_BRANDS = {
     logoSrc:          "./assets/brand/fixzone/LOGO-FIXZONE.png",
     logoDarkSrc:      "./assets/brand/fixzone/logo-dark.png",
     logoMonoSrc:      "./assets/brand/logos-mono/fixzone-monocromatico.png",
-    logoLightSrc:     "./assets/brand/fixzone/fixzone-logo-light.png",
+    logoLightSrc:     "./assets/brand/fixzone/LOGO-FIXZONE.png",
     logoFallback:     "./assets/brand/fixzone/LOGO-FIXZONE.png",
     pageTitle:        "FixZone CRM",
     receiptHeader:    "FixZone — Puerto Vallarta",
