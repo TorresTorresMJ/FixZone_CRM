@@ -215,8 +215,8 @@ const formSchemas = {
     fields: [
       ["date","Fecha","date"],
       ["supplier","Proveedor","text"],
-      ["product_id","Producto del catálogo","product-select",null,true,true],
-      ["item","Artículo (si no está en catálogo)","text",null,false,true],
+      ["product_id","","hidden",null,false,true],
+      ["item","Artículo / insumo","supply-item-autocomplete",null,true],
       ["quantity","Cantidad","number"],
       ["total","Total MXN","number"],
     ],
@@ -3999,7 +3999,7 @@ function renderWATemplates() {
   if (el.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA") return;
 
   const tpls = getWATemplates();
-  const LABELS = { cotizacion:"📋 Cotización", listo:"✅ Equipo Listo", abono:"💳 Abono recibido", pagado:"✅ Pago completo", garantia:"🛡 Garantía" };
+  const LABELS = { recibido:"📦 Equipo Recibido", cotizacion:"📋 Cotización", listo:"✅ Equipo Listo", abono:"💳 Abono recibido", pagado:"✅ Pago completo", garantia:"🛡 Garantía" };
   const HINTS  = "{cliente} {equipo} {sucursal} {folio} {monto} {saldo} {total} {items} {servicio} {link}";
   el.innerHTML = `
     <div class="card" style="margin-top:16px">
@@ -4183,6 +4183,7 @@ function renderQuickMessages() {
 // ── Discount codes (managed via Supabase discount_codes table) ────────────────
 const WA_TEMPLATES_KEY = "fixzone-wa-templates-v1";
 const DEFAULT_WA_TEMPLATES = {
+  recibido:   "Hola {cliente} 👋, tu equipo *{equipo}* fue recibido en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!\n\n📲 Sigue el estado de tu reparación: {link}",
   listo:      "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!\n\n📲 Sigue el estado de tu reparación: {link}",
   abono:      "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.\n\n📲 Sigue el estado de tu reparación: {link}",
   pagado:     "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!\n\n📲 Sigue el estado de tu reparación: {link}",
@@ -4563,7 +4564,7 @@ function openEditSupply(supplyId) {
     fieldTemplate(name, label, ftype, opts, wide, supply[name] ?? "", optional)
   ).join("") + buildReceiptUploadSection(supply.receipt_url);
   openModal();
-  initProductAutoFill();
+  initSupplyItemAutocomplete();
 }
 
 // ── Edit: Invoice (Contaduría) ───────────────────────────────────────────────
@@ -4968,7 +4969,7 @@ function openForm(type, prefill = {}) {
   }
   if (type === "supply") {
     formFields.innerHTML += buildReceiptUploadSection();
-    initProductAutoFill();
+    initSupplyItemAutocomplete();
   }
   if (type === "invoice") {
     formFields.innerHTML += buildReceiptUploadSection();
@@ -5347,6 +5348,87 @@ function initDeviceAutocomplete(container = formFields) {
   });
 }
 
+// Insumo / artículo de la compra: autocompleta contra el catálogo de productos y permite
+// agregar uno nuevo al vuelo ("+ Agregar X") sin salir del formulario de compra de insumo.
+function initSupplyItemAutocomplete(container = formFields) {
+  const input = container.querySelector("input[data-supply-item-ac]");
+  if (!input) return;
+  const wrapper = input.closest(".device-ac-wrapper");
+  const pidInput = container.querySelector("#product_id");
+  if (!wrapper) return;
+  let ddEl = null;
+  let hiIdx = -1;
+
+  const close = () => { ddEl?.remove(); ddEl = null; hiIdx = -1; };
+
+  const getOpts = (q) => {
+    const qLow = (q || "").trim().toLowerCase();
+    const products = branchProducts();
+    const filtered = qLow ? products.filter(p => p.name.toLowerCase().includes(qLow)) : products;
+    return filtered.slice(0, 60);
+  };
+
+  const open = (q) => {
+    close();
+    const opts = getOpts(q);
+    const trimmed = q.trim();
+    const showAdd = trimmed && !opts.some(p => p.name.toLowerCase() === trimmed.toLowerCase());
+    if (!opts.length && !showAdd) return;
+    ddEl = document.createElement("div");
+    ddEl.className = "device-ac-dropdown";
+    ddEl.innerHTML =
+      opts.map((p, i) => `<div class="device-ac-opt" data-idx="${i}" data-id="${escapeHtml(p.id)}" data-val="${escapeHtml(p.name)}">${escapeHtml(p.name)}${p.sku?` <span style="opacity:.45">[${escapeHtml(p.sku)}]</span>`:""}</div>`).join("") +
+      (showAdd ? `<div class="device-ac-opt device-ac-add" data-add="${escapeHtml(trimmed)}">+ Agregar "<strong>${escapeHtml(trimmed)}</strong>" al catálogo</div>` : "");
+    wrapper.appendChild(ddEl);
+    ddEl.addEventListener("mousedown", async e => {
+      e.preventDefault();
+      const opt = e.target.closest(".device-ac-opt");
+      if (!opt) return;
+      if (opt.dataset.add) {
+        const name = opt.dataset.add;
+        close();
+        input.value = name;
+        try {
+          const newProduct = await createCatalogProductQuick(name);
+          input.value = newProduct.name;
+          if (pidInput) pidInput.value = newProduct.id;
+          showToast(`✓ "${newProduct.name}" agregado al catálogo de insumos`);
+        } catch (err) {
+          showErrorToast(`No se pudo agregar al catálogo: ${err.message}`);
+        }
+        return;
+      }
+      input.value = opt.dataset.val;
+      if (pidInput) pidInput.value = opt.dataset.id;
+      close();
+    });
+  };
+
+  const highlight = (dir) => {
+    if (!ddEl) { open(input.value); return; }
+    const items = ddEl.querySelectorAll(".device-ac-opt");
+    hiIdx = Math.max(0, Math.min(hiIdx + dir, items.length - 1));
+    items.forEach((el, i) => el.classList.toggle("is-hi", i === hiIdx));
+    items[hiIdx]?.scrollIntoView({ block: "nearest" });
+  };
+
+  input.addEventListener("focus", () => open(input.value));
+  input.addEventListener("input", () => {
+    hiIdx = -1;
+    if (pidInput) pidInput.value = ""; // texto editado manualmente: ya no coincide con el catálogo
+    open(input.value);
+  });
+  input.addEventListener("blur", () => setTimeout(close, 160));
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") { e.preventDefault(); highlight(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); highlight(-1); }
+    else if (e.key === "Enter" && ddEl) {
+      const hi = ddEl.querySelector(".is-hi");
+      if (hi) { e.preventDefault(); hi.dispatchEvent(new Event("mousedown", { bubbles: true, cancelable: true })); }
+    } else if (e.key === "Escape") close();
+  });
+}
+
 // Cliente recurrente: al elegir un cliente ya registrado, rellena teléfono /
 // "¿Cómo nos conocieron?" (solo si están vacíos) y sugiere sus equipos guardados
 // para el campo "Producto / equipo" — evita reescribir datos en cada ticket/cotización.
@@ -5630,14 +5712,16 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
         ${txs.map(t=>`<option value="${t.id}" ${t.id===defaultValue?"selected":""}>${escapeHtml(`${t.date} — ${t.concept} — ${money.format(t.amount)}`)}</option>`).join("")}
       </select></div>`;
   }
-  if (ftype==="product-select") {
-    const products = branchProducts();
-    return `<div class="field ${wide?"is-wide":""}">
+  if (ftype==="hidden") {
+    return `<input type="hidden" id="${name}" name="${name}" value="${escapeHtml(String(defaultValue ?? ""))}" />`;
+  }
+  if (ftype==="supply-item-autocomplete") {
+    const val = defaultValue ?? "";
+    return `<div class="field ${wide?"is-wide":""} device-ac-wrapper">
       <label for="${name}">${labelHtml}</label>
-      <select id="${name}" name="${name}">
-        <option value="">— Ninguno —</option>
-        ${products.map(p=>`<option value="${p.id}" ${p.id===defaultValue?"selected":""}>${escapeHtml((p.sku?`[${p.sku}] `:'')+p.name)}</option>`).join("")}
-      </select></div>`;
+      <input id="${name}" name="${name}" type="text" value="${escapeHtml(String(val))}"
+        data-supply-item-ac autocomplete="off" placeholder="Escribe para buscar o agregar al catálogo…" ${optional?"":"required"} />
+    </div>`;
   }
   if (ftype==="device-autocomplete") {
     const val = defaultValue ?? "";
@@ -6004,6 +6088,24 @@ async function createRemoteClient(r) {
 async function createRemoteProduct(r) {
   const { error } = await supabaseClient.from("products").insert({ name:r.name, sku:r.sku||null, category:r.category, product_type:r.productType||"refaccion", stock:r.stock, min_stock:r.minStock, sale_price:r.price, branch_id:await branchIdByName(r.branch) });
   if (error) throw error;
+}
+
+// Alta rápida de un insumo nuevo desde el autocompletado de "Compra de insumo" —
+// crea el producto en el catálogo (categoría "Otro", stock 0) y lo agrega a state.products
+// para que quede disponible de inmediato en el resto de la app (Insumos, POS, etc.).
+async function createCatalogProductQuick(name) {
+  const branchId = await branchIdByName(activeBranchId);
+  const { data, error } = await supabaseClient.from("products").insert({
+    name, product_type: "insumo", category: "Otro",
+    stock: 0, min_stock: 0, sale_price: 0, branch_id: branchId,
+  }).select().single();
+  if (error) throw error;
+  const product = {
+    id: data.id, name: data.name, sku: data.sku||"", category: data.category,
+    stock: 0, minStock: 0, price: 0, productType: "insumo", branch: activeBranchId,
+  };
+  state.products.unshift(product);
+  return product;
 }
 
 async function createRemoteTicket(r) {
@@ -6940,16 +7042,6 @@ function buildReceiptUploadSection(existingUrl=null) {
     </div>`;
 }
 
-function initProductAutoFill() {
-  const sel = formFields.querySelector("#product_id");
-  const itemInput = formFields.querySelector("#item");
-  if (!sel || !itemInput) return;
-  sel.addEventListener("change", () => {
-    if (!sel.value) return;
-    const prod = state.products.find(p => p.id === sel.value);
-    if (prod && !itemInput.value) itemInput.value = prod.name;
-  });
-}
 
 async function createRemoteSupply(r) {
   const productId = r.product_id || null;
@@ -7348,14 +7440,30 @@ function showWAPanel(ticketId) {
     servicio:    ticket.issue || "",
   };
 
+  // Stage of the ticket maps to the most relevant template — shown first so it's
+  // the one a tech is likely to pick (and the default text in the PDF textarea).
+  const STAGE_WA_KEY = {
+    Recibido:        "recibido",
+    "En reparacion": "recibido",
+    Listo:           "listo",
+    Entregado:       "listo",
+    Garantia:        "garantia",
+  };
+  const stageKey = STAGE_WA_KEY[ticket.status] || "";
+
+  const baseMessages = [
+    { key: "recibido", emoji: "📦", label: "Equipo recibido" },
+    { key: "listo",    emoji: "✅", label: "Equipo listo" },
+    { key: "abono",    emoji: "💵", label: "Confirmar abono" },
+    { key: "pagado",   emoji: "🎉", label: "Pago completado" },
+    { key: "garantia", emoji: "🛡", label: "Garantía activa" },
+  ];
+
   const messages = isQuote
     ? [{ key: "cotizacion", emoji: "📋", label: "Enviar cotización" }]
-    : [
-        { key: "listo",    emoji: "✅", label: "Equipo listo" },
-        { key: "abono",    emoji: "💵", label: "Confirmar abono" },
-        { key: "pagado",   emoji: "🎉", label: "Pago completado" },
-        { key: "garantia", emoji: "🛡", label: "Garantía activa" },
-      ];
+    : stageKey
+      ? [...baseMessages.filter(m => m.key === stageKey), ...baseMessages.filter(m => m.key !== stageKey)]
+      : baseMessages;
 
   const makeBtn = ({ key, emoji, label }) => {
     const msg = fillWATemplate(key, vars);
@@ -7381,7 +7489,7 @@ function showWAPanel(ticketId) {
 
   const defaultPdfMsg = isQuote
     ? fillWATemplate("cotizacion", vars)
-    : (fillWATemplate("listo", vars)
+    : (fillWATemplate(stageKey || "listo", vars)
       || `Hola ${vars.client}, te comparto el ticket de tu reparación (${vars.tracking}) en ${vars.branch}.\n\n📲 Sigue el estado de tu reparación: ${vars.link}`);
 
   const noPhone = !phone ? `
