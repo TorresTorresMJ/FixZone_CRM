@@ -122,6 +122,7 @@ const seed = {
   invoices: [],
   brandAssets: [],
   notifications: [],
+  teamTasks: [],
 };
 
 let state = loadState();
@@ -373,6 +374,7 @@ async function reloadState() {
       invoices:      remote.invoices            || [],
       brandAssets:   remote.brandAssets         || [],
       notifications: remote.notifications       || [],
+      teamTasks:     remote.teamTasks           || [],
     };
     return state;
   } finally {
@@ -399,7 +401,8 @@ async function afterLogin(authUser) {
     }
     render();
     renderNotifBadge();
-    if (!notifPollInterval) notifPollInterval = setInterval(pollNotifications, 30000);
+    renderTeamTasksBadge();
+    if (!notifPollInterval) notifPollInterval = setInterval(() => { pollNotifications(); pollTeamTasks(); }, 30000);
     if (!ticketTimerTickInterval) ticketTimerTickInterval = setInterval(tickTicketTimers, 30000);
   } catch(err) {
     console.error(err);
@@ -621,7 +624,7 @@ function currentPerms() {
 // REMOTE DATA
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadSupabaseState() {
-  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes,baRes,notifRes] = await Promise.all([
+  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes,baRes,notifRes,ttRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("name"),
     supabaseClient.from("employees").select("*").order("full_name"),
     supabaseClient.from("customers").select("*").order("created_at",{ascending:false}),
@@ -638,6 +641,7 @@ async function loadSupabaseState() {
     supabaseClient.from("invoices").select("*").order("invoice_date",{ascending:false}),
     supabaseClient.from("brand_assets").select("*").order("created_at",{ascending:false}),
     supabaseClient.from("notifications").select("*").order("created_at",{ascending:false}).limit(50),
+    supabaseClient.from("team_tasks").select("*").order("created_at",{ascending:false}).limit(200),
   ]);
 
   const branchRows   = bRes.data  || [];
@@ -799,6 +803,19 @@ async function loadSupabaseState() {
       readBy:Array.isArray(n.read_by) ? n.read_by : [],
       createdAt:n.created_at,
     })),
+    teamTasks: (ttRes.data||[]).map(t => ({
+      id:t.id, text:t.text, category:t.category||"Otro",
+      branch:branchRows.find(b=>b.id===t.branch_id)?.name||null,
+      createdBy:t.created_by||null,
+      createdByName:employeeRows.find(e=>e.id===t.created_by)?.full_name||"Equipo",
+      createdAt:t.created_at,
+      status:t.status||"pendiente",
+      completedBy:t.completed_by||null,
+      completedByName:employeeRows.find(e=>e.id===t.completed_by)?.full_name||"",
+      completedAt:t.completed_at||null,
+      resolutionNote:t.resolution_note||"",
+      viewedBy:Array.isArray(t.viewed_by) ? t.viewed_by : [],
+    })),
   };
 }
 
@@ -899,6 +916,7 @@ function visibleNotifications() {
     .filter(n => !n.branch || n.branch === activeBranchId)
     .filter(n => !n.recipientId || n.recipientId === myId);
 }
+function branchTeamTasks() { return (state.teamTasks||[]).filter(t => !t.branch || t.branch === activeBranchId); }
 function sumByType(list, type) { return list.filter(i=>i.type===type).reduce((s,i)=>s+Number(i.amount||0),0); }
 
 function renderMetrics() {
@@ -5844,7 +5862,7 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
       </select>
     </div>`;
   }
-  const val = defaultValue ?? (ftype==="date" ? new Date().toISOString().slice(0,10) : "");
+  const val = defaultValue ?? (ftype==="date" && name!=="dueDate" ? new Date().toISOString().slice(0,10) : "");
   const step = ftype==="number" ? ` step="0.01"` : "";
   return `<div class="field ${wide?"is-wide":""}">
     <label for="${name}">${labelHtml}</label>
@@ -7646,7 +7664,7 @@ function showWAPanel(ticketId) {
   overlay.id = "wa-panel-overlay";
   overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)";
   overlay.innerHTML = `
-    <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
+    <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <h3 style="margin:0;font-size:15px">💬 WhatsApp — ${escapeHtml(ticket.tracking)}</h3>
         <button onclick="document.getElementById('wa-panel-overlay').remove()"
@@ -7842,6 +7860,7 @@ document.querySelectorAll("[data-open-form]").forEach(btn => {
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
 document.querySelector("#quick-pos").addEventListener("click", () => setView("pos"));
 document.querySelector("#notif-bell-btn")?.addEventListener("click", () => openNotifPanel());
+document.querySelector("#team-tasks-btn")?.addEventListener("click", () => openTeamTasksPanel());
 document.querySelector("#new-quote-btn")?.addEventListener("click", () => {
   openForm("cotizacion");
 });
@@ -9028,6 +9047,184 @@ function openNotifPanel() {
   });
 }
 
+// ── Checklist de tareas del equipo (icono junto a la campanita) ───────────────
+// Pendientes generales no ligados a un ticket ni a soporte IT (investigar,
+// cotizar, comprar, etc.). Cualquier empleado activo puede crear, ver y marcar
+// como hecha una tarea. viewed_by (no status) controla el badge: una tarea
+// recién resuelta vuelve a avisar a quien no la ha visto, igual que una nueva.
+
+async function addTeamTask(text, category) {
+  const branchId = await branchIdByName(activeBranchId);
+  const payload = { text, category, branch_id: branchId, created_by: currentEmployeeId() };
+  const { data, error } = await supabaseClient.from("team_tasks").insert(payload).select().single();
+  if (error) throw error;
+  state.teamTasks = [{
+    id:data.id, text:data.text, category:data.category,
+    branch:activeBranchId, createdBy:data.created_by,
+    createdByName:currentEmployee?.full_name||"Equipo",
+    createdAt:data.created_at, status:data.status,
+    completedBy:null, completedByName:"", completedAt:null,
+    resolutionNote:"", viewedBy:Array.isArray(data.viewed_by) ? data.viewed_by : [],
+  }, ...(state.teamTasks||[])];
+  renderTeamTasksBadge();
+}
+
+async function markTeamTaskDone(taskId) {
+  const task = (state.teamTasks||[]).find(t => t.id === taskId);
+  if (!task) return;
+  const note = prompt("Nota o comentario (opcional):") || "";
+  task.status = "hecha";
+  task.completedBy = currentEmployeeId();
+  task.completedByName = currentEmployee?.full_name || "Equipo";
+  task.completedAt = new Date().toISOString();
+  task.resolutionNote = note;
+  try {
+    await supabaseClient.from("team_tasks").update({
+      status:"hecha", completed_by:task.completedBy, completed_at:task.completedAt,
+      resolution_note:note,
+    }).eq("id", taskId);
+  } catch (err) {
+    console.warn("No se pudo marcar la tarea como hecha:", err);
+  }
+  document.getElementById("team-tasks-panel-overlay")?.remove();
+  openTeamTasksPanel();
+}
+
+async function markAllTeamTasksSeen() {
+  const myId = currentEmployeeId();
+  if (!myId) return;
+  const unseen = branchTeamTasks().filter(t => !t.viewedBy.includes(myId));
+  for (const t of unseen) t.viewedBy = [...t.viewedBy, myId];
+  renderTeamTasksBadge();
+  await Promise.all(unseen.map(t =>
+    supabaseClient.from("team_tasks").update({ viewed_by: t.viewedBy }).eq("id", t.id)
+  )).catch(err => console.warn("No se pudo marcar las tareas como vistas:", err));
+}
+
+function renderTeamTasksBadge() {
+  const badge = document.getElementById("team-tasks-badge");
+  if (!badge) return;
+  const myId = currentEmployeeId();
+  const unseen = branchTeamTasks().filter(t => !t.viewedBy.includes(myId)).length;
+  badge.textContent = unseen > 9 ? "9+" : unseen;
+  badge.style.display = unseen > 0 ? "" : "none";
+}
+
+async function pollTeamTasks() {
+  try {
+    const { data, error } = await supabaseClient.from("team_tasks")
+      .select("*").order("created_at",{ascending:false}).limit(200);
+    if (error) throw error;
+    state.teamTasks = (data||[]).map(t => ({
+      id:t.id, text:t.text, category:t.category||"Otro",
+      branch:(state.branches||[]).find(b=>b.id===t.branch_id)?.name||null,
+      createdBy:t.created_by||null,
+      createdByName:(state.employees||[]).find(e=>e.id===t.created_by)?.name||"Equipo",
+      createdAt:t.created_at, status:t.status||"pendiente",
+      completedBy:t.completed_by||null,
+      completedByName:(state.employees||[]).find(e=>e.id===t.completed_by)?.name||"",
+      completedAt:t.completed_at||null,
+      resolutionNote:t.resolution_note||"",
+      viewedBy:Array.isArray(t.viewed_by) ? t.viewed_by : [],
+    }));
+    renderTeamTasksBadge();
+  } catch (err) {
+    console.warn("No se pudieron actualizar las tareas del equipo:", err);
+  }
+}
+
+function openTeamTasksPanel() {
+  const existing = document.getElementById("team-tasks-panel-overlay");
+  if (existing) { existing.remove(); return; }
+
+  const tasks = branchTeamTasks();
+  const pending = tasks.filter(t => t.status !== "hecha");
+  const done = tasks.filter(t => t.status === "hecha");
+  markAllTeamTasksSeen();
+
+  const categoryTag = cat => `<span style="font-size:10px;color:var(--fz-primary,#085ACB);border:1px solid rgba(var(--fz-primary-rgb,8,90,203),.4);border-radius:99px;padding:1px 7px;white-space:nowrap">${escapeHtml(cat)}</span>`;
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString("es-MX",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
+
+  const pendingRows = pending.length ? pending.map(t => `
+    <div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid rgba(255,255,255,.07);align-items:flex-start">
+      <input type="checkbox" data-team-task-done="${t.id}" style="margin-top:3px;width:16px;height:16px;cursor:pointer;flex-shrink:0" />
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">${categoryTag(t.category)}</div>
+        <p style="margin:0;font-size:13px;color:rgba(255,255,255,.85)">${escapeHtml(t.text)}</p>
+        <p style="margin:4px 0 0;font-size:10px;color:rgba(255,255,255,.4)">Creado por ${escapeHtml(t.createdByName)} · ${fmtDate(t.createdAt)}</p>
+      </div>
+    </div>`).join("") : `<p style="padding:24px;text-align:center;color:rgba(255,255,255,.4);font-size:13px">Sin pendientes 🎉</p>`;
+
+  const doneRows = done.map(t => `
+    <div style="padding:12px;border-bottom:1px solid rgba(255,255,255,.07)">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">${categoryTag(t.category)}</div>
+      <p style="margin:0;font-size:13px;color:rgba(255,255,255,.5);text-decoration:line-through">${escapeHtml(t.text)}</p>
+      <p style="margin:4px 0 0;font-size:10px;color:rgba(255,255,255,.4)">✓ Completada por ${escapeHtml(t.completedByName)} · ${fmtDate(t.completedAt)}</p>
+      ${t.resolutionNote ? `<p style="margin:4px 0 0;font-size:11px;color:rgba(255,255,255,.55);font-style:italic">"${escapeHtml(t.resolutionNote)}"</p>` : ""}
+    </div>`).join("");
+
+  const overlay = document.createElement("div");
+  overlay.id = "team-tasks-panel-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:var(--z-modal);display:flex;justify-content:flex-end;background:rgba(0,0,0,.4)";
+  overlay.innerHTML = `
+    <div style="width:360px;max-width:95vw;height:100%;background:var(--fz-surface,#1e1e2e);display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.4)">
+      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:space-between">
+        <h3 style="margin:0;font-size:15px">✅ Tareas del equipo</h3>
+        <button onclick="document.getElementById('team-tasks-panel-overlay').remove()"
+          style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
+      </div>
+      <div style="border-bottom:1px solid rgba(255,255,255,.1);padding:14px">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input id="team-task-text-input" type="text" placeholder="Nueva tarea pendiente…"
+            style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px" />
+        </div>
+        <div style="display:flex;gap:8px">
+          <select id="team-task-category-input"
+            style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px">
+            <option value="Investigar">Investigar</option>
+            <option value="Cotizar">Cotizar</option>
+            <option value="Comprar">Comprar</option>
+            <option value="Otro" selected>Otro</option>
+          </select>
+          <button id="team-task-add-btn" class="primary-action" style="white-space:nowrap;font-size:13px">Agregar</button>
+        </div>
+      </div>
+      <div style="flex:1;overflow-y:auto">
+        ${pendingRows}
+        ${done.length ? `<details id="team-tasks-done-details" style="border-top:1px solid rgba(255,255,255,.1)">
+          <summary style="cursor:pointer;padding:12px;font-size:12px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px">Resueltas (${done.length})</summary>
+          ${doneRows}
+        </details>` : ""}
+      </div>
+    </div>`;
+
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  overlay.querySelectorAll("[data-team-task-done]").forEach(cb => {
+    cb.addEventListener("change", () => markTeamTaskDone(cb.dataset.teamTaskDone));
+  });
+
+  overlay.querySelector("#team-task-add-btn")?.addEventListener("click", async () => {
+    const input = overlay.querySelector("#team-task-text-input");
+    const category = overlay.querySelector("#team-task-category-input")?.value || "Otro";
+    const text = input?.value?.trim();
+    if (!text) return;
+    try {
+      await addTeamTask(text, category);
+      overlay.remove();
+      openTeamTasksPanel();
+      showToast("✓ Tarea agregada");
+    } catch (err) {
+      console.error(err);
+      showErrorToast("No se pudo agregar la tarea");
+    }
+  });
+  overlay.querySelector("#team-task-text-input")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") overlay.querySelector("#team-task-add-btn")?.click();
+  });
+}
+
 async function shareQuoteWhatsApp(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
@@ -9076,7 +9273,7 @@ async function shareQuoteWhatsApp(ticketId) {
   overlay.id = "wa-quote-panel-overlay";
   overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)";
   overlay.innerHTML = `
-    <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
+    <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <h3 style="margin:0;font-size:15px">💬 WhatsApp — ${escapeHtml(ticket.tracking)}</h3>
         <button id="wa-quote-close" style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
