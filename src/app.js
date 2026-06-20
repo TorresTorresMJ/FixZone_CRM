@@ -7463,6 +7463,37 @@ function showToast(message, html = "") {
   }
 }
 
+function makeDraggable(panel, handle) {
+  handle.style.cursor = "move";
+  let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+  const onDown = e => {
+    dragging = true;
+    const rect = panel.getBoundingClientRect();
+    panel.style.position = "fixed";
+    panel.style.margin = "0";
+    panel.style.left = `${rect.left}px`;
+    panel.style.top = `${rect.top}px`;
+    startLeft = rect.left;
+    startTop  = rect.top;
+    startX = e.clientX;
+    startY = e.clientY;
+    e.preventDefault();
+  };
+  const onMove = e => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    const maxLeft = window.innerWidth  - panel.offsetWidth;
+    const maxTop  = window.innerHeight - panel.offsetHeight;
+    panel.style.left = `${Math.min(Math.max(0, startLeft + dx), Math.max(0, maxLeft))}px`;
+    panel.style.top  = `${Math.min(Math.max(0, startTop  + dy), Math.max(0, maxTop))}px`;
+  };
+  const onUp = () => { dragging = false; };
+  handle.addEventListener("mousedown", onDown);
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+}
+
 function _dismissToast(t, delay) {
   setTimeout(() => {
     t.classList.add("is-hiding");
@@ -7662,10 +7693,10 @@ function showWAPanel(ticketId) {
 
   const overlay = document.createElement("div");
   overlay.id = "wa-panel-overlay";
-  overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5)";
   overlay.innerHTML = `
-    <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div id="wa-panel" style="background:var(--fz-surface,#1e1e2e);border-radius:16px;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+      <div id="wa-panel-handle" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;cursor:move">
         <h3 style="margin:0;font-size:15px">💬 WhatsApp — ${escapeHtml(ticket.tracking)}</h3>
         <button onclick="document.getElementById('wa-panel-overlay').remove()"
           style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
@@ -7691,6 +7722,7 @@ function showWAPanel(ticketId) {
     </div>`;
   overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
+  makeDraggable(overlay.querySelector("#wa-panel"), overlay.querySelector("#wa-panel-handle"));
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -9271,10 +9303,10 @@ async function shareQuoteWhatsApp(ticketId) {
 
   const overlay = document.createElement("div");
   overlay.id = "wa-quote-panel-overlay";
-  overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5)";
   overlay.innerHTML = `
-    <div style="background:var(--fz-surface,#1e1e2e);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,.4)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <div id="wa-quote-panel" style="background:var(--fz-surface,#1e1e2e);border-radius:16px;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+      <div id="wa-quote-panel-handle" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;cursor:move">
         <h3 style="margin:0;font-size:15px">💬 WhatsApp — ${escapeHtml(ticket.tracking)}</h3>
         <button id="wa-quote-close" style="background:none;border:none;color:inherit;font-size:20px;cursor:pointer;opacity:.6;padding:0 4px">✕</button>
       </div>
@@ -9375,6 +9407,7 @@ async function shareQuoteWhatsApp(ticketId) {
   });
 
   document.body.appendChild(overlay);
+  makeDraggable(overlay.querySelector("#wa-quote-panel"), overlay.querySelector("#wa-quote-panel-handle"));
 
   // Pre-genera la imagen y muestra la preview para copiar con clic derecho
   getCotizacionBlob(ticket).then(blob => {
