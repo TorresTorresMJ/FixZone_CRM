@@ -7708,6 +7708,11 @@ function showWAPanel(ticketId) {
           style="width:100%;box-sizing:border-box;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:inherit;font-size:13px;font-family:inherit;padding:8px 10px;resize:vertical">${escapeHtml(defaultPdfMsg)}</textarea>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="wa-panel-send-btn"
+          style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:10px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.4);color:#25d366;font-size:14px;font-weight:700;cursor:pointer">
+          <span style="font-size:20px">💬</span><span>Enviar por WhatsApp</span>
+          <span style="margin-left:auto;font-size:10px;opacity:.6">↗</span>
+        </button>
         <button onclick="shareTicketPDF('${ticket.id}', { text: document.getElementById('wa-pdf-message')?.value || '' })"
           style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.25);color:#25d366;font-size:13px;font-weight:600;cursor:pointer">
           <span style="font-size:18px">📄</span><span>Compartir ticket (PDF)</span>
@@ -7723,6 +7728,17 @@ function showWAPanel(ticketId) {
   overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
   makeDraggable(overlay.querySelector("#wa-panel"), overlay.querySelector("#wa-panel-handle"));
+
+  overlay.querySelector("#wa-panel-send-btn").addEventListener("click", () => {
+    const txt = document.getElementById("wa-pdf-message")?.value || defaultPdfMsg;
+    if (phone) {
+      const clean = phone.replace(/\D/g, "");
+      const num   = clean.startsWith("52") ? clean : `52${clean}`;
+      window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`, "_blank", "noopener");
+    } else {
+      navigator.clipboard.writeText(txt).then(() => showToast("✓ Mensaje copiado — sin teléfono registrado"));
+    }
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
