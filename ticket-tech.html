@@ -346,7 +346,8 @@
       padding: 4px 0 4px 12px;
     }
     .note-item-time { font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 2px; }
-    .note-item-text { font-size: 13px; color: var(--text); line-height: 1.4; }
+    .note-item-text { font-size: 13px; color: var(--text); line-height: 1.4; overflow-wrap: anywhere; word-break: break-word; }
+    .note-item-text a { color: var(--primary); text-decoration: underline; }
 
     /* ── Loading / error states ── */
     .loading-state, .error-state {
@@ -582,7 +583,7 @@
             ${notes.map(n => `
               <div class="note-item">
                 <div class="note-item-time">${formatNoteDate(n.created_at)}</div>
-                <div class="note-item-text">${esc(n.note)}</div>
+                <div class="note-item-text">${linkify(n.note)}</div>
               </div>
             `).join('')}
           </div>
@@ -926,6 +927,11 @@
 
   function esc(v) {
     return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function linkify(v) {
+    return esc(v).replace(/(https?:\/\/[^\s<]+)/g, url =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
   }
 </script>
 </body>

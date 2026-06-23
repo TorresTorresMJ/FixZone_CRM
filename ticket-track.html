@@ -193,6 +193,12 @@
       font-size: 14px;
       color: var(--text);
       line-height: 1.4;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .note-text a {
+      color: var(--primary);
+      text-decoration: underline;
     }
 
     /* ── Photos ── */
@@ -533,7 +539,7 @@
             ${notes.map(n => `
               <div class="note-item">
                 <div class="note-time">${formatNoteDate(n.created_at)}</div>
-                <div class="note-text">${esc(n.note)}</div>
+                <div class="note-text">${linkify(n.note)}</div>
               </div>
             `).join('')}
           </div>
@@ -566,6 +572,11 @@
 
   function esc(v) {
     return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function linkify(v) {
+    return esc(v).replace(/(https?:\/\/[^\s<]+)/g, url =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
   }
 </script>
 </body>
