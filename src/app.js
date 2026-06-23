@@ -123,6 +123,7 @@ const seed = {
   brandAssets: [],
   notifications: [],
   teamTasks: [],
+  settings: {},
 };
 
 let state = loadState();
@@ -204,7 +205,6 @@ const formSchemas = {
       ["repairAmount","Monto reparacion","number"],
       ["discountCode","Código de descuento","discount-code-select","ticket",false,true],
       ["discountAmount","Descuento ($)","number",null,false,true],
-      ["paymentStatus","Pago","select",["Pendiente","Abonado","Pagado"]],
       ["paymentMethod","Método de pago","select",["","Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"],false,true],
       ["paidAmount","Monto pagado","number"],["createdAt","Fecha de recepción","date"],
       ["dueDate","Fecha límite","date",null,false,true],
@@ -375,6 +375,7 @@ async function reloadState() {
       brandAssets:   remote.brandAssets         || [],
       notifications: remote.notifications       || [],
       teamTasks:     remote.teamTasks           || [],
+      settings:      remote.settings            || {},
     };
     return state;
   } finally {
@@ -613,8 +614,8 @@ function applyRolePermissions() {
 function currentPerms() {
   const role = currentEmployee?.role || "standard";
   const perms = PERMISSIONS[role] || PERMISSIONS.standard;
-  // Excepción especial: Kevin Mijangos siempre ve Contaduría, sin importar su rol
-  if ((currentEmployee?.full_name || "").trim().toLowerCase() === "kevin mijangos" && !perms.tabs.includes("contaduria")) {
+  // Excepción individual: empleados con can_access_contaduria=true ven Contaduría sin importar su rol
+  if (currentEmployee?.can_access_contaduria && !perms.tabs.includes("contaduria")) {
     return { ...perms, tabs: [...perms.tabs, "contaduria"] };
   }
   return perms;
@@ -624,7 +625,7 @@ function currentPerms() {
 // REMOTE DATA
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadSupabaseState() {
-  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes,baRes,notifRes,ttRes] = await Promise.all([
+  const [bRes,eRes,cRes,dRes,pRes,tRes,puRes,txRes,stRes,psRes,dcRes,stypRes,spRes,invRes,baRes,notifRes,ttRes,asRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("name"),
     supabaseClient.from("employees").select("*").order("full_name"),
     supabaseClient.from("customers").select("*").order("created_at",{ascending:false}),
@@ -642,6 +643,7 @@ async function loadSupabaseState() {
     supabaseClient.from("brand_assets").select("*").order("created_at",{ascending:false}),
     supabaseClient.from("notifications").select("*").order("created_at",{ascending:false}).limit(50),
     supabaseClient.from("team_tasks").select("*").order("created_at",{ascending:false}).limit(200),
+    supabaseClient.from("app_settings").select("*"),
   ]);
 
   const branchRows   = bRes.data  || [];
@@ -688,6 +690,7 @@ async function loadSupabaseState() {
         createdAt:(c.created_at||"").slice(0,10),
         status:"Activo",
         howFound:c.how_found||"", howFoundOther:c.how_found_other||"",
+        address:c.address||"", notes:c.notes||"",
         branch:branchRows.find(b=>b.id===c.branch_id)?.name||"",
       };
     }),
@@ -816,6 +819,7 @@ async function loadSupabaseState() {
       resolutionNote:t.resolution_note||"",
       viewedBy:Array.isArray(t.viewed_by) ? t.viewed_by : [],
     })),
+    settings: Object.fromEntries((asRes.data||[]).map(s => [s.key, s.value])),
   };
 }
 
@@ -925,7 +929,7 @@ function renderMetrics() {
   const todayTxs    = branchTxs.filter(t => t.date === today);
   const income      = sumByType(todayTxs,"Ingreso");
   const expenses    = sumByType(todayTxs,"Egreso");
-  const openTickets = branchTickets().filter(t=>t.status!=="Entregado").length;
+  const openTickets = branchTickets().filter(t=>t.status!=="Entregado" && t.status!=="Cotizacion").length;
   const lowStockItems = branchProducts().filter(p=>Number(p.stock)<=Number(p.minStock)&&Number(p.minStock)>0);
 
   document.querySelector("#metric-grid").innerHTML = [
@@ -949,7 +953,7 @@ function renderMetrics() {
   }
 
   document.querySelector("#active-ticket-list").innerHTML = branchTickets()
-    .filter(t=>t.status!=="Entregado").slice(0,5).map(ticketCard).join("")
+    .filter(t=>t.status!=="Entregado" && t.status!=="Cotizacion").slice(0,5).map(ticketCard).join("")
     ||emptyMessage("No hay tickets activos.", {label:"+ Nuevo ticket", onclick:"openForm('ticket')"});
 
   document.querySelector("#recent-activity").innerHTML = branchTxs
@@ -964,7 +968,7 @@ function renderMetrics() {
 function renderClients() {
   const perms = currentPerms();
   document.querySelector("#clients-table").innerHTML = bySearch(branchClients()).map((c,i)=>`
-    <tr style="--i:${i}">
+    <tr style="--i:${i};cursor:pointer" onclick="if(!event.target.closest('.action-row'))viewClientDetail('${c.id}')">
       <td><strong>${c.name}</strong><br><span class="muted">${c.email}</span></td>
       <td>${c.phone}</td><td>${c.device}</td><td>${c.lastVisit}</td>
       <td><span class="status">${c.status}</span></td>
@@ -1278,6 +1282,10 @@ function approveQuoteToTicket(ticketId) {
             issue_description:    derivedIssue || null,
             service_type:         derivedServiceType || null,
           }).eq("id", ticketId);
+          logTicketEvent(ticketId, "quote_approved", {
+            fromStage: "Cotizacion", toStage: "Recibido",
+            note: `Cotización ${cotRef} aprobada → Ticket ${newTracking}`,
+          });
           try { await reloadState(); } catch(e) { console.warn(e); }
         } catch(err) {
           if (idx !== -1) state.tickets[idx] = { ...ticket, status: "Cotizacion" };
@@ -1290,15 +1298,26 @@ function approveQuoteToTicket(ticketId) {
   });
 }
 
+// quoteItems-based tickets (cotizaciones, incluso ya convertidas a [FZ]): repairAmount
+// ya viene con el descuento aplicado (lo escribe updateQuoteItemsHiddenInputs), así que
+// "subtotal" hay que reconstruirlo sumando el descuento de vuelta. Tickets normales:
+// repairAmount es el monto antes de descuento, así que se resta una sola vez.
+// Centralizar este cálculo evita el bug de descuento duplicado (o "perdido" visualmente)
+// en las distintas vistas/recibos que muestran el total de un ticket.
+function ticketAmounts(ticket) {
+  const repair    = Number(ticket.repairAmount ?? ticket.total ?? 0);
+  const discount  = Number(ticket.discountAmount || 0);
+  const hasItems  = (ticket.quoteItems?.length || 0) > 0;
+  const subtotal  = hasItems ? repair + discount : repair;
+  const total     = hasItems ? repair : Math.max(0, repair - discount);
+  return { repair, subtotal, discount, total };
+}
+
 function ticketCard(ticket, perms, idx = 0) {
   perms = perms || currentPerms();
   const paid    = ticket.paymentStatus === "Pagado";
-  const repair  = Number(ticket.repairAmount ?? ticket.total ?? 0);
-  // quoteItems-based tickets: repairAmount already has discount applied (set by updateQuoteItemsHiddenInputs)
-  // plain tickets: repairAmount is pre-discount, so subtract manually
-  const total   = (ticket.quoteItems?.length > 0)
-    ? repair
-    : Math.max(0, repair - (ticket.discountAmount || 0));
+  const { subtotal, discount: ticketDiscount, total } = ticketAmounts(ticket);
+  const repair  = total; // mantiene compatibilidad con el resto de la función
   const paidAmt = Number(ticket.paidAmount ?? (paid ? repair : 0));
   const stClass = ticket.status==="Listo"||ticket.status==="Entregado" ? "ready"
                 : ticket.status==="Cotizacion" ? "waiting"
@@ -1323,14 +1342,16 @@ function ticketCard(ticket, perms, idx = 0) {
     ? `<p style="margin:3px 0 0;font-size:12px;color:rgba(255,255,255,.65);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;overflow-wrap:break-word;min-width:0;width:100%">${escapeHtml(ticket.issue)}</p>`
     : "";
 
-  // Compact price row — single line
+  // Compact price row — single line. Si hay descuento, mostramos el subtotal
+  // tachado junto al total final para que quede claro cuánto se está cobrando
+  // realmente (en vez de un badge "-$X" ambiguo junto al monto ya descontado).
   const priceHtml = repair > 0 ? `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:12px">
       <span class="muted">${paid ? "Pagado" : escapeHtml(ticket.paymentStatus)}</span>
-      <strong style="font-size:13px${paid?" color:#2ecc71":""}">
-        ${paid ? money.format(paidAmt) : money.format(total)}
-        ${ticket.discountAmount>0 ? `<span style="font-size:10px;color:#ff9f43;margin-left:3px">-${money.format(ticket.discountAmount)}</span>` : ""}
-      </strong>
+      <span style="text-align:right">
+        ${!paid && ticketDiscount>0 ? `<span style="font-size:10px;color:rgba(255,255,255,.4);text-decoration:line-through;margin-right:4px">${money.format(subtotal)}</span>` : ""}
+        <strong style="font-size:13px${paid?" color:#2ecc71":""}">${paid ? money.format(paidAmt) : money.format(total)}</strong>
+      </span>
     </div>` : "";
 
   const timerBadge = ticket.timerTargetAt ? timerBadgeData(ticket.timerTargetAt) : null;
@@ -1373,11 +1394,11 @@ function ticketCard(ticket, perms, idx = 0) {
 
 function renderSupplies() {
   document.querySelector("#supplies-table").innerHTML = bySearch(branchSupplies()).map(i=>`
-    <tr>
+    <tr style="cursor:pointer" onclick="if(!event.target.closest('.supply-actions')&&!event.target.closest('a'))viewSupplyDetail('${i.id}')">
       <td>${i.date}</td><td>${escapeHtml(i.supplier)}</td><td>${escapeHtml(i.item)}</td>
       <td>${i.quantity}</td><td><strong>${money.format(i.total)}</strong></td>
       <td>${i.receipt_url ? `<a href="${escapeHtml(i.receipt_url)}" target="_blank" class="mini-button">📄 Ver</a>` : ''}</td>
-      <td style="white-space:nowrap">
+      <td style="white-space:nowrap" class="supply-actions">
         <button class="mini-button" data-edit-supply="${i.id}">Editar</button>
         <button class="mini-button danger-btn" data-delete-supply="${i.id}">✕</button>
       </td>
@@ -3080,8 +3101,10 @@ function canManageEmployee(targetEmployee) {
 function renderUsers() {
   const container = document.querySelector("#users-table");
   if (!container) return;
+  const canManageUsers = currentPerms().canManageUsers;
   container.innerHTML = state.employees.map(e=>{
     const master = isMasterUser(e);
+    const hasFixedContaduria = ["admin","it","owner"].includes(e.role);
     return `
     <tr>
       <td><strong>${escapeHtml(e.name||e.full_name)}</strong>${master?` <span class="role-badge" style="background:rgba(255,193,7,.15);color:#ffc107">Master</span>`:""}</td>
@@ -3094,10 +3117,27 @@ function renderUsers() {
           <button class="mini-button" data-edit-employee="${e.id}">Editar</button>
           <button class="mini-button" data-reset-pw="${e.id}">Reset PW</button>
           ${master ? "" : `<button class="mini-button danger-btn" data-delete-employee="${e.id}">Dar de baja</button>`}
+          ${canManageUsers && !hasFixedContaduria ? `<button class="mini-button" data-toggle-contaduria="${e.id}">${e.can_access_contaduria?"✓ Contaduría":"+ Contaduría"}</button>` : ""}
         </div>
       </td>
     </tr>`;}).join("")||tableEmpty(6);
   renderPermissionsEditor();
+}
+
+async function toggleContaduriaAccess(employeeId) {
+  const emp = state.employees.find(e => e.id === employeeId);
+  if (!emp) return;
+  const next = !emp.can_access_contaduria;
+  try {
+    const { error } = await supabaseClient.from("employees").update({ can_access_contaduria: next }).eq("id", employeeId);
+    if (error) throw error;
+    emp.can_access_contaduria = next;
+    if (currentEmployee?.id === employeeId) currentEmployee.can_access_contaduria = next;
+    render();
+  } catch(err) {
+    console.error(err);
+    showErrorToast(`No se pudo actualizar el acceso a Contaduría: ${err.message}`);
+  }
 }
 
 // ── Permissions editor ────────────────────────────────────────────────────────
@@ -4093,22 +4133,36 @@ function renderWATemplates() {
 
   const statusEl = el.querySelector("#wt-autosave-status");
 
-  const doSave = () => {
+  const doSave = async () => {
     const saved = {};
     Object.keys(LABELS).forEach(k => { saved[k] = el.querySelector(`#wt-${k}`)?.value||""; });
-    saveWATemplates(saved);
-    if (statusEl) { statusEl.textContent = "✓ Guardado"; setTimeout(() => { statusEl.textContent = ""; }, 2000); }
+    try {
+      await saveWATemplates(saved);
+      if (statusEl) { statusEl.textContent = "✓ Guardado"; setTimeout(() => { statusEl.textContent = ""; }, 2000); }
+    } catch(err) {
+      console.error(err);
+      showErrorToast(`No se pudo guardar: ${err.message}`);
+    }
   };
 
-  // Auto-save on every change — no manual save button needed
+  // Auto-save on every change (debounced) — no manual save button needed
+  let saveDebounce;
   Object.keys(LABELS).forEach(k => {
-    el.querySelector(`#wt-${k}`)?.addEventListener("input", doSave);
+    el.querySelector(`#wt-${k}`)?.addEventListener("input", () => {
+      clearTimeout(saveDebounce);
+      saveDebounce = setTimeout(doSave, 500);
+    });
   });
 
-  el.querySelector("#wt-reset-btn")?.addEventListener("click", () => {
-    localStorage.removeItem(WA_TEMPLATES_KEY);
-    renderWATemplates();
-    showToast("✓ Plantillas restauradas");
+  el.querySelector("#wt-reset-btn")?.addEventListener("click", async () => {
+    try {
+      await saveWATemplates({ ...DEFAULT_WA_TEMPLATES });
+      renderWATemplates();
+      showToast("✓ Plantillas restauradas");
+    } catch(err) {
+      console.error(err);
+      showErrorToast(`No se pudo restaurar: ${err.message}`);
+    }
   });
   el.querySelectorAll(".wt-copy-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -4123,7 +4177,6 @@ function renderWATemplates() {
 }
 
 // ── Mensajes rápidos (repertorio copiable) ────────────────────────────────────
-const QUICK_MESSAGES_KEY = "fixzone-quick-messages-v1";
 const DEFAULT_QUICK_MESSAGES = [
   { name: "Saludo inicial",        text: "¡Hola! 👋 Bienvenido a FixZone. ¿En qué podemos ayudarte hoy?" },
   { name: "Horarios",              text: "Nuestro horario de atención es de lunes a sábado de 10:00 a 20:00 hrs. ¡Te esperamos!" },
@@ -4135,10 +4188,10 @@ const DEFAULT_QUICK_MESSAGES = [
 ];
 
 function loadQuickMessages() {
-  try { return JSON.parse(localStorage.getItem(QUICK_MESSAGES_KEY)) || [...DEFAULT_QUICK_MESSAGES]; }
-  catch { return [...DEFAULT_QUICK_MESSAGES]; }
+  const saved = state.settings?.quick_messages;
+  return Array.isArray(saved) && saved.length ? saved : [...DEFAULT_QUICK_MESSAGES];
 }
-function saveQuickMessages(msgs) { localStorage.setItem(QUICK_MESSAGES_KEY, JSON.stringify(msgs)); }
+async function saveQuickMessages(msgs) { await saveAppSetting("quick_messages", msgs); }
 
 function renderQuickMessages() {
   const el = document.querySelector("#quick-messages-manager");
@@ -4210,11 +4263,16 @@ function renderQuickMessages() {
         </div>`;
 
       container.querySelector("#qm-cancel-btn")?.addEventListener("click", () => { editMode = false; render(); });
-      container.querySelector("#qm-restore-btn")?.addEventListener("click", () => {
-        saveQuickMessages([...DEFAULT_QUICK_MESSAGES]);
-        editMode = false;
-        render();
-        showToast("✓ Mensajes restaurados");
+      container.querySelector("#qm-restore-btn")?.addEventListener("click", async () => {
+        try {
+          await saveQuickMessages([...DEFAULT_QUICK_MESSAGES]);
+          editMode = false;
+          render();
+          showToast("✓ Mensajes restaurados");
+        } catch(err) {
+          console.error(err);
+          showErrorToast(`No se pudo restaurar: ${err.message}`);
+        }
       });
       container.querySelector("#qm-add-btn")?.addEventListener("click", () => {
         const rows = container.querySelector("#qm-rows");
@@ -4230,17 +4288,22 @@ function renderQuickMessages() {
         div.querySelector(".qm-delete")?.addEventListener("click", () => div.remove());
         rows.appendChild(div);
       });
-      container.querySelector("#qm-save-btn")?.addEventListener("click", () => {
+      container.querySelector("#qm-save-btn")?.addEventListener("click", async () => {
         const updated = [];
         container.querySelectorAll(".qm-row").forEach(row => {
           const name = row.querySelector(".qm-name")?.value.trim();
           const text = row.querySelector(".qm-text")?.value.trim();
           if (name || text) updated.push({ name: name||"Sin nombre", text: text||"" });
         });
-        saveQuickMessages(updated);
-        editMode = false;
-        render();
-        showToast("✓ Mensajes rápidos guardados");
+        try {
+          await saveQuickMessages(updated);
+          editMode = false;
+          render();
+          showToast("✓ Mensajes rápidos guardados");
+        } catch(err) {
+          console.error(err);
+          showErrorToast(`No se pudo guardar: ${err.message}`);
+        }
       });
       container.querySelectorAll(".qm-delete").forEach(btn => {
         btn.addEventListener("click", () => btn.closest(".qm-row").remove());
@@ -4250,21 +4313,28 @@ function renderQuickMessages() {
   render();
 }
 
+// ── Generic app_settings key/value store (replaces localStorage config) ──────
+async function saveAppSetting(key, value) {
+  const { error } = await supabaseClient.from("app_settings")
+    .upsert({ key, value, updated_by: currentEmployee?.id || null }, { onConflict: "key" });
+  if (error) throw error;
+  state.settings[key] = value;
+}
+
 // ── Discount codes (managed via Supabase discount_codes table) ────────────────
-const WA_TEMPLATES_KEY = "fixzone-wa-templates-v1";
 const DEFAULT_WA_TEMPLATES = {
-  recibido:   "Hola {cliente} 👋, tu equipo *{equipo}* fue recibido en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!\n\n📲 Sigue el estado de tu reparación: {link}",
-  listo:      "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!\n\n📲 Sigue el estado de tu reparación: {link}",
-  abono:      "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.\n\n📲 Sigue el estado de tu reparación: {link}",
-  pagado:     "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!\n\n📲 Sigue el estado de tu reparación: {link}",
-  garantia:   "Hola {cliente} 👋, tu equipo {equipo} está en garantía. Folio: {folio}. Contáctanos para coordinar.\n\n📲 Sigue el estado de tu reparación: {link}",
-  cotizacion: "Hola {cliente} 👋, esta es la cotización del equipo *{equipo}* para el servicio de {servicio}.\n\n💰 Total: {total}\n\n📲 Ver detalle: {link}",
+  recibido:   "Hola {cliente} 👋, tu equipo *{equipo}* fue recibido en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!\n\n📱 Sigue el estado de tu reparación: {link}",
+  listo:      "Hola {cliente} 👋, tu equipo *{equipo}* está listo para recoger en {sucursal}. Folio: {folio}. ¡Gracias por confiar en nosotros!\n\n📱 Sigue el estado de tu reparación: {link}",
+  abono:      "Hola {cliente} 👋, recibimos tu abono de *{monto}*. Saldo pendiente: {saldo}. Folio: {folio}.\n\n📱 Sigue el estado de tu reparación: {link}",
+  pagado:     "Hola {cliente} 👋, tu pago de *{monto}* fue recibido. Tu equipo {equipo} está *PAGADO* ✅. Folio: {folio}. ¡Gracias!\n\n📱 Sigue el estado de tu reparación: {link}",
+  garantia:   "Hola {cliente} 👋, tu equipo {equipo} está en garantía. Folio: {folio}. Contáctanos para coordinar.\n\n📱 Sigue el estado de tu reparación: {link}",
+  cotizacion: "Hola {cliente} 👋, esta es la cotización del equipo *{equipo}* para el servicio de {servicio}.\n\n💰 Total: {total}\n\n📱 Ver detalle: {link}",
 };
 
 function getWATemplates() {
-  try { return { ...DEFAULT_WA_TEMPLATES, ...JSON.parse(localStorage.getItem(WA_TEMPLATES_KEY)||"{}") }; } catch { return DEFAULT_WA_TEMPLATES; }
+  return { ...DEFAULT_WA_TEMPLATES, ...(state.settings?.wa_templates || {}) };
 }
-function saveWATemplates(t) { localStorage.setItem(WA_TEMPLATES_KEY, JSON.stringify(t)); }
+async function saveWATemplates(t) { await saveAppSetting("wa_templates", t); }
 function fillWATemplate(key, vars) {
   const tpl = getWATemplates()[key] || DEFAULT_WA_TEMPLATES[key] || "";
   return tpl
@@ -5058,7 +5128,7 @@ function openForm(type, prefill = {}) {
   }
   initDeviceAutocomplete();
   if (type === "ticket" || type === "cotizacion") initClientAutocomplete();
-  if (type === "ticket") { initPriceAutofill(); initTicketCotizadorWidget(); }
+  if (type === "ticket") { initPriceAutofill(); initDiscountAutofill(); initTicketCotizadorWidget(); }
   openModal();
 }
 
@@ -5133,6 +5203,7 @@ function openEditTicket(ticketId) {
   initDeviceAutocomplete();
   initClientAutocomplete();
   initPriceAutofill();
+  initDiscountAutofill();
   initTicketCotizadorWidget();
   openModal();
   initPhotoUpload(ticketId);
@@ -5198,6 +5269,22 @@ async function loadTicketParts(ticketId) {
     await supabaseClient.from("ticket_items").delete().eq("id", btn.dataset.removePart);
     loadTicketParts(ticketId);
   });
+}
+
+async function logTicketEvent(ticketId, eventType, opts = {}) {
+  if (!supabaseClient || !/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticketId || "")) return;
+  try {
+    await supabaseClient.from("ticket_events").insert({
+      ticket_id:  ticketId,
+      event_type: eventType,
+      from_stage: opts.fromStage || null,
+      to_stage:   opts.toStage || null,
+      note:       opts.note || null,
+      created_by: currentEmployeeId(),
+    });
+  } catch (err) {
+    console.warn("No se pudo registrar evento de ticket:", err);
+  }
 }
 
 async function loadTicketEvents(ticketId) {
@@ -5772,6 +5859,25 @@ function initPriceAutofill() {
   deviceInput.addEventListener("blur", () => setTimeout(lookupPrice, 200));
 }
 
+// Recalcula "Descuento ($)" en vivo cuando se elige un código en el formulario
+// de ticket — antes el campo se quedaba vacío/manual y al guardar se mandaba
+// tal cual, sin reflejar el código seleccionado (ver updateRemoteTicket).
+function initDiscountAutofill() {
+  const codeSelect   = formFields.querySelector("#discountCode");
+  const amountInput  = formFields.querySelector("#discountAmount");
+  const repairInput  = formFields.querySelector("#repairAmount");
+  if (!codeSelect || !amountInput || !repairInput) return;
+
+  const recalc = () => {
+    if (!codeSelect.value) return; // sin código: el monto queda editable manualmente
+    const result = applyDiscount(Number(repairInput.value || 0), codeSelect.value, "ticket");
+    amountInput.value = result.valid ? result.amount.toFixed(2) : 0;
+  };
+
+  codeSelect.addEventListener("change", recalc);
+  repairInput.addEventListener("input", recalc);
+}
+
 function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=false) {
   const labelHtml = optional
     ? `${label} <span style="font-size:11px;font-weight:400;opacity:0.45;text-transform:none;letter-spacing:0">(opcional)</span>`
@@ -5982,7 +6088,7 @@ recordForm.addEventListener("submit", async e => {
   if (activeForm === "ticket" && editingTicketId) {
     data.repairAmount = Number(data.repairAmount||0);
     data.paidAmount   = Number(data.paidAmount||0);
-    if (data.paymentStatus==="Pagado" && data.paidAmount===0) data.paidAmount = data.repairAmount;
+    data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=data.repairAmount && data.repairAmount>0 ? "Pagado" : "Abonado");
     try {
       const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTicketId);
       if (dataMode==="remote" && isRealUUID) {
@@ -6025,7 +6131,7 @@ recordForm.addEventListener("submit", async e => {
       data.assignedTo    = data.assignedTo || "";
     } else {
       data.paidAmount    = Number(data.paidAmount||0);
-      if (data.paymentStatus==="Pagado"&&data.paidAmount===0) data.paidAmount=data.repairAmount;
+      data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=data.repairAmount && data.repairAmount>0 ? "Pagado" : "Abonado");
     }
   }
 
@@ -6308,6 +6414,12 @@ async function createRemoteTicket(r) {
   };
   state.tickets = [mapped, ...state.tickets.filter(t=>t.id!==data.id)];
 
+  // Log: registro inicial del ticket
+  logTicketEvent(data.id, "created", {
+    toStage: r.status,
+    note: `Ticket creado en etapa "${r.status}"${assignedE?.full_name ? ` — asignado a ${assignedE.full_name}` : ""}`,
+  });
+
   // Aviso: ticket nuevo asignado a otro técnico
   if (assignedE?.id && assignedE.id !== currentEmployeeId()) {
     addNotif({
@@ -6373,6 +6485,14 @@ async function updateRemoteTicket(ticketId, r) {
   }
 
   const assignedE = lookups.employeesByName.get(r.assignedTo);
+  // Tickets normales (no cotización): recalcular el descuento desde el código
+  // seleccionado, igual que createRemoteTicket — evita que se guarde un
+  // discount_amount obsoleto si el campo no se actualizó manualmente en el form.
+  // Las cotizaciones (r.quoteItems definido) ya traen su descuento pre-calculado
+  // por el builder de línea de items (scope "cotizacion"), así que se respeta tal cual.
+  const disc = (!r.quoteItems && r.discountCode)
+    ? applyDiscount(Number(r.repairAmount||0), r.discountCode, "ticket")
+    : { amount: Number(r.discountAmount||0), pct: Number(r.discountPct||0) };
   const { error } = await supabaseClient.from("service_tickets").update({
     customer_name:        r.client,
     product_name:         r.productName,
@@ -6387,8 +6507,8 @@ async function updateRemoteTicket(ticketId, r) {
     assigned_employee_id: assignedE?.id||null,
     notes:                r.notes||null,
     discount_code:        r.discountCode||null,
-    discount_amount:      Number(r.discountAmount||0),
-    discount_pct:         Number(r.discountPct||0),
+    discount_amount:      disc.amount,
+    discount_pct:         disc.pct,
     service_type:         r.serviceType||null,
     due_date:             r.dueDate||null,
     ...(r.createdAt ? { received_at: new Date(r.createdAt + "T12:00:00").toISOString() } : {}),
@@ -6421,12 +6541,23 @@ async function updateRemoteTicket(ticketId, r) {
   const prevStatus  = r._prevStatus ?? oldTicket?.status;
   const stageChanged = prevStatus && r.status && prevStatus !== r.status;
   if (stageChanged) {
-    await supabaseClient.from("ticket_events").insert({
-      ticket_id:  ticketId,
-      event_type: "stage_change",
-      from_stage: prevStatus,
-      to_stage:   r.status,
-      created_by: currentEmployeeId(),
+    logTicketEvent(ticketId, "stage_change", { fromStage: prevStatus, toStage: r.status });
+  }
+
+  // Log: cambio de técnico asignado (incluye desasignación)
+  const assignmentActuallyChanged = (r.assignedTo || "") !== (oldTicket?.assignedTo || "");
+  if (assignmentActuallyChanged) {
+    logTicketEvent(ticketId, "assignment_change", {
+      note: r.assignedTo
+        ? `Asignado a ${r.assignedTo}${oldTicket?.assignedTo ? ` (antes: ${oldTicket.assignedTo})` : ""}`
+        : `Desasignado (antes: ${oldTicket?.assignedTo || ""})`,
+    });
+  }
+
+  // Log: pago registrado
+  if (newPaid > oldPaid) {
+    logTicketEvent(ticketId, "payment", {
+      note: `Pago registrado: ${money.format(newPaid - oldPaid)}${r.paymentMethod ? ` (${r.paymentMethod})` : ""}`,
     });
   }
 
@@ -6618,6 +6749,9 @@ async function toggleWaitingPart(ticketId) {
       await supabaseClient.from("service_tickets")
         .update({ waiting_part: newVal, waiting_part_note: note || null })
         .eq("id", ticketId);
+      logTicketEvent(ticketId, "waiting_part", {
+        note: newVal ? `⏳ Esperando pieza${note ? `: ${note}` : ""}` : "✓ Pieza recibida / ya no se espera pieza",
+      });
     } catch (err) {
       showErrorToast(`Error: ${err.message}`);
     }
@@ -7678,7 +7812,7 @@ function showWAPanel(ticketId) {
   const defaultPdfMsg = isQuote
     ? fillWATemplate("cotizacion", vars)
     : (fillWATemplate(stageKey || "listo", vars)
-      || `Hola ${vars.client}, te comparto el ticket de tu reparación (${vars.tracking}) en ${vars.branch}.\n\n📲 Sigue el estado de tu reparación: ${vars.link}`);
+      || `Hola ${vars.client}, te comparto el ticket de tu reparación (${vars.tracking}) en ${vars.branch}.\n\n📱 Sigue el estado de tu reparación: ${vars.link}`);
 
   const noPhone = !phone ? `
     <div style="background:rgba(255,153,0,.1);border:1px solid rgba(255,153,0,.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#ff9f43;margin-bottom:12px">
@@ -8132,6 +8266,8 @@ document.addEventListener("click", async e => {
   if (delEmp) { deleteEmployee(delEmp.dataset.deleteEmployee); return; }
   const resetPw = e.target.closest("[data-reset-pw]");
   if (resetPw) { resetEmployeePassword(resetPw.dataset.resetPw); return; }
+  const toggleContaduria = e.target.closest("[data-toggle-contaduria]");
+  if (toggleContaduria) { toggleContaduriaAccess(toggleContaduria.dataset.toggleContaduria); return; }
 
   // Delete photo
   const delPhoto = e.target.closest("[data-delete-photo]");
@@ -8374,9 +8510,7 @@ function doPrint() {
 // ── Receipt variants ──────────────────────────────────────────────────────────
 function printRecibo(ticket, type) {
   const client    = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
-  const repair    = Number(ticket.repairAmount || 0);
-  const discount  = Number(ticket.discountAmount || 0);
-  const total     = Math.max(0, repair - discount);
+  const { subtotal: repair, discount, total } = ticketAmounts(ticket);
   const paid      = Number(ticket.paidAmount || 0);
   const pending   = Math.max(0, total - paid);
   const brand     = window.getBranchBrand(ticket.branch || activeBranchId);
@@ -8519,7 +8653,7 @@ function printPosRecibo() {
 
 function printTicket(ticket) {
   const client    = state.clients.find(c => c.name.toLowerCase() === ticket.client.toLowerCase());
-  const repairAmt = Number(ticket.repairAmount ?? ticket.total ?? 0);
+  const { subtotal: repairAmt } = ticketAmounts(ticket);
   const paidAmt   = Number(ticket.paidAmount ?? 0);
   const received  = Number(ticket.amountReceived ?? paidAmt ?? 0);
   const change    = Number(ticket.changeAmount ?? 0);
@@ -8770,9 +8904,7 @@ async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
   // Header del ticket tiene fondo de color → logo para fondo oscuro, sin filtro CSS
   const logoSrc  = brand.logoLightSrc || brand.logoSrc;
   const logoFallback = brand.logoLightSrc || brand.logoFallback || brand.logoSrc;
-  const repairAmt= Number(ticket.repairAmount ?? ticket.total ?? 0);
-  const discAmt  = Number(ticket.discountAmount || 0);
-  const total    = Math.max(0, repairAmt - discAmt);
+  const { subtotal: repairAmt, discount: discAmt, total } = ticketAmounts(ticket);
   const paidAmt  = Number(ticket.paidAmount || 0);
   const pending  = Math.max(0, total - paidAmt);
   const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
@@ -9759,10 +9891,8 @@ function viewTicketDetail(ticketId) {
   if (!ticket) return;
 
   const perms   = currentPerms();
-  const repair  = Number(ticket.repairAmount ?? ticket.total ?? 0);
-  const disc    = Number(ticket.discountAmount ?? 0);
-  const total   = Math.max(0, repair - disc);
-  const paidAmt = Number(ticket.paidAmount ?? (ticket.paymentStatus === "Pagado" ? repair : 0));
+  const { subtotal, discount: disc, total } = ticketAmounts(ticket);
+  const paidAmt = Number(ticket.paidAmount ?? (ticket.paymentStatus === "Pagado" ? total : 0));
   const balance = Math.max(0, total - paidAmt);
   const stClass = ticket.status === "Listo" || ticket.status === "Entregado" ? "ready"
                 : ticket.status === "Cotizacion" ? "waiting"
@@ -9801,9 +9931,9 @@ function viewTicketDetail(ticketId) {
         ${ticket.deliveredAt ? row("Inicio de garantía", ticket.deliveredAt) : ""}
         ${row("Fecha límite", ticket.dueDate)}
         ${row("Servicio",     ticket.serviceType)}
-        ${repair > 0 ? row("Precio reparación", money.format(repair)) : ""}
-        ${disc   > 0 ? row("Descuento", "−" + money.format(disc))     : ""}
-        ${total  > 0 ? row("Total",     money.format(total))           : ""}
+        ${subtotal > 0 ? row("Precio reparación", money.format(subtotal)) : ""}
+        ${disc     > 0 ? row("Descuento", "−" + money.format(disc))       : ""}
+        ${total    > 0 ? row("Total",     money.format(total))           : ""}
         ${paidAmt> 0 ? row("Pagado",    money.format(paidAmt))         : ""}
         ${balance> 0 ? `<div class="detail-row"><span>Saldo pendiente</span><strong style="color:#ffd18c">${money.format(balance)}</strong></div>` : ""}
         ${row("Estado de pago", ticket.paymentStatus)}
@@ -9823,6 +9953,7 @@ function viewTicketDetail(ticketId) {
       ${ticket.timerTargetAt ? `<div data-timer-badge data-timer-target="${escapeHtml(ticket.timerTargetAt)}" style="margin-bottom:10px;font-size:13px;line-height:1.5;padding:10px 14px;border-radius:8px;background:${timerBadgeData(ticket.timerTargetAt).bg};border:1px solid ${timerBadgeData(ticket.timerTargetAt).border};color:${timerBadgeData(ticket.timerTargetAt).color}">⏱️ ${timerBadgeData(ticket.timerTargetAt).label}</div>` : ""}
       ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${ticket.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas internas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(ticket.notes)}</p></div>` : ""}
+      <div id="ticket-events-section"></div>
     </div>
     <menu class="modal-actions" style="padding:16px 22px">
       <button type="button" class="ghost-button" id="tdv-close2">Cerrar</button>
@@ -9830,6 +9961,7 @@ function viewTicketDetail(ticketId) {
     </menu>`;
 
   document.body.appendChild(dlg);
+  loadTicketEvents(ticketId);
 
   // Cierre en backdrop click
   dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
@@ -9904,6 +10036,7 @@ function viewQuoteDetail(ticketId) {
       </div>
       ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${itemsHtml}
+      <div id="ticket-events-section"></div>
     </div>
     <menu class="modal-actions" style="padding:16px 22px">
       <button type="button" class="ghost-button" id="tdv-close2">Cerrar</button>
@@ -9912,6 +10045,7 @@ function viewQuoteDetail(ticketId) {
     </menu>`;
 
   document.body.appendChild(dlg);
+  loadTicketEvents(ticketId);
 
   dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
   dlg.querySelector("#tdv-close").addEventListener("click",  () => dlg.close());
@@ -9990,6 +10124,111 @@ function viewSupportTaskDetail(taskId) {
   } else if (commentsEl) {
     commentsEl.innerHTML = `<p class="muted" style="font-size:12px">Disponible solo en tareas guardadas en Supabase.</p>`;
   }
+
+  dlg.showModal();
+}
+
+function viewClientDetail(clientId) {
+  const client = state.clients.find(c => c.id === clientId);
+  if (!client) return;
+
+  const row = (label, val) => val
+    ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
+    : "";
+
+  document.querySelector("#tdv-dialog")?.remove();
+
+  const dlg = document.createElement("dialog");
+  dlg.id    = "tdv-dialog";
+  dlg.className = "modal";
+  dlg.innerHTML = `
+    <div style="padding:20px 22px 0">
+      <div class="modal-header" style="margin-bottom:16px">
+        <div>
+          <p class="eyebrow" style="margin:0 0 4px">Detalle de cliente</p>
+          <span class="tracking-code" style="font-size:17px">${escapeHtml(client.name)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="status">${escapeHtml(client.status||"")}</span>
+          <button type="button" class="icon-button" id="tdv-close" aria-label="Cerrar" style="font-size:16px">✕</button>
+        </div>
+      </div>
+      <div class="tdv-grid" style="margin-bottom:14px">
+        ${row("Teléfono",    client.phone)}
+        ${row("Email",       client.email)}
+        ${row("Equipo",      client.device)}
+        ${row("Dirección",   client.address)}
+        ${row("Última visita", client.lastVisit)}
+        ${row("Sucursal",    client.branch)}
+        ${row("¿Cómo nos conoció?", client.howFound === "Otro" ? client.howFoundOther : client.howFound)}
+      </div>
+      ${client.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(client.notes)}</p></div>` : ""}
+    </div>
+    <menu class="modal-actions" style="padding:16px 22px">
+      <button type="button" class="ghost-button" id="tdv-close2">Cerrar</button>
+      <button type="button" class="primary-action" id="tdv-edit" style="padding:0 20px">Editar</button>
+    </menu>`;
+
+  document.body.appendChild(dlg);
+
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  dlg.querySelector("#tdv-close").addEventListener("click",  () => dlg.close());
+  dlg.querySelector("#tdv-close2").addEventListener("click", () => dlg.close());
+  dlg.querySelector("#tdv-edit").addEventListener("click", () => {
+    dlg.close();
+    openEditClient(clientId);
+  });
+  dlg.addEventListener("close", () => dlg.remove(), { once: true });
+
+  dlg.showModal();
+}
+
+function viewSupplyDetail(supplyId) {
+  const supply = (state.supplies||[]).find(i => i.id === supplyId);
+  if (!supply) return;
+
+  const row = (label, val) => val
+    ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
+    : "";
+
+  document.querySelector("#tdv-dialog")?.remove();
+
+  const dlg = document.createElement("dialog");
+  dlg.id    = "tdv-dialog";
+  dlg.className = "modal";
+  dlg.innerHTML = `
+    <div style="padding:20px 22px 0">
+      <div class="modal-header" style="margin-bottom:16px">
+        <div>
+          <p class="eyebrow" style="margin:0 0 4px">Detalle de insumo</p>
+          <span class="tracking-code" style="font-size:17px">${escapeHtml(supply.item)}</span>
+        </div>
+        <button type="button" class="icon-button" id="tdv-close" aria-label="Cerrar" style="font-size:16px">✕</button>
+      </div>
+      <div class="tdv-grid" style="margin-bottom:14px">
+        ${row("Fecha",      supply.date)}
+        ${row("Proveedor",  supply.supplier)}
+        ${row("Cantidad",   supply.quantity)}
+        ${row("Total",      money.format(supply.total))}
+        ${row("Sucursal",   supply.branch)}
+      </div>
+      ${supply.receipt_url ? `<div class="detail-row"><span>Comprobante</span><a href="${escapeHtml(supply.receipt_url)}" target="_blank" class="mini-button">📄 Ver</a></div>` : ""}
+    </div>
+    <menu class="modal-actions" style="padding:16px 22px">
+      <button type="button" class="ghost-button" id="tdv-close2">Cerrar</button>
+      <button type="button" class="primary-action" id="tdv-edit" style="padding:0 20px">Editar</button>
+    </menu>`;
+
+  document.body.appendChild(dlg);
+
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  dlg.querySelector("#tdv-close").addEventListener("click",  () => dlg.close());
+  dlg.querySelector("#tdv-close2").addEventListener("click", () => dlg.close());
+  dlg.querySelector("#tdv-edit").addEventListener("click", () => {
+    dlg.close();
+    openEditSupply(supplyId);
+  });
+  dlg.addEventListener("close", () => dlg.remove(), { once: true });
 
   dlg.showModal();
 }

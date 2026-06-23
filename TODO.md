@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-11_ (sesión 7)
+_Última actualización: 2026-06-23_ (sesión 9)
 
 ## Fase 1: Definir operacion interna
 
@@ -201,6 +201,7 @@ _Última actualización: 2026-06-11_ (sesión 7)
 - [x] Revisar mobile en celular real (responsive implementado, pendiente QA).
 - [x] Centro de notificaciones — Fase 2: avisos automáticos cuando se asigna un ticket a un técnico (al crear o editar) y cuando cambia de etapa (incluye drag&drop en kanban), dirigidos al técnico asignado. Comentarios IT ya notificaban desde Fase 13.
 - [x] Desborde fuera del margen de los tickets y texto . Prioridad medai. *Arreglado con click en tickeet y abrir vista detalladad de ticket*
+- [x] Checklist de tareas generales del equipo (investigar/cotizar/comprar/otro) — no ligadas a tickets ni a Soporte IT (eso sigue siendo solo IT). Ícono nuevo junto a la campanita, accesible desde cualquier pestaña sin entrar a una vista nueva; cualquier empleado activo crea/ve/marca como hecha, por sucursal, resueltas se tachan y se agrupan colapsadas, badge rojo cuando hay un item nuevo sin ver (`supabase/39_team_tasks.sql`).
 
 ## Fase 14 - IT 
 - [x] Que en cada task de IT permita la comunciacion IT <> Usuario — hilo de comentarios (`support_task_comments`, migration 32) en el modal de Editar tarea (IT) y en el nuevo modal "Mis solicitudes" (ícono 📥 junto al botón de ayuda), con aviso al centro de notificaciones cuando hay respuesta.
@@ -239,3 +240,17 @@ _Pendiente implementar — auditoría de código hecha en sesión 2026-06-06_
 - [x] **[P2] Skeleton loader en carga inicial** — `showApp()` se llama antes de `await reloadState()` en `afterLogin()`, revelando el shell con 3-4 `.skeleton-card` (shimmer) en `#metric-grid`, `#active-ticket-list` y `#recent-activity`, reemplazados por `renderMetrics()` al terminar la carga.
 - [x] **[P3] Tracking codes en monospace, no Orbitron** — `.tracking-code` ahora usa `ui-monospace, 'SF Mono', monospace; font-weight: 700`.
 - [x] **[P3] Hover de botón primario sin `filter: brightness()`** — `.primary-action:hover` ahora cambia `background` a `var(--fz-secondary)` en vez de `filter: brightness()`.
+
+---
+
+## Fase 17: Resiliencia técnica
+
+_Salido del análisis FODA hecho en sesión 2026-06-23 — orden = prioridad por impacto/urgencia_
+
+- [ ] **[P0] Configurar respaldos automáticos de Supabase** — activar PITR o backups diarios desde el dashboard del proyecto `zwmffnrkrrowmchluyyy`. Es la debilidad de mayor impacto: cualquier otro error (migración mal aplicada, RLS roto, borrado accidental) se vuelve irreversible sin esto.
+- [x] **[P0] Reemplazar la regla de Contaduría hardcodeada por nombre** — `employees.can_access_contaduria` (boolean, migration 40), `currentPerms()` y `private.is_admin_it_or_kevin()` leen el flag; toggle "+ Contaduría" en la tabla de Usuarios para admin/it. **Pendiente: aplicar `40_contaduria_access_flag.sql` en el SQL Editor de Supabase.**
+- [ ] **[P1] Probar migraciones en un proyecto Supabase secundario antes de aplicarlas en producción** — clonar el esquema actual a un segundo proyecto gratuito como staging mínimo.
+- [~] **[P1] Migrar config de `localStorage` a Supabase** — tabla genérica `app_settings` (key/value jsonb, migration 41) creada y aplicada. **Hecho:** plantillas de WhatsApp (`wa_templates`), mensajes rápidos (`quick_messages`). **Pendiente:** links de marketing, `fixzone-pricing-config` — mismo patrón (`state.settings[key]` + `saveAppSetting(key, value)`), una sección por sprint.
+- [ ] **[P1] Registrar qué migraciones ya corrieron** — tabla `schema_migrations` (o script de verificación) contra el listado en `supabase/`, para no depender de memoria/documentación al diagnosticar "funciona en mi compu pero no en producción".
+- [ ] **[P2] Empezar a modularizar `src/app.js`** (~10,000 líneas) — extraer con `<script type="module">` (sin build step) los bloques más aislados primero: POS, descuentos, finanzas. Dejar tickets/kanban para el final.
+- [ ] **[P2] Agregar tests unitarios a las funciones puras críticas** — `calcPrecio()`, `applyDiscount()`, cálculos de reportes — sin tocar el resto del código ni introducir un framework de build.

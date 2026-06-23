@@ -69,6 +69,8 @@ There is no test suite and no linter configured.
 | `supabase/36_ticket_due_date.sql` | Agrega `due_date` (date, nullable) a `service_tickets` — fecha límite asignable desde el formulario de ticket, usada para ordenar el kanban y mostrar avisos de vencido/vence hoy |
 | `supabase/38_anon_photo_edit_delete.sql` | Agrega policies anon UPDATE/DELETE en `attachments` (`ticket_id is not null`) y anon DELETE en `storage.objects` para el bucket `ticket-photos` — permite que el técnico corrija la etapa de una foto ya subida o la elimine desde `ticket-tech.html` (página pública, sin login) |
 | `supabase/39_team_tasks.sql` | `team_tasks` table — checklist de pendientes generales del equipo (Investigar/Cotizar/Comprar/Otro), no ligado a tickets ni a Soporte IT. RLS abierto a cualquier empleado activo para crear/ver/marcar como hecha. Accesible desde un ícono en el topbar (junto a la campanita), no es una vista del sidebar |
+| `supabase/40_contaduria_access_flag.sql` | Agrega `employees.can_access_contaduria` (boolean) y actualiza `private.is_admin_it_or_kevin()` para usarlo en vez de comparar `full_name = 'kevin mijangos'` — reemplaza la excepción hardcodeada por un flag editable desde Usuarios |
+| `supabase/41_app_settings.sql` | `app_settings` table — almacén genérico key/value (jsonb) para configuración que antes vivía solo en `localStorage` (plantillas de WhatsApp, mensajes rápidos, etc.), RLS abierto a empleados activos. Primera sección migrada: `wa_templates` |
 | `supabase/functions/scan-receipt/` | Edge Function — recibe imagen base64, llama a Gemini vision API (free tier, `gemini-3.1-flash-lite`), devuelve campos extraídos del comprobante (para insumos, devuelve un array `items[]` con una línea por producto del ticket). PDFs caen a llenado manual. Requiere secret `GEMINI_API_KEY`. |
 
 ## Architecture
@@ -261,18 +263,21 @@ Marketing quick-links and automation tools are stored in `localStorage` (not Sup
 
 ### WhatsApp templates
 
-Templates stored in `localStorage` key `fixzone-wa-templates-v1`. Default keys:
+Templates stored in Supabase `app_settings` (migration 41, key `wa_templates`, jsonb value) — shared across all users/devices instead of per-browser `localStorage`. Default keys:
 - `cotizacion` — empty by default (falls back to auto-formatted message with line items)
 - `listo`, `abono`, `pagado`, `garantia` — status-based message templates
 
-Available variables: `{cliente}`, `{equipo}`, `{sucursal}`, `{folio}`, `{monto}`, `{saldo}`, `{total}`, `{items}`. `fillWATemplate()` handles substitution. Templates are editable in the Automatización tab. Each template has a 📋 **Copiar** button to copy the raw text (with variables) to clipboard.
+Available variables: `{cliente}`, `{equipo}`, `{sucursal}`, `{folio}`, `{monto}`, `{saldo}`, `{total}`, `{items}`. `fillWATemplate()` handles substitution and reads synchronously from `state.settings.wa_templates` (loaded at startup by `loadSupabaseState()`). Templates are editable in the Automatización tab — `renderWATemplates()` autosaves on input (debounced 500ms) via `saveWATemplates()` → `saveAppSetting("wa_templates", …)`, which upserts to `app_settings` and updates `state.settings` immediately so the in-memory read stays in sync. Each template has a 📋 **Copiar** button to copy the raw text (with variables) to clipboard.
+
+**`app_settings` is a generic key/value store** (migration 41) meant to absorb the rest of the `localStorage`-only config over time. Migrated so far: `wa_templates`, `quick_messages`. Still pending: marketing links, `fixzone-pricing-config`, etc. — one section per sprint, same pattern: read from `state.settings[key]` with defaults merged in, write via `saveAppSetting(key, value)`.
 
 ### Mensajes rápidos
 
-Repertorio de mensajes de atención al cliente, copiables con un clic. Stored in `localStorage` key `fixzone-quick-messages-v1`. Default messages: saludo inicial, horarios, tiempo de reparación, garantía, equipo listo, despedida, no tenemos el modelo.
+Repertorio de mensajes de atención al cliente, copiables con un clic. Stored in Supabase `app_settings` (migration 41, key `quick_messages`) instead of `localStorage` — shared across all users/devices. Default messages: saludo inicial, horarios, tiempo de reparación, garantía, equipo listo, despedida, no tenemos el modelo.
 
-- `loadQuickMessages()` / `saveQuickMessages(msgs)` — read/write localStorage
-- `renderQuickMessages()` — renders the section in `#quick-messages-manager` (Automatización tab). View mode shows cards with 📋 Copiar; edit mode allows add/delete/rename/reorder + Restaurar defaults.
+- `loadQuickMessages()` — reads synchronously from `state.settings.quick_messages`, falling back to `DEFAULT_QUICK_MESSAGES` if empty/missing
+- `saveQuickMessages(msgs)` — async, persists via `saveAppSetting("quick_messages", msgs)`
+- `renderQuickMessages()` — renders the section in `#quick-messages-manager` (Automatización tab). View mode shows cards with 📋 Copiar; edit mode allows add/delete/rename/reorder + Restaurar defaults (save/restore buttons are now async with error toasts on failure).
 
 ### Tabla de Precios (vista Precios)
 
@@ -352,6 +357,8 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 36. `36_ticket_due_date.sql` — adds `due_date` (date) to `service_tickets` — fecha límite for sorting/filtering the kanban
 38. `38_anon_photo_edit_delete.sql` — anon UPDATE/DELETE policies on `attachments` (scoped to `ticket_id is not null`) and anon DELETE on `storage.objects` for `ticket-photos` — lets the technician fix or remove photos from `ticket-tech.html`
 39. `39_team_tasks.sql` — `team_tasks` table for the general team checklist (icon next to the notification bell), RLS open to any active employee for select/insert/update
+40. `40_contaduria_access_flag.sql` — adds `employees.can_access_contaduria` (boolean); `private.is_admin_it_or_kevin()` now checks this flag instead of comparing `full_name`
+41. `41_app_settings.sql` — generic key/value `app_settings` table for config previously stored only in `localStorage`; first section migrated is `wa_templates`
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -411,7 +418,7 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **`calcPrecio()` formula**: `precio = (insumo × (1 + margen)) × 1.16 × 1.0406`. Glass applies an additional discount: `precioFinal = precioPantalla × (1 - glassDesc)`. Never hardcode margin values — always read from `loadPricingConfig()`.
 - **Quote item `insumoCost`**: stored in `quoteItems` JSONB array per item. When > 0, `calcPrecio()` is called client-side to auto-fill `unitPrice`. The `insumoCost` is for internal reference only — not shown on client-facing receipts.
 - **Contaduría requires migration 27**: `27_invoices.sql` creates the `invoices` table and `private.is_admin_it_or_kevin()`. Without it, `state.invoices` stays `[]` and the Contaduría view renders empty for everyone, including Kevin.
-- **Contaduría access for Kevin is name-based, not role-based**: if Kevin Mijangos is ever renamed in `employees.full_name`, both `currentPerms()` (frontend) and `private.is_admin_it_or_kevin()` (RLS) must be updated to match — they compare `lower(full_name) = 'kevin mijangos'`.
+- **Contaduría access is controlled by `employees.can_access_contaduria`** (migration 40), not by name comparison. `admin`/`it`/`owner` roles always have access; any other employee can be granted access via the "+ Contaduría" toggle button in the Usuarios table (`toggleContaduriaAccess()`), which updates the column directly through the existing `"owners and admins can manage employees"` RLS policy (no Edge Function involved). `currentPerms()` (frontend) and `private.is_admin_it_or_kevin()` (RLS) both read this flag.
 - **POS checkout for `it`-role employees requires migration 28**: `28_it_role_pos_tables.sql` adds the missing `"it can manage *"` policies for `pos_sales`/`pos_sale_items`. Without it, employees with `role = 'it'` (never normalized to `admin`) get a "violates row-level security policy" error on `checkoutPos()`.
 - **Escaneo de comprobantes con múltiples artículos (Insumos)**: `scan-receipt` now returns `items[]` (one entry per line item) instead of a single `item`/`quantity`/`total`. When `formType === "supply"` and `fields.items.length > 1`, `openReceiptScanner()` shows a review screen (`showMultiItemReview()`) where each line can be edited/removed before saving — "Guardar todos" calls `createRemoteSupply()` once per row, all sharing the same uploaded receipt file. Single-item receipts still prefill the normal supply form.
 - **Biblioteca de assets de marca requires migration 30**: `30_brand_assets.sql` creates the `brand_assets` table. Without it, `state.brandAssets` stays `[]` and `renderBrandAssetLibrary()` (tab Diseño) renders an empty gallery — uploads will fail with a table-not-found error. This is intentionally separate from `renderBrandEditor()` (the "Editor de marca" above it): uploading here only stores a file + lists it for download/copy, it never touches `--fz-logo-src` or any active branding.
