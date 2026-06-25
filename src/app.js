@@ -3261,7 +3261,7 @@ function renderReports() {
                 ],
                 onClick: () => {
                   if (!origin) return openEditTransaction(t.id);
-                  if (origin.type === "ticket")  return viewTicketDetail(origin.record.id);
+                  if (origin.type === "ticket")  return openEditTicket(origin.record.id);
                   if (origin.type === "supply")  return openEditSupply(origin.record.id);
                   if (origin.type === "invoice") return openEditInvoice(origin.record.id);
                   return openEditTransaction(t.id); // POS: no hay vista dedicada, se edita la transacción
@@ -3329,7 +3329,7 @@ function renderReports() {
                 `<span style="color:#2ecc71">${money.format(t.paidAmount||0)}</span>`,
                 escapeHtml(t.status||""),
               ],
-              onClick: () => viewTicketDetail(t.id),
+              onClick: () => openEditTicket(t.id),
             }))
           );
         });
@@ -5033,6 +5033,7 @@ async function updateRemoteTransaction(txId, data) {
     if (idx !== -1) state.transactions[idx] = { ...state.transactions[idx], ...data };
     return;
   }
+  const tx = state.transactions.find(t => t.id === txId);
   const { error } = await supabaseClient.from("transactions").update({
     transaction_date: data.date,
     type:             data.type,
@@ -5042,6 +5043,20 @@ async function updateRemoteTransaction(txId, data) {
     payment_method:   data.paymentMethod || null,
   }).eq("id", txId);
   if (error) throw error;
+
+  // Trazabilidad bidireccional: si esta transacción es el ingreso de un ticket
+  // (anticipo/pago/abono) y se corrigió el método de pago aquí, refleja el cambio
+  // también en el ticket — nunca deben quedar desincronizados.
+  if (tx && data.paymentMethod && data.paymentMethod !== tx.paymentMethod) {
+    const origin = findTransactionOrigin(tx);
+    if (origin?.type === "ticket") {
+      await supabaseClient.from("service_tickets")
+        .update({ payment_method: data.paymentMethod })
+        .eq("id", origin.record.id);
+      const tIdx = state.tickets.findIndex(t => t.id === origin.record.id);
+      if (tIdx !== -1) state.tickets[tIdx].paymentMethod = data.paymentMethod;
+    }
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -6356,7 +6371,11 @@ recordForm.addEventListener("submit", async e => {
   if (activeForm === "ticket" && editingTicketId) {
     data.repairAmount = Number(data.repairAmount||0);
     data.paidAmount   = Number(data.paidAmount||0);
-    data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=data.repairAmount && data.repairAmount>0 ? "Pagado" : "Abonado");
+    // El estado de pago se calcula contra el TOTAL NETO (monto - descuento), no contra
+    // el monto bruto — comparar contra el bruto hacía que un ticket ya pagado al 100%
+    // (pagado == neto) se quedara marcado "Abonado" para siempre.
+    const netTotal = Math.max(0, data.repairAmount - Number(data.discountAmount||0));
+    data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=netTotal && netTotal>0 ? "Pagado" : "Abonado");
     // El formulario plano de ticket no tiene constructor de partidas (eso es solo en
     // "cotizacion") — si el ticket viene de una cotización convertida, todavía carga
     // un quote_items viejo en la DB. ticketAmounts() interpreta repairAmount distinto
@@ -6411,7 +6430,8 @@ recordForm.addEventListener("submit", async e => {
       data.assignedTo    = data.assignedTo || "";
     } else {
       data.paidAmount    = Number(data.paidAmount||0);
-      data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=data.repairAmount && data.repairAmount>0 ? "Pagado" : "Abonado");
+      const netTotal = Math.max(0, data.repairAmount - Number(data.discountAmount||0));
+      data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=netTotal && netTotal>0 ? "Pagado" : "Abonado");
     }
   }
 
@@ -6718,8 +6738,32 @@ async function createRemoteTicket(r) {
       category:      "Servicio",
       amount:        Number(r.paidAmount),
       paymentMethod: r.paymentMethod || "",
+      ticketId:      data.id,
     });
   }
+}
+
+// Trazabilidad bidireccional ticket ↔ transacciones: corrige el método de pago en
+// TODAS las transacciones de ingreso ya generadas para un ticket (vía ticket_id, y
+// también vía el folio embebido en el concepto para transacciones viejas que se
+// crearon antes de que createRemoteTransaction empezara a guardar ticket_id).
+// Sin esto, corregir el método de pago desde el ticket dejaría Finanzas/Reportes
+// mostrando el valor viejo hasta el próximo pago — todo lo vinculado debe moverse junto.
+async function syncTicketPaymentMethodToTransactions(ticketId, tracking, paymentMethod) {
+  await supabaseClient.from("transactions")
+    .update({ payment_method: paymentMethod })
+    .eq("ticket_id", ticketId);
+  if (tracking) {
+    await supabaseClient.from("transactions")
+      .update({ payment_method: paymentMethod })
+      .is("ticket_id", null)
+      .like("concept", `%${tracking}%`);
+  }
+  state.transactions.forEach(t => {
+    if (t.ticketId === ticketId || (tracking && (t.concept||"").includes(tracking))) {
+      t.paymentMethod = paymentMethod;
+    }
+  });
 }
 
 async function updateRemoteTicket(ticketId, r) {
@@ -6801,6 +6845,14 @@ async function updateRemoteTicket(ticketId, r) {
   }).eq("id", ticketId);
   if (error) throw error;
 
+  // Trazabilidad bidireccional: si el método de pago del ticket cambió (se corrigió
+  // desde el form de edición), refleja el mismo método en TODAS las transacciones de
+  // ingreso ya generadas para este ticket (anticipo/pago/abono) — si no, Finanzas
+  // seguiría mostrando el método viejo o "Sin registrar" aunque el ticket ya esté corregido.
+  if (r.paymentMethod && r.paymentMethod !== oldTicket?.paymentMethod) {
+    await syncTicketPaymentMethodToTransactions(ticketId, oldTicket?.tracking, r.paymentMethod);
+  }
+
   // Auto-create income transaction when paidAmount increases via edit form
   const oldPaid = Number(oldTicket?.paidAmount || 0);
   const newPaid = Number(r.paidAmount || 0);
@@ -6812,6 +6864,7 @@ async function updateRemoteTicket(ticketId, r) {
       category:      "Servicio",
       amount:        newPaid - oldPaid,
       paymentMethod: r.paymentMethod || "",
+      ticketId,
     });
   }
 
@@ -7669,6 +7722,7 @@ async function createRemoteTransaction(r) {
     category:r.category, amount:r.amount, created_by:currentEmployeeId(),
     payment_method: r.paymentMethod || null,
     receipt_url: receiptUrl,
+    ticket_id: r.ticketId || null,
   }).select().single();
   if (error) throw error;
   // Add the DB-created transaction to state immediately so it appears in the dashboard.
@@ -7677,6 +7731,7 @@ async function createRemoteTransaction(r) {
     id:data.id, date:data.transaction_date, type:data.type, concept:data.concept,
     category:data.category, amount:Number(data.amount||0),
     paymentMethod:data.payment_method||"", branch:branchName,
+    ticketId:data.ticket_id||null,
   };
   state.transactions = [mapped, ...state.transactions.filter(t=>t.id!==data.id)];
   return mapped;
@@ -8295,6 +8350,7 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
         category:      "Servicio",
         amount,
         paymentMethod: method,
+        ticketId:      abonoTicketId,
       });
 
       try { await reloadState(); } catch(re) { console.warn("reload:", re); }
