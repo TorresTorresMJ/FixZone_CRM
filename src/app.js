@@ -824,6 +824,7 @@ async function loadSupabaseState() {
       id:t.id, date:t.transaction_date, type:t.type, concept:t.concept,
       category:t.category, amount:Number(t.amount||0),
       paymentMethod:t.payment_method||"",
+      ticketId:t.ticket_id||null,
       branch:branchRows.find(b=>b.id===t.branch_id)?.name||BRANCHES[0],
     })),
     supportTasks: (stRes.data||[]).map(t => ({
@@ -836,6 +837,7 @@ async function loadSupabaseState() {
       id:s.id, total:Number(s.total||0), paymentMethod:s.payment_method||"",
       discount:Number(s.discount_amount||0),
       createdAt:(s.created_at||"").slice(0,10),
+      transactionId:s.transaction_id||null,
       branch:branchRows.find(b=>b.id===s.branch_id)?.name||BRANCHES[0],
     })),
     discounts: (dcRes.data||[]).map(d => ({
@@ -2550,6 +2552,31 @@ function reportDateRange() {
   return ["2000-01-01", today];
 }
 
+// Finds where a transaction actually came from (ticket payment, supply purchase,
+// invoice, or POS sale) so report drill-downs can open the originating record
+// instead of just the bare transaction. `transactions.ticket_id` is part of the
+// schema but current write paths never populate it, so ticket-origin transactions
+// are recovered by matching the tracking number embedded in `concept`
+// (e.g. "Anticipo [FZ] 0070", "Pago [FZ] 0070", "Abono [FZ] 0070").
+function findTransactionOrigin(tx) {
+  const supply = state.supplies.find(s => s.transaction_id === tx.id);
+  if (supply) return { type: "supply", record: supply };
+  const invoice = state.invoices.find(i => i.transaction_id === tx.id);
+  if (invoice) return { type: "invoice", record: invoice };
+  const sale = (state.posSales||[]).find(s => s.transactionId === tx.id);
+  if (sale) return { type: "pos", record: sale };
+  if (tx.ticketId) {
+    const ticket = state.tickets.find(t => t.id === tx.ticketId);
+    if (ticket) return { type: "ticket", record: ticket };
+  }
+  const m = (tx.concept||"").match(/\[(FZ|COT)\]\s*\d+/);
+  if (m) {
+    const ticket = state.tickets.find(t => t.tracking === m[0] || t.cotizacionRef === m[0]);
+    if (ticket) return { type: "ticket", record: ticket };
+  }
+  return null;
+}
+
 // Generic drill-down modal: shows a filtered list of records from a report card/segment.
 // `items` is an array of { cells: [string,...], onClick: fn } — clicking a row closes
 // the modal and runs onClick (typically opening the matching edit/detail view).
@@ -3212,19 +3239,35 @@ function renderReports() {
           const m = el.dataset.ddMethod;
           const methodTxs = ingresos.filter(t => (t.paymentMethod || "Sin registrar") === m)
             .sort((a,b) => (b.date||"").localeCompare(a.date||""));
+          const ORIGIN_LABEL = {
+            ticket:  o => `🎫 ${escapeHtml(o.record.tracking||"")}`,
+            supply:  () => `📦 Insumo`,
+            invoice: () => `🧾 Factura`,
+            pos:     () => `🛒 Venta POS`,
+          };
           openListDrilldown(
             `Ingresos por método de pago — ${m}`,
             `${periodLabel} · ${methodTxs.length} movimiento${methodTxs.length!==1?"s":""} · ${money.format(methodTxs.reduce((s,t)=>s+Number(t.amount||0),0))}`,
-            ["Fecha","Concepto","Categoría","Monto"],
-            methodTxs.map(t => ({
-              cells: [
-                escapeHtml(t.date||""),
-                escapeHtml(t.concept||"—"),
-                escapeHtml(t.category||"—"),
-                `<span style="color:#2ecc71">${money.format(t.amount||0)}</span>`,
-              ],
-              onClick: () => openEditTransaction(t.id),
-            }))
+            ["Fecha","Concepto","Categoría","Monto","Origen"],
+            methodTxs.map(t => {
+              const origin = findTransactionOrigin(t);
+              return {
+                cells: [
+                  escapeHtml(t.date||""),
+                  escapeHtml(t.concept||"—"),
+                  escapeHtml(t.category||"—"),
+                  `<span style="color:#2ecc71">${money.format(t.amount||0)}</span>`,
+                  origin ? ORIGIN_LABEL[origin.type](origin) : `<span style="color:rgba(255,255,255,.35)">Manual</span>`,
+                ],
+                onClick: () => {
+                  if (!origin) return openEditTransaction(t.id);
+                  if (origin.type === "ticket")  return viewTicketDetail(origin.record.id);
+                  if (origin.type === "supply")  return openEditSupply(origin.record.id);
+                  if (origin.type === "invoice") return openEditInvoice(origin.record.id);
+                  return openEditTransaction(t.id); // POS: no hay vista dedicada, se edita la transacción
+                },
+              };
+            })
           );
         });
       });
@@ -6314,6 +6357,15 @@ recordForm.addEventListener("submit", async e => {
     data.repairAmount = Number(data.repairAmount||0);
     data.paidAmount   = Number(data.paidAmount||0);
     data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=data.repairAmount && data.repairAmount>0 ? "Pagado" : "Abonado");
+    // El formulario plano de ticket no tiene constructor de partidas (eso es solo en
+    // "cotizacion") — si el ticket viene de una cotización convertida, todavía carga
+    // un quote_items viejo en la DB. ticketAmounts() interpreta repairAmount distinto
+    // según haya o no quoteItems (post-descuento vs pre-descuento), así que mantener
+    // ese arreglo viejo mientras "Monto reparación" se edita como monto plano produce
+    // un descuento mal calculado (ej. resta el descuento dos veces). Al guardar desde
+    // este formulario, se limpia quote_items para que el monto editado se interprete
+    // siempre como pre-descuento.
+    data.quoteItems = [];
     try {
       const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTicketId);
       if (dataMode==="remote" && isRealUUID) {
@@ -6718,7 +6770,7 @@ async function updateRemoteTicket(ticketId, r) {
   // discount_amount obsoleto si el campo no se actualizó manualmente en el form.
   // Las cotizaciones (r.quoteItems definido) ya traen su descuento pre-calculado
   // por el builder de línea de items (scope "cotizacion"), así que se respeta tal cual.
-  const disc = (!r.quoteItems && r.discountCode)
+  const disc = (!r.quoteItems?.length && r.discountCode)
     ? applyDiscount(Number(r.repairAmount||0), r.discountCode, "ticket")
     : { amount: Number(r.discountAmount||0), pct: Number(r.discountPct||0) };
   const { error } = await supabaseClient.from("service_tickets").update({
@@ -7634,11 +7686,14 @@ async function createRemoteInvoice(r) {
   let fileUrl = null;
   const fileInput = document.querySelector("#receipt-file-input");
   if (fileInput?.files?.length) fileUrl = await uploadReceiptFile(fileInput.files[0]);
+  // Adjuntar el comprobante es prueba de que la factura ya existe — no tiene
+  // sentido dejarla en "Pendiente" si ya se subió el archivo.
+  const status = fileUrl ? "Facturado" : r.status;
 
   const { error } = await supabaseClient.from("invoices").insert({
     branch_id:      await branchIdByName(activeBranchId),
     type:           r.type,
-    status:         r.status,
+    status:         status,
     folio:          r.folio || null,
     party_name:     r.party_name || null,
     party_rfc:      r.party_rfc || null,
@@ -7656,10 +7711,12 @@ async function updateRemoteInvoice(invoiceId, r) {
   let fileUrl;
   const fileInput = document.querySelector("#receipt-file-input");
   if (fileInput?.files?.length) fileUrl = await uploadReceiptFile(fileInput.files[0]);
+  // Adjuntar/reemplazar el comprobante es prueba de que la factura ya existe.
+  const status = fileUrl ? "Facturado" : r.status;
 
   const payload = {
     type:           r.type,
-    status:         r.status,
+    status:         status,
     folio:          r.folio || null,
     party_name:     r.party_name || null,
     party_rfc:      r.party_rfc || null,
@@ -8093,12 +8150,18 @@ function showWAPanel(ticketId) {
 
   overlay.querySelector("#wa-panel-send-btn").addEventListener("click", () => {
     const txt = document.getElementById("wa-pdf-message")?.value || defaultPdfMsg;
+    // Copiamos el texto al portapapeles siempre, como respaldo: en Windows, el paso
+    // intermedio que abre la app de escritorio de WhatsApp desde el navegador puede
+    // mostrar los emoji como "?" (limitación del protocolo de apertura, no de la app).
+    // Si eso pasa, basta con seleccionar todo en WhatsApp y pegar (Ctrl+V).
+    navigator.clipboard.writeText(txt).catch(() => {});
     if (phone) {
       const clean = phone.replace(/\D/g, "");
       const num   = clean.startsWith("52") ? clean : `52${clean}`;
       window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`, "_blank", "noopener");
+      showToast("✓ Mensaje también copiado — si no llegan bien los emoji, pega con Ctrl+V");
     } else {
-      navigator.clipboard.writeText(txt).then(() => showToast("✓ Mensaje copiado — sin teléfono registrado"));
+      showToast("✓ Mensaje copiado — sin teléfono registrado");
     }
   });
 }
