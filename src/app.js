@@ -403,8 +403,11 @@ async function afterLogin(authUser) {
     render();
     renderNotifBadge();
     renderTeamTasksBadge();
-    if (!notifPollInterval) notifPollInterval = setInterval(() => { pollNotifications(); pollTeamTasks(); }, 30000);
+    // Polling cada 90s queda como red de seguridad (reconexión tras suspender
+    // el tab en móvil); las actualizaciones inmediatas llegan por Realtime.
+    if (!notifPollInterval) notifPollInterval = setInterval(() => { pollNotifications(); pollTeamTasks(); }, 90000);
     if (!ticketTimerTickInterval) ticketTimerTickInterval = setInterval(tickTicketTimers, 30000);
+    subscribeRealtimeUpdates();
   } catch(err) {
     console.error(err);
     supabaseClient.auth.signOut().catch(() => {});
@@ -412,6 +415,72 @@ async function afterLogin(authUser) {
   }
 }
 let notifPollInterval = null;
+let realtimeChannel = null;
+
+// ── Realtime (notifications + team_tasks) ───────────────────────────────────
+// iOS Safari y navegadores en background no garantizan que setInterval siga
+// corriendo, así que la campanita podía tardar en actualizarse hasta el
+// siguiente refresh manual. postgres_changes empuja el aviso al instante
+// mientras la pestaña está activa; el polling de pollNotifications/pollTeamTasks
+// sigue como respaldo para cuando el socket se cae (pestaña suspendida, sueño).
+function subscribeRealtimeUpdates() {
+  if (realtimeChannel || !supabaseClient) return;
+  realtimeChannel = supabaseClient
+    .channel("fixzone-live-updates")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, ({ new: n }) => {
+      if ((state.notifications || []).some(x => x.id === n.id)) return;
+      state.notifications = [{
+        id: n.id, type: n.type || "broadcast", text: n.text,
+        authorName: n.author_name || "Equipo", authorId: n.author_id || null,
+        ticketId: n.ticket_id || null,
+        branch: (state.branches || []).find(b => b.id === n.branch_id)?.name || null,
+        recipientId: n.recipient_id || null,
+        readBy: Array.isArray(n.read_by) ? n.read_by : [],
+        createdAt: n.created_at,
+      }, ...(state.notifications || [])];
+      renderNotifBadge();
+      if (document.getElementById("notif-panel-overlay")) { document.getElementById("notif-panel-overlay").remove(); openNotifPanel(); }
+    })
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "team_tasks" }, ({ new: t }) => {
+      if ((state.teamTasks || []).some(x => x.id === t.id)) return;
+      state.teamTasks = [{
+        id: t.id, text: t.text, category: t.category || "Otro",
+        branch: (state.branches || []).find(b => b.id === t.branch_id)?.name || null,
+        createdBy: t.created_by || null,
+        createdByName: (state.employees || []).find(e => e.id === t.created_by)?.name || "Equipo",
+        createdAt: t.created_at, status: t.status || "pendiente",
+        completedBy: t.completed_by || null, completedByName: "", completedAt: t.completed_at || null,
+        resolutionNote: t.resolution_note || "",
+        viewedBy: Array.isArray(t.viewed_by) ? t.viewed_by : [],
+      }, ...(state.teamTasks || [])];
+      renderTeamTasksBadge();
+      if (document.getElementById("team-tasks-panel-overlay")) { document.getElementById("team-tasks-panel-overlay").remove(); openTeamTasksPanel(); }
+    })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "team_tasks" }, ({ new: t }) => {
+      const idx = (state.teamTasks || []).findIndex(x => x.id === t.id);
+      if (idx === -1) return;
+      state.teamTasks[idx] = {
+        ...state.teamTasks[idx],
+        status: t.status, completedBy: t.completed_by, completedAt: t.completed_at,
+        resolutionNote: t.resolution_note || "", viewedBy: Array.isArray(t.viewed_by) ? t.viewed_by : [],
+      };
+      renderTeamTasksBadge();
+    })
+    .subscribe();
+}
+
+function unsubscribeRealtimeUpdates() {
+  if (realtimeChannel) { supabaseClient?.removeChannel(realtimeChannel); realtimeChannel = null; }
+}
+
+// Respaldo: si el navegador suspendió timers/socket mientras la pestaña
+// estaba en background (común en iOS), forzar un refresh al volver a primer plano.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && currentEmployee) {
+    pollNotifications();
+    pollTeamTasks();
+  }
+});
 
 async function resolveCurrentEmployee(authUser) {
   const user = authUser ?? (await supabaseClient.auth.getSession()).data.session?.user;
@@ -2481,6 +2550,60 @@ function reportDateRange() {
   return ["2000-01-01", today];
 }
 
+// Generic drill-down modal: shows a filtered list of records from a report card/segment.
+// `items` is an array of { cells: [string,...], onClick: fn } — clicking a row closes
+// the modal and runs onClick (typically opening the matching edit/detail view).
+function openListDrilldown(title, subtitle, headers, items) {
+  document.querySelector("#dd-dialog")?.remove();
+
+  const dlg = document.createElement("dialog");
+  dlg.id = "dd-dialog";
+  dlg.className = "modal";
+  const rowsHtml = items.length ? items.map((it, i) => `
+    <tr data-dd-row="${i}" style="cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05)">
+      ${it.cells.map(c => `<td style="padding:7px 10px;font-size:12px">${c}</td>`).join("")}
+    </tr>`).join("") : `<tr><td colspan="${headers.length}" style="padding:16px;text-align:center;color:rgba(255,255,255,.4)">Sin registros</td></tr>`;
+
+  dlg.innerHTML = `
+    <div style="padding:20px 22px 0">
+      <div class="modal-header" style="margin-bottom:14px">
+        <div>
+          <p class="eyebrow" style="margin:0 0 4px">${escapeHtml(title)}</p>
+          ${subtitle ? `<span style="font-size:12px;color:rgba(255,255,255,.5)">${escapeHtml(subtitle)}</span>` : ""}
+        </div>
+        <button type="button" class="icon-button" id="dd-close" aria-label="Cerrar" style="font-size:16px">✕</button>
+      </div>
+      <div style="overflow:auto;max-height:60vh">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+            ${headers.map(h => `<th style="text-align:left;padding:6px 10px;font-size:11px;color:rgba(255,255,255,.45);white-space:nowrap">${h}</th>`).join("")}
+          </tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+    <menu class="modal-actions" style="padding:16px 22px">
+      <button type="button" class="ghost-button" id="dd-close2">Cerrar</button>
+    </menu>`;
+
+  document.body.appendChild(dlg);
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  dlg.querySelector("#dd-close").addEventListener("click", () => dlg.close());
+  dlg.querySelector("#dd-close2").addEventListener("click", () => dlg.close());
+  dlg.querySelectorAll("[data-dd-row]").forEach(tr => {
+    tr.addEventListener("mouseover", () => tr.style.background = "rgba(255,255,255,.04)");
+    tr.addEventListener("mouseout",  () => tr.style.background = "");
+    tr.addEventListener("click", () => {
+      const item = items[Number(tr.dataset.ddRow)];
+      dlg.close();
+      item.onClick?.();
+    });
+  });
+  dlg.addEventListener("close", () => dlg.remove(), { once: true });
+
+  dlg.showModal();
+}
+
 function renderReports() {
   document.querySelectorAll(".rpt-filter").forEach(b =>
     b.classList.toggle("is-active", b.dataset.rpt === reportsPeriod));
@@ -2886,7 +3009,7 @@ function renderReports() {
     const cotRows = periodCots.slice(0,20).map(t => {
       const sc = t.convertedToTicket ? "#2ecc71" : t.status==="Cotizacion" ? "#ff9f43" : "#ff6b6b";
       const sl = t.convertedToTicket ? `✓ ${t.convertedToTicket}` : t.status==="Cotizacion" ? "Pendiente" : "No convertida";
-      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+      return `<tr data-dd-cot-row="${escapeHtml(t.id)}" style="border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer">
         <td style="padding:5px 8px;font-size:11px;color:rgba(255,255,255,.45)">${t.createdAt}</td>
         <td style="padding:5px 8px;font-size:11px;color:var(--fz-secondary)">${escapeHtml(t.cotizacionRef || t.tracking)}</td>
         <td style="padding:5px 8px;font-size:12px">${escapeHtml(t.client||"—")}</td>
@@ -2896,37 +3019,38 @@ function renderReports() {
       </tr>`;
     }).join("")||`<tr><td colspan="6" style="padding:12px;color:rgba(255,255,255,.35);text-align:center">Sin cotizaciones en el período</td></tr>`;
 
-    document.querySelector("#reports-cotizaciones").innerHTML = (periodCots.length || allCots.length) ? `
+    const cotEl = document.querySelector("#reports-cotizaciones");
+    cotEl.innerHTML = (periodCots.length || allCots.length) ? `
       <div class="card" style="margin-top:16px;border-left:3px solid #a855f7">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0;font-size:14px">📋 Cotizaciones — ${periodLabel}</h3>
           <span style="font-size:11px;color:rgba(255,255,255,.4)">${periodCots.length} cotizaciones</span>
         </div>
         <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-          <div style="flex:1;min-width:100px;background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.25);border-radius:8px;padding:10px 12px">
+          <div data-dd-cot="all" style="cursor:pointer;flex:1;min-width:100px;background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.25);border-radius:8px;padding:10px 12px">
             <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Tasa de conversión</div>
             <div style="font-size:22px;font-weight:700;color:#a855f7">${convRate}%</div>
           </div>
-          <div style="flex:1;min-width:100px;background:rgba(46,204,113,.07);border:1px solid rgba(46,204,113,.2);border-radius:8px;padding:10px 12px">
+          <div data-dd-cot="converted" style="cursor:pointer;flex:1;min-width:100px;background:rgba(46,204,113,.07);border:1px solid rgba(46,204,113,.2);border-radius:8px;padding:10px 12px">
             <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Convertidas</div>
             <div style="font-size:18px;font-weight:700;color:#2ecc71">${converted.length}</div>
             <div style="font-size:10px;color:rgba(255,255,255,.35)">${money.format(totalConv)}</div>
           </div>
-          <div style="flex:1;min-width:100px;background:rgba(255,159,67,.07);border:1px solid rgba(255,159,67,.2);border-radius:8px;padding:10px 12px">
+          <div data-dd-cot="pending" style="cursor:pointer;flex:1;min-width:100px;background:rgba(255,159,67,.07);border:1px solid rgba(255,159,67,.2);border-radius:8px;padding:10px 12px">
             <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Pendientes</div>
             <div style="font-size:18px;font-weight:700;color:#ff9f43">${pending.length}</div>
           </div>
-          <div style="flex:1;min-width:100px;background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2);border-radius:8px;padding:10px 12px">
+          <div data-dd-cot="lost" style="cursor:pointer;flex:1;min-width:100px;background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2);border-radius:8px;padding:10px 12px">
             <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">No convertidas</div>
             <div style="font-size:18px;font-weight:700;color:#ff6b6b">${lost.length}</div>
           </div>
-          <div style="flex:1;min-width:100px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px">
+          <div data-dd-cot="all" style="cursor:pointer;flex:1;min-width:100px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px">
             <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:3px">Monto promedio</div>
             <div style="font-size:16px;font-weight:700">${money.format(avgAll)}</div>
             <div style="font-size:10px;color:rgba(46,204,113,.7)">Convertidas: ${money.format(avgConv)}</div>
           </div>
         </div>
-        <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Detalle (últimas 20 del período)</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Detalle (últimas 20 del período) — clic para abrir</div>
         <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
             <th style="text-align:left;padding:5px 8px;font-size:11px">Fecha</th>
@@ -2939,6 +3063,37 @@ function renderReports() {
           <tbody>${cotRows}</tbody>
         </table></div>
       </div>` : "";
+
+    if (cotEl) {
+      const cotMap = { all: periodCots, converted, pending, lost };
+      const cotLabel = { all: "Todas", converted: "Convertidas", pending: "Pendientes", lost: "No convertidas" };
+      const cotItems = list => list.map(t => ({
+        cells: [
+          escapeHtml(t.createdAt||""),
+          `<span style="color:var(--fz-secondary)">${escapeHtml(t.cotizacionRef||t.tracking||"")}</span>`,
+          escapeHtml(t.client||"—"),
+          escapeHtml(t.productName||"—"),
+          money.format(t.repairAmount||0),
+          t.convertedToTicket ? `✓ ${escapeHtml(t.convertedToTicket)}` : (t.status==="Cotizacion"?"Pendiente":"No convertida"),
+        ],
+        onClick: () => viewQuoteDetail(t.id),
+      }));
+      cotEl.querySelectorAll("[data-dd-cot]").forEach(el => {
+        el.addEventListener("click", () => {
+          const key = el.dataset.ddCot;
+          const list = cotMap[key] || [];
+          openListDrilldown(
+            `Cotizaciones — ${cotLabel[key]}`,
+            `${periodLabel} · ${list.length} cotizaci${list.length===1?"ón":"ones"}`,
+            ["Fecha","Folio","Cliente","Equipo","Monto","Estado"],
+            cotItems(list)
+          );
+        });
+      });
+      cotEl.querySelectorAll("[data-dd-cot-row]").forEach(tr => {
+        tr.addEventListener("click", () => viewQuoteDetail(tr.dataset.ddCotRow));
+      });
+    }
   }
 
   // ── ¿Cómo nos conocieron? ─────────────────────────────────────────────────────
@@ -2965,15 +3120,16 @@ function renderReports() {
         const n = v.active + v.pending;
         const pct = total > 0 ? Math.round(n/total*100) : 0;
         const isUnset = ch === "Sin especificar";
-        return `<div style="flex:1;min-width:120px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,${isUnset?".05":".1"});border-radius:8px;padding:10px 12px">
+        return `<div data-dd-channel="${escapeHtml(ch)}" style="cursor:pointer;flex:1;min-width:120px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,${isUnset?".05":".1"});border-radius:8px;padding:10px 12px">
           <div style="font-size:10px;color:rgba(255,255,255,${isUnset?".3":".5"});margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(ch)}</div>
           <div style="font-size:16px;font-weight:700;color:${isUnset?"rgba(255,255,255,.25)":"var(--fz-secondary)"}">${v.active}</div>
           ${v.pending ? `<div style="font-size:10px;color:#ff9f43;margin-top:2px">+${v.pending} en cotización</div>` : ""}
           <div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:2px">${pct}% del total (${n})</div>
         </div>`;
       }).join("");
-      const otherRows = newClients.filter(c => c.howFound === "Otro" && c.howFoundOther)
-        .map(c => `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+      const otherClients = newClients.filter(c => c.howFound === "Otro" && c.howFoundOther);
+      const otherRows = otherClients
+        .map(c => `<tr data-dd-other-row="${escapeHtml(c.id)}" style="border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer">
           <td style="padding:5px 8px;font-size:12px">${escapeHtml(c.name)}</td>
           <td style="padding:5px 8px;font-size:12px">${escapeHtml(c.howFoundOther)}</td>
         </tr>`).join("");
@@ -2985,9 +3141,33 @@ function renderReports() {
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">${channelCards}</div>
           ${otherRows ? `
-          <div style="font-size:11px;color:rgba(255,255,255,.45);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em">Detalle "Otro"</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.45);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em">Detalle "Otro" — clic para abrir</div>
           <table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${otherRows}</tbody></table>` : ""}
         </div>` : "";
+
+      rfEl.querySelectorAll("[data-dd-channel]").forEach(el => {
+        el.addEventListener("click", () => {
+          const ch = el.dataset.ddChannel;
+          const channelClients = newClients.filter(c => (c.howFound || "Sin especificar") === ch);
+          openListDrilldown(
+            `¿Cómo nos conocieron? — ${ch}`,
+            `${periodLabel} · ${channelClients.length} cliente${channelClients.length!==1?"s":""} nuevos`,
+            ["Cliente","Teléfono","Fecha","Estado"],
+            channelClients.map(c => ({
+              cells: [
+                escapeHtml(c.name||"—"),
+                escapeHtml(c.phone||"—"),
+                escapeHtml(c.createdAt||""),
+                hasConcretedService(c) ? "✓ Activo" : "Pendiente (cotización)",
+              ],
+              onClick: () => viewClientDetail(c.id),
+            }))
+          );
+        });
+      });
+      rfEl.querySelectorAll("[data-dd-other-row]").forEach(tr => {
+        tr.addEventListener("click", () => viewClientDetail(tr.dataset.ddOtherRow));
+      });
     }
   }
 
@@ -3012,7 +3192,7 @@ function renderReports() {
       const methodCards = sorted.map(([m,t]) => {
         const pct = totalIngresos > 0 ? Math.round(t/totalIngresos*100) : 0;
         const isSin = m === "Sin registrar";
-        return `<div style="flex:1;min-width:120px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,${isSin?".05":".1"});border-radius:8px;padding:10px 12px">
+        return `<div data-dd-method="${escapeHtml(m)}" style="cursor:pointer;flex:1;min-width:120px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,${isSin?".05":".1"});border-radius:8px;padding:10px 12px">
           <div style="font-size:10px;color:rgba(255,255,255,${isSin?".3":".5"});margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m)}</div>
           <div style="font-size:16px;font-weight:700;color:${isSin?"rgba(255,255,255,.25)":"#2ecc71"}">${money.format(t)}</div>
           <div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:2px">${pct}% del total</div>
@@ -3026,6 +3206,28 @@ function renderReports() {
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">${methodCards}</div>
         </div>` : "";
+
+      pmEl.querySelectorAll("[data-dd-method]").forEach(el => {
+        el.addEventListener("click", () => {
+          const m = el.dataset.ddMethod;
+          const methodTxs = ingresos.filter(t => (t.paymentMethod || "Sin registrar") === m)
+            .sort((a,b) => (b.date||"").localeCompare(a.date||""));
+          openListDrilldown(
+            `Ingresos por método de pago — ${m}`,
+            `${periodLabel} · ${methodTxs.length} movimiento${methodTxs.length!==1?"s":""} · ${money.format(methodTxs.reduce((s,t)=>s+Number(t.amount||0),0))}`,
+            ["Fecha","Concepto","Categoría","Monto"],
+            methodTxs.map(t => ({
+              cells: [
+                escapeHtml(t.date||""),
+                escapeHtml(t.concept||"—"),
+                escapeHtml(t.category||"—"),
+                `<span style="color:#2ecc71">${money.format(t.amount||0)}</span>`,
+              ],
+              onClick: () => openEditTransaction(t.id),
+            }))
+          );
+        });
+      });
     }
   }
 
@@ -3052,7 +3254,7 @@ function renderReports() {
       });
       const cards = sorted.map(([m,v]) => {
         const pct = totalTicketPaid > 0 ? Math.round(v.paid/totalTicketPaid*100) : 0;
-        return `<div style="flex:1;min-width:130px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px">
+        return `<div data-dd-tmethod="${escapeHtml(m)}" style="cursor:pointer;flex:1;min-width:130px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px">
           <div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m)}</div>
           <div style="font-size:16px;font-weight:700;color:#2ecc71">${money.format(v.paid)}</div>
           <div style="font-size:10px;color:rgba(255,255,255,.35);margin-top:2px">${v.count} ticket${v.count!==1?"s":""} · ${pct}%</div>
@@ -3066,6 +3268,29 @@ function renderReports() {
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">${cards}</div>
         </div>` : "";
+
+      tpmEl.querySelectorAll("[data-dd-tmethod]").forEach(el => {
+        el.addEventListener("click", () => {
+          const m = el.dataset.ddTmethod;
+          const list = ticketsPeriod.filter(t => t.paymentMethod === m)
+            .sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+          openListDrilldown(
+            `Tickets por método de pago — ${m}`,
+            `${periodLabel} · ${list.length} ticket${list.length!==1?"s":""} · ${money.format(list.reduce((s,t)=>s+Number(t.paidAmount||0),0))} cobrado`,
+            ["Folio","Cliente","Equipo","Pagado","Estado"],
+            list.map(t => ({
+              cells: [
+                escapeHtml(t.tracking||""),
+                escapeHtml(t.client||"—"),
+                escapeHtml(t.productName||"—"),
+                `<span style="color:#2ecc71">${money.format(t.paidAmount||0)}</span>`,
+                escapeHtml(t.status||""),
+              ],
+              onClick: () => viewTicketDetail(t.id),
+            }))
+          );
+        });
+      });
     }
   }
 }
@@ -6120,10 +6345,13 @@ recordForm.addEventListener("submit", async e => {
     if (activeForm==="cotizacion") {
       data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
       delete data.quoteItemsJson;
-      // Derive issue from line-item descriptions if not filled manually
+      // Derive issue from line-item descriptions if not filled manually; fall back to
+      // notes, then a placeholder, so a cotización without items doesn't violate the
+      // not-null constraint on service_tickets.issue_description.
       if (!data.issue && data.quoteItems.length) {
         data.issue = data.quoteItems.map(i => i.description).filter(Boolean).join(" + ");
       }
+      if (!data.issue) data.issue = data.notes || "Cotización";
       data.status        = "Cotizacion";
       data.paymentStatus = "Pendiente";
       data.paidAmount    = 0;
@@ -8050,6 +8278,8 @@ document.querySelector("#close-modal").addEventListener("click",  () => closeMod
 document.querySelector("#cancel-record").addEventListener("click",() => closeModal());
 
 async function performLogout() {
+  unsubscribeRealtimeUpdates();
+  if (notifPollInterval) { clearInterval(notifPollInterval); notifPollInterval = null; }
   if (supabaseClient) await supabaseClient.auth.signOut();
   currentEmployee = null;
   currentSession  = null;
