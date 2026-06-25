@@ -9360,7 +9360,7 @@ function openTeamTasksPanel() {
         </div>
         <div style="display:flex;gap:8px">
           <select id="team-task-category-input"
-            style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px">
+            style="flex:1;background:rgb(19, 17, 17);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px">
             <option value="Investigar">Investigar</option>
             <option value="Cotizar">Cotizar</option>
             <option value="Comprar">Comprar</option>
