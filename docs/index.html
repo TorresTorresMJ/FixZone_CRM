@@ -22,366 +22,442 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     /* ─── Actualizar antes de deploy ──────────────────────────────
-       · Precios (buscar "desde $")
-       · URL de Google Maps (buscar "ACTUALIZAR")
+       · Precios (buscar "$")
+       · URL de Google Maps (buscar "google.com/maps")
+       · WhatsApp (buscar WA_NUMBER)
     ─────────────────────────────────────────────────────────────── */
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
       --blue:        #2678E8;
+      --blue-2:      #5BB8FF;
       --blue-dim:    rgba(38, 120, 232, 0.12);
-      --blue-border: rgba(38, 120, 232, 0.26);
-      --green:       #25D366;
-      --ink:         #f1f5f9;
-      --ink-2:       #cbd5e1;
-      --muted:       #64748b;
-      --border:      rgba(255, 255, 255, 0.08);
-      --border-2:    rgba(255, 255, 255, 0.05);
-      --bg:          #08090c;
+      --blue-border: rgba(38, 120, 232, 0.28);
+      --blue-glow:   rgba(38, 120, 232, 0.5);
+      --ink:         #f4f6fb;
+      --ink-2:       #aab2c0;
+      --muted:       #7d8694;
+      --faint:       #4a5263;
+      --border:      rgba(255, 255, 255, 0.07);
       --surface:     rgba(255, 255, 255, 0.04);
-      --sheet-bg:    #141518;
+      --sheet-bg:    #121419;
+      --mono:        'Space Mono', ui-monospace, monospace;
     }
 
-    html, body { height: 100%; background: var(--bg); }
+    html, body { height: 100%; }
+    html { background: #050608; }
 
     body {
-      font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+      font-family: 'Sora', system-ui, -apple-system, sans-serif;
       -webkit-font-smoothing: antialiased;
       color: var(--ink);
+      background: #050608;
     }
 
     .page-wrap {
-      max-width: 480px;
+      max-width: 460px;
       margin: 0 auto;
       min-height: 100dvh;
       display: flex;
       flex-direction: column;
-      background: var(--bg);
+      background: #000;
+      position: relative;
+      overflow: hidden;
     }
 
-    /* ── HEADER ──────────────────────────────────────────────────── */
-    .header {
-      padding: 30px 24px 22px;
-      text-align: center;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .logo {
-      width: auto;
-      max-width: 200px;
-      height: auto;
-      max-height: 76px;
-      object-fit: contain;
-      display: block;
-      margin: 0 auto 18px;
-    }
-
-    .logo-text {
-      font-size: 28px;
-      font-weight: 900;
-      letter-spacing: 0.08em;
-      color: var(--blue);
-      margin-bottom: 18px;
-      display: none;
-    }
-
-    .tagline {
-      font-size: 22px;
-      font-weight: 900;
-      letter-spacing: -0.01em;
-      line-height: 1.1;
-      color: var(--ink);
-      text-transform: uppercase;
-    }
-
-    .tagline em { color: var(--blue); font-style: normal; }
-
-    /* ── TRUST BAR ───────────────────────────────────────────────── */
-    .trust-bar {
-      display: flex;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .trust-item {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 3px;
-      padding: 12px 6px;
-      text-decoration: none;
-      color: inherit;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    .trust-item + .trust-item { border-left: 1px solid var(--border); }
-
-    .ti-label {
-      font-size: 9px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.09em;
-      color: var(--muted);
-    }
-
-    .ti-value {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--ink);
-      white-space: nowrap;
-    }
-
-    .ti-green { color: #4ade80; }
-
-    /* ── OPEN INDICATOR ──────────────────────────────────────────── */
+    /* ── STATUS BAR (LED arriba-izquierda) ───────────────────────── */
     .open-bar {
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 10px 24px;
-      background: var(--blue-dim);
-      border-bottom: 1px solid var(--blue-border);
+      justify-content: space-between;
+      padding: 13px 22px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
     }
+
+    .ob-left { display: inline-flex; align-items: center; gap: 8px; }
 
     .open-dot {
-      width: 7px;
-      height: 7px;
+      width: 7px; height: 7px;
       border-radius: 50%;
-      background: #4ade80;
+      background: #34d399;
       flex-shrink: 0;
-      animation: blink 2.4s ease-in-out infinite;
+      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+      animation: pulse 2.4s ease-in-out infinite;
     }
 
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.3; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); }
+      50%      { opacity: 0.6; box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
     }
 
-    .open-bar-text { font-size: 13px; font-weight: 600; color: var(--blue); }
-    .open-bar-hours { font-size: 13px; font-weight: 400; color: var(--ink-2); }
+    .open-bar-text { color: #cdd4e0; font-weight: 700; text-transform: uppercase; }
+    .open-bar-hours { color: var(--muted); }
 
-    .open-bar.is-closed {
-      background: var(--surface);
-      border-bottom-color: var(--border);
+    .open-bar.is-closed .open-dot { background: #475569; animation: none; box-shadow: none; }
+    .open-bar.is-closed .open-bar-text { color: var(--muted); }
+
+    /* ── HERO ────────────────────────────────────────────────────── */
+    .header {
+      position: relative;
+      overflow: hidden;
+      padding: 24px 22px 36px;
+      background: radial-gradient(120% 80% at 50% 0%, rgba(18, 48, 96, 0.7), #000 70%);
     }
-    .open-bar.is-closed .open-dot {
-      background: #475569;
-      animation: none;
+
+    .hero-grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(91, 184, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(91, 184, 255, 0.05) 1px, transparent 1px);
+      background-size: 34px 34px;
+      -webkit-mask-image: linear-gradient(#000, transparent 82%);
+              mask-image: linear-gradient(#000, transparent 82%);
+      pointer-events: none;
     }
-    .open-bar.is-closed .open-bar-text { color: var(--ink-2); }
 
-    /* ── SERVICES ────────────────────────────────────────────────── */
-    .section { padding: 16px 16px 0; flex: 1; }
+    .hero-scan {
+      position: absolute; left: 0; right: 0; top: 90px;
+      height: 90px;
+      background: linear-gradient(transparent, rgba(91, 184, 255, 0.12), transparent);
+      pointer-events: none;
+      animation: scan 5.5s linear infinite;
+    }
 
-    .section-label {
-      font-size: 10px;
+    @keyframes scan {
+      0%   { transform: translateY(-120%); opacity: 0; }
+      14%  { opacity: 1; }
+      86%  { opacity: 1; }
+      100% { transform: translateY(360%); opacity: 0; }
+    }
+
+    .hero-glow {
+      position: absolute;
+      width: 300px; height: 300px;
+      left: -70px; top: -10px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--blue-glow), transparent 65%);
+      filter: blur(42px);
+      pointer-events: none;
+      animation: aurora 16s ease-in-out infinite;
+    }
+
+    @keyframes aurora {
+      0%   { transform: translate(-6%, -6%) scale(1); }
+      50%  { transform: translate(12%, 10%) scale(1.25); }
+      100% { transform: translate(-6%, -6%) scale(1); }
+    }
+
+    .header-inner { position: relative; }
+
+    .hero-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 46px;
+    }
+
+    .logo-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+
+    .logo-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--blue-2), var(--blue));
+      box-shadow: 0 0 12px rgba(91, 184, 255, 0.8);
+      flex-shrink: 0;
+    }
+
+    .guarantee-pill {
+      font-family: var(--mono);
+      font-size: 10.5px;
       font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #cdd4e0;
+      padding: 7px 11px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 100px;
+      white-space: nowrap;
+    }
+
+    .tagline {
+      font-size: 46px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 0.96;
+      color: var(--ink);
       text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .tagline em {
+      font-style: italic;
+      background: linear-gradient(120deg, var(--blue-2), var(--blue));
+      -webkit-background-clip: text;
+              background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
+    }
+
+    .hero-sub {
+      font-size: 14.5px;
+      font-weight: 400;
+      line-height: 1.5;
+      color: var(--ink-2);
+      max-width: 300px;
+      margin-bottom: 26px;
+    }
+
+    .cta-main-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      width: 100%;
+      padding: 15px;
+      border-radius: 16px;
+      background: linear-gradient(120deg, var(--blue), var(--blue-2));
+      color: #001020;
+      text-decoration: none;
+      box-shadow: 0 14px 34px rgba(38, 120, 232, 0.45);
+      transition: transform 0.12s, filter 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .cta-main-btn:active { transform: translateY(1px); filter: brightness(0.96); }
+
+    .cta-main-line { font-size: 16px; font-weight: 700; line-height: 1.1; }
+    .cta-sub-line {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.04em;
+      color: rgba(0, 16, 32, 0.64);
+    }
+
+    .hero-chips { display: flex; gap: 10px; margin-top: 14px; }
+
+    .chip {
+      flex: 1;
+      text-decoration: none;
+      padding: 13px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      color: #e7ebf2;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .chip-label {
+      font-family: var(--mono);
+      font-size: 9.5px;
       letter-spacing: 0.1em;
       color: var(--muted);
-      padding-top: 18px;
-      padding-bottom: 12px;
+      margin-bottom: 6px;
+    }
+
+    .chip-value { font-size: 13px; font-weight: 600; }
+
+    /* ── MARQUESINA ──────────────────────────────────────────────── */
+    .marquee {
+      overflow: hidden;
+      padding: 11px 0;
+      background: rgba(255, 255, 255, 0.02);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+              mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+    }
+
+    .marquee-track {
+      display: flex;
+      gap: 30px;
+      width: max-content;
+      animation: marquee 20s linear infinite;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #465264;
+      white-space: nowrap;
+    }
+
+    .marquee-track span:nth-child(even) { color: var(--blue); }
+
+    @keyframes marquee {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hero-scan, .hero-glow, .marquee-track, .open-dot { animation: none; }
+    }
+
+    /* ── SERVICIOS ───────────────────────────────────────────────── */
+    .section { padding: 26px 22px 30px; flex: 1; }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      font-weight: 400;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      margin-bottom: 16px;
     }
 
     .services {
       list-style: none;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      padding-bottom: 20px;
+      gap: 10px;
     }
 
     .svc-row {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 14px;
-      text-decoration: none;
-      color: inherit;
-      cursor: pointer;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 12px;
+      display: block;
       width: 100%;
+      padding: 15px 14px;
       text-align: left;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 15px;
+      color: inherit;
       font-family: inherit;
-      font-size: inherit;
-      transition: background 0.15s, border-color 0.15s;
+      transition: background 0.2s, border-color 0.2s, transform 0.2s, box-shadow 0.2s;
       -webkit-tap-highlight-color: transparent;
-      min-height: 96px;
     }
 
     .svc-row:hover {
       background: var(--blue-dim);
       border-color: var(--blue-border);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 22px rgba(38, 120, 232, 0.18);
     }
 
-    .svc-row:active {
-      background: rgba(38, 120, 232, 0.18);
-      border-color: rgba(38, 120, 232, 0.35);
-    }
+    .svc-row:active { transform: translateY(0); }
 
-    .svc-icon.svc-icon--multi {
-      width: auto;
-      min-width: 36px;
-      padding: 0 5px;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .svc-icon {
-      width: 36px;
-      height: 36px;
+    .svc-head {
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 19px;
-      background: var(--blue-dim);
-      border-radius: 8px;
-      flex-shrink: 0;
+      justify-content: space-between;
+      margin-bottom: 9px;
     }
 
-    .svc-body { flex: 1; min-width: 0; }
+    .svc-num { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--blue-2); }
+    .svc-arrow { color: var(--faint); font-size: 15px; }
 
-    .svc-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--ink);
-      line-height: 1.35;
-    }
+    .svc-name { font-size: 13.5px; font-weight: 600; color: #eef1f6; line-height: 1.25; }
 
     .svc-price {
+      font-family: var(--mono);
       font-size: 11px;
-      color: var(--muted);
-      font-weight: 400;
+      font-weight: 700;
+      color: var(--ink-2);
       display: block;
-      margin-top: 3px;
-      line-height: 1.4;
+      margin-top: 6px;
     }
 
-    .svc-arrow { display: none; }
-
-    /* ── CARD ENTRANCE ───────────────────────────────────────────── */
     @keyframes cardIn {
       from { opacity: 0; transform: translateY(10px); }
       to   { opacity: 1; transform: translateY(0); }
     }
 
-    .services li {
-      animation: cardIn 0.22s ease-out both;
+    .services li { opacity: 1; }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .services li { animation: cardIn 0.22s ease-out both; }
+      .services li:nth-child(1)  { animation-delay: 0.04s; }
+      .services li:nth-child(2)  { animation-delay: 0.07s; }
+      .services li:nth-child(3)  { animation-delay: 0.10s; }
+      .services li:nth-child(4)  { animation-delay: 0.13s; }
+      .services li:nth-child(5)  { animation-delay: 0.16s; }
+      .services li:nth-child(6)  { animation-delay: 0.19s; }
+      .services li:nth-child(7)  { animation-delay: 0.22s; }
+      .services li:nth-child(8)  { animation-delay: 0.25s; }
+      .services li:nth-child(9)  { animation-delay: 0.28s; }
+      .services li:nth-child(10) { animation-delay: 0.31s; }
     }
 
-    .services li:nth-child(1)  { animation-delay: 0.04s; }
-    .services li:nth-child(2)  { animation-delay: 0.07s; }
-    .services li:nth-child(3)  { animation-delay: 0.10s; }
-    .services li:nth-child(4)  { animation-delay: 0.13s; }
-    .services li:nth-child(5)  { animation-delay: 0.16s; }
-    .services li:nth-child(6)  { animation-delay: 0.19s; }
-    .services li:nth-child(7)  { animation-delay: 0.22s; }
-    .services li:nth-child(8)  { animation-delay: 0.25s; }
-    .services li:nth-child(9)  { animation-delay: 0.28s; }
-    .services li:nth-child(10) { animation-delay: 0.31s; }
+    /* ── UBICACIÓN ───────────────────────────────────────────────── */
+    .location { padding: 0 22px 26px; }
 
-    @media (prefers-reduced-motion: reduce) {
-      .services li { animation: none; }
+    .loc-card {
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    /* ── CTA BLOCK ───────────────────────────────────────────────── */
-    .cta-wrap { padding: 20px 24px 16px; }
-
-    .cta-block {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      width: 100%;
-      padding: 17px 20px;
-      background: var(--green);
-      border-radius: 14px;
-      text-decoration: none;
-      transition: filter 0.12s;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    .cta-block:active { filter: brightness(0.88); }
-
-    .cta-wa-icon { width: 36px; height: 36px; flex-shrink: 0; }
-    .cta-body { flex: 1; }
-
-    .cta-main {
-      display: block;
-      font-size: 15px;
-      font-weight: 700;
-      color: #fff;
-      line-height: 1.25;
-    }
-
-    .cta-sub {
-      display: block;
-      font-size: 10px;
-      font-weight: 600;
-      color: rgba(255,255,255,0.78);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      margin-top: 3px;
-    }
-
-    /* ── LOCATION ────────────────────────────────────────────────── */
-    .location {
-      padding: 0 24px 32px;
-      border-top: 1px solid var(--border);
-    }
-
-    .loc-label {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--muted);
-      padding-top: 16px;
-      padding-bottom: 10px;
-    }
-
-    .loc-address {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--ink-2);
-      line-height: 1.55;
-      margin-bottom: 14px;
-    }
-
-    .maps-btn {
+    .loc-map {
+      height: 120px;
+      background: repeating-linear-gradient(45deg, #0c1018, #0c1018 11px, #0f141d 11px, #0f141d 22px);
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      width: 100%;
-      padding: 13px 16px;
-      border: 1.5px solid var(--blue-border);
-      border-radius: 10px;
-      background: transparent;
-      color: var(--blue);
-      font-size: 14px;
-      font-weight: 700;
-      font-family: inherit;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: #3c4452;
+    }
+
+    .loc-foot {
+      padding: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .loc-addr-main { font-size: 13.5px; font-weight: 600; }
+    .loc-addr-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+    .maps-btn {
       text-decoration: none;
-      transition: background 0.12s, border-color 0.12s;
+      padding: 10px 14px;
+      border-radius: 11px;
+      border: 1.5px solid var(--blue-border);
+      color: var(--blue-2);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       -webkit-tap-highlight-color: transparent;
     }
 
     .maps-btn:active { background: var(--blue-dim); border-color: var(--blue); }
 
-    /* ── BOTTOM SHEET — modelo/marca ─────────────────────────────── */
+    /* ── FOOTER ──────────────────────────────────────────────────── */
+    .site-foot {
+      padding: 18px 22px 24px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 10px;
+      line-height: 1.6;
+      letter-spacing: 0.06em;
+      color: var(--faint);
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── BOTTOM SHEET ────────────────────────────────────────────── */
     .sheet-overlay {
-      position: fixed;
-      inset: 0;
+      position: fixed; inset: 0;
       background: rgba(0, 0, 0, 0.68);
       z-index: 200;
       display: flex;
@@ -392,29 +468,23 @@
       transition: opacity 0.22s ease;
     }
 
-    .sheet-overlay.is-open {
-      opacity: 1;
-      pointer-events: auto;
-    }
+    .sheet-overlay.is-open { opacity: 1; pointer-events: auto; }
 
     .sheet {
       width: 100%;
-      max-width: 480px;
+      max-width: 460px;
       background: var(--sheet-bg);
-      border-radius: 20px 20px 0 0;
+      border-radius: 22px 22px 0 0;
       border-top: 1px solid rgba(255, 255, 255, 0.1);
       padding: 12px 24px 36px;
       transform: translateY(100%);
       transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    .sheet-overlay.is-open .sheet {
-      transform: translateY(0);
-    }
+    .sheet-overlay.is-open .sheet { transform: translateY(0); }
 
     .sheet-handle {
-      width: 36px;
-      height: 4px;
+      width: 36px; height: 4px;
       border-radius: 99px;
       background: rgba(255, 255, 255, 0.18);
       margin: 0 auto 20px;
@@ -424,38 +494,21 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 14px;
+      padding: 11px 14px;
       background: var(--blue-dim);
       border: 1px solid var(--blue-border);
-      border-radius: 10px;
+      border-radius: 12px;
       margin-bottom: 22px;
     }
 
     .sheet-service-icon { font-size: 20px; }
+    .sheet-service-name { font-size: 14px; font-weight: 600; color: var(--ink); }
 
-    .sheet-service-name {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--ink);
-    }
+    .sheet-question { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 6px; line-height: 1.3; }
 
-    .sheet-question {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--ink);
-      margin-bottom: 6px;
-      line-height: 1.3;
-    }
-
-    /* ── Selector de dispositivo (servicios multi-equipo) ─────────── */
     .sheet-device-select { margin-bottom: 22px; }
 
-    .device-options {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-top: 12px;
-    }
+    .device-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
 
     .device-opt {
       display: flex;
@@ -465,7 +518,7 @@
       padding: 14px 8px;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
+      border-radius: 12px;
       color: var(--ink-2);
       font-size: 12px;
       font-weight: 600;
@@ -476,43 +529,28 @@
     }
 
     .device-opt-icon { font-size: 22px; }
-
     .device-opt:active { background: var(--blue-dim); }
+    .device-opt.is-selected { background: var(--blue-dim); border-color: var(--blue-border); color: var(--ink); }
 
-    .device-opt.is-selected {
-      background: var(--blue-dim);
-      border-color: var(--blue-border);
-      color: var(--ink);
-    }
-
-    .sheet-hint {
-      font-size: 13px;
-      color: var(--muted);
-      margin-bottom: 18px;
-      line-height: 1.4;
-    }
+    .sheet-hint { font-size: 13px; color: var(--muted); margin-bottom: 18px; line-height: 1.4; }
 
     .sheet-input {
       width: 100%;
       padding: 13px 14px;
-      background: rgba(255, 255, 255, 0.06);
+      background: rgba(0, 0, 0, 0.4);
       border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 10px;
+      border-radius: 12px;
       color: var(--ink);
       font-size: 15px;
       font-family: inherit;
       outline: none;
       margin-bottom: 14px;
       transition: border-color 0.15s;
-      caret-color: var(--blue);
+      caret-color: var(--blue-2);
     }
 
     .sheet-input::placeholder { color: var(--muted); }
-
-    .sheet-input:focus {
-      border-color: var(--blue-border);
-      box-shadow: 0 0 0 3px rgba(38, 120, 232, 0.1);
-    }
+    .sheet-input:focus { border-color: var(--blue-border); box-shadow: 0 0 0 3px rgba(38, 120, 232, 0.12); }
 
     .sheet-btn {
       display: flex;
@@ -521,20 +559,20 @@
       gap: 8px;
       width: 100%;
       padding: 14px;
-      background: var(--green);
+      background: linear-gradient(120deg, var(--blue), var(--blue-2));
       border: none;
-      border-radius: 12px;
-      color: #fff;
+      border-radius: 13px;
+      color: #001020;
       font-size: 15px;
       font-weight: 700;
       font-family: inherit;
       cursor: pointer;
       transition: filter 0.12s;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
       -webkit-tap-highlight-color: transparent;
     }
 
-    .sheet-btn:active { filter: brightness(0.88); }
+    .sheet-btn:active { filter: brightness(0.94); }
 
     .sheet-skip {
       display: block;
@@ -551,36 +589,22 @@
 
     /* ── DESKTOP ─────────────────────────────────────────────────── */
     @media (min-width: 520px) {
-      html { background: #04050a; }
+      body { padding: 40px 20px 60px; display: flex; align-items: flex-start; justify-content: center; }
 
-      body {
-        padding: 40px 20px 60px;
-        display: flex;
-        align-items: flex-start;
-        justify-content: center;
-      }
-
-      /* page-wrap tiene overflow:hidden — NO body, para que el scroll funcione */
       .page-wrap {
         min-height: 0;
-        border-radius: 20px;
-        overflow: hidden;
+        border-radius: 26px;
         border: 1px solid rgba(255, 255, 255, 0.09);
-        box-shadow:
-          0 24px 64px rgba(0, 0, 0, 0.6),
-          0 0 0 1px rgba(38, 120, 232, 0.08);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(38, 120, 232, 0.08);
         width: 100%;
       }
 
-      .sheet { border-radius: 20px; margin-bottom: 40px; }
+      .sheet { border-radius: 22px; margin-bottom: 40px; }
       .sheet-overlay { align-items: center; }
     }
 
-    /* ── MOTION ──────────────────────────────────────────────────── */
     @media (prefers-reduced-motion: reduce) {
-      .open-dot { animation: none; }
       .sheet-overlay, .sheet { transition: none !important; }
-      * { transition-duration: 0.01ms !important; }
     }
   </style>
   <!-- Cloudflare Web Analytics -->
@@ -590,188 +614,163 @@
 <body>
 <div class="page-wrap">
 
-  <!-- HEADER -->
+  <!-- STATUS BAR -->
+  <div class="open-bar">
+    <span class="ob-left">
+      <span class="open-dot"></span>
+      <span class="open-bar-text">Abierto hoy</span>
+    </span>
+    <span class="open-bar-hours">Lun–Sáb · 9:30–19:00</span>
+  </div>
+
+  <!-- HERO -->
   <header class="header">
-    <img
-      src="https://fixzone-crm.pages.dev/assets/brand/fixzone/LOGO-FIXZONE.png"
-      alt="FixZone"
-      class="logo"
-      onerror="this.src='https://fixzone-crm.pages.dev/assets/brand/logos-mono/fixzone-monocromatico.png';
-               this.onerror=function(){this.style.display='none';
-               document.querySelector('.logo-text').style.display='block';}"
-    />
-    <span class="logo-text">FIXZONE</span>
-    <h1 class="tagline">WE FIX <em>FAST.</em> YOU RELAX.</h1>
+    <div class="hero-grid"></div>
+    <div class="hero-scan"></div>
+    <div class="hero-glow"></div>
+    <div class="header-inner">
+
+      <div class="hero-top">
+        <span class="logo-text"><span class="logo-dot"></span>FIXZONE</span>
+        <span class="guarantee-pill">GARANTÍA ✓ 30 DÍAS</span>
+      </div>
+
+      <h1 class="tagline">WE FIX <em>FAST.</em> YOU RELAX.</h1>
+      <p class="hero-sub">Reparación de celulares, Mac y Apple Watch en Puerto Vallarta.</p>
+
+      <a class="cta-main-btn"
+         href="https://wa.me/523349812755?text=Hola%21+Me+interesa+cotizar+un+servicio."
+         target="_blank" rel="noopener noreferrer">
+        <span class="cta-main-line">Cotiza ahora · respuesta rápida →</span>
+        <span class="cta-sub-line">SIN CITA NECESARIA · GARANTÍA 30 DÍAS</span>
+      </a>
+
+      <div class="hero-chips">
+        <a class="chip" href="tel:3349812755">
+          <div class="chip-label">HORARIO</div>
+          <div class="chip-value">Lun–Sáb 9:30–19</div>
+        </a>
+        <a class="chip" href="#ubicacion"
+           onclick="document.querySelector('#ubicacion').scrollIntoView({behavior:'smooth'}); return false;">
+          <div class="chip-label">DIRECCIÓN</div>
+          <div class="chip-value">Rep. de Chile 247-A</div>
+        </a>
+      </div>
+
+    </div>
   </header>
 
-  <!-- TRUST BAR -->
-  <div class="trust-bar">
-    <div class="trust-item">
-      <span class="ti-label">Garantía</span>
-      <span class="ti-value ti-green">✓ 30 días</span>
+  <!-- MARQUESINA DE MARCAS -->
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track">
+      <span>iPhone</span><span>·</span><span>Samsung</span><span>·</span><span>Mac</span><span>·</span><span>iPad</span><span>·</span><span>Apple Watch</span><span>·</span><span>Xiaomi</span><span>·</span><span>Motorola</span><span>·</span><span>iPhone</span><span>·</span><span>Samsung</span><span>·</span><span>Mac</span><span>·</span><span>iPad</span><span>·</span><span>Apple Watch</span><span>·</span><span>Xiaomi</span><span>·</span><span>Motorola</span><span>·</span>
     </div>
-    <a class="trust-item" href="tel:3349812755">
-      <span class="ti-label">Horario</span>
-      <span class="ti-value">Lun–Sáb 9:30–19:00</span>
-    </a>
-    <a class="trust-item" href="#ubicacion"
-       onclick="document.querySelector('#ubicacion').scrollIntoView({behavior:'smooth'}); return false;">
-      <span class="ti-label">Dirección</span>
-      <span class="ti-value">Chile 247-A PV</span>
-    </a>
   </div>
 
-  <!-- OPEN INDICATOR -->
-  <div class="open-bar">
-    <span class="open-dot"></span>
-    <span class="open-bar-text">Abierto hoy</span>
-    <span class="open-bar-hours">&nbsp;·&nbsp; Lun–Sáb &nbsp;9:30 – 19:00</span>
-  </div>
-
-  <!-- SERVICES -->
+  <!-- SERVICIOS -->
   <section class="section">
+    <p class="section-label">/ SERVICIOS</p>
     <ul class="services">
 
       <li>
         <button class="svc-row" data-service="Diagnóstico" data-icon="🔍">
-          <span class="svc-icon">🔍</span>
-          <span class="svc-body">
-            <span class="svc-name">Diagnóstico</span>
-            <span class="svc-price">$350</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">01</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Diagnóstico</span>
+          <span class="svc-price">$350</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Cambio de Glass" data-icon="🔲">
-          <span class="svc-icon">🔲</span>
-          <span class="svc-body">
-            <span class="svc-name">Cambio de Glass</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">02</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Cambio de Glass</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Reparación de Pantalla" data-icon="📱/💻/⌚" data-multidevice="true">
-          <span class="svc-icon svc-icon--multi">📱/💻/⌚</span>
-          <span class="svc-body">
-            <span class="svc-name">Reparación de Pantalla</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">03</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Reparación de Pantalla</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Cambio de Centro de Carga" data-icon="⚡">
-          <span class="svc-icon">⚡</span>
-          <span class="svc-body">
-            <span class="svc-name">Cambio de Centro de Carga</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">04</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Cambio de Centro de Carga</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Cambio de Batería" data-icon="🔋" data-multidevice="true">
-          <span class="svc-icon">🔋</span>
-          <span class="svc-body">
-            <span class="svc-name">Cambio de Batería</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">05</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Cambio de Batería</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Daño por Agua" data-icon="💧" data-multidevice="true">
-          <span class="svc-icon">💧</span>
-          <span class="svc-body">
-            <span class="svc-name">Daño por Agua</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">06</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Daño por Agua</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Limpieza profunda" data-icon="✨">
-          <span class="svc-icon">✨</span>
-          <span class="svc-body">
-            <span class="svc-name">Limpieza profunda</span>
-            <span class="svc-price">$350</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">07</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Limpieza profunda</span>
+          <span class="svc-price">$350</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Botones de Encendido / Volumen" data-icon="🔘">
-          <span class="svc-icon">🔘</span>
-          <span class="svc-body">
-            <span class="svc-name">Botones de Encendido / Volumen</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">08</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Botones de Encendido / Volumen</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Microsoldadura" data-icon="🔬" data-multidevice="true">
-          <span class="svc-icon">🔬</span>
-          <span class="svc-body">
-            <span class="svc-name">Microsoldadura</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">09</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Microsoldadura</span>
         </button>
       </li>
 
       <li>
         <button class="svc-row" data-service="Accesorios Premium" data-icon="🛍️">
-          <span class="svc-icon">🛍️</span>
-          <span class="svc-body">
-            <span class="svc-name">Accesorios Premium </span><span class="svc-price">Fundas, hidrogel y más</span>
-          </span>
-          <span class="svc-arrow">›</span>
+          <span class="svc-head"><span class="svc-num">10</span><span class="svc-arrow">›</span></span>
+          <span class="svc-name">Accesorios Premium</span>
+          <span class="svc-price">Fundas, hidrogel y más</span>
         </button>
       </li>
 
     </ul>
   </section>
 
-  <!-- CTA BLOCK -->
-  <div class="cta-wrap">
-    <a class="cta-block"
-       href="https://wa.me/523349812755?text=Hola%21+Me+interesa+cotizar+un+servicio."
-       target="_blank" rel="noopener noreferrer">
-      <svg class="cta-wa-icon" viewBox="0 0 36 36" fill="none">
-        <circle cx="18" cy="18" r="18" fill="rgba(255,255,255,0.18)"/>
-        <path fill="white" d="M25.5 10.5A10.47 10.47 0 0018 7.5C12.2 7.5 7.5 12.2 7.5 18c0 1.84.48 3.63 1.38 5.22L7.5 28.5l5.4-1.41A10.44 10.44 0 0018 28.5c5.8 0 10.5-4.7 10.5-10.5 0-2.8-1.09-5.43-3-7.5zm-7.5 16.15c-1.56 0-3.09-.42-4.42-1.2l-.32-.19-3.2.84.86-3.13-.21-.34a8.72 8.72 0 01-1.35-4.63C9.36 12.97 13.2 9.36 18 9.36c2.33 0 4.52.91 6.17 2.56A8.68 8.68 0 0126.64 18c0 4.8-3.84 8.65-8.64 8.65zm4.74-6.49c-.26-.13-1.53-.75-1.76-.84-.24-.09-.41-.13-.58.13-.17.26-.66.84-.81 1.01-.15.17-.3.19-.56.06-.26-.13-1.1-.4-2.09-1.28-.77-.69-1.3-1.54-1.45-1.8-.15-.26-.02-.4.11-.53.12-.11.26-.3.39-.45.13-.15.17-.26.26-.43.09-.17.04-.32-.02-.45-.06-.13-.58-1.4-.8-1.91-.2-.5-.42-.43-.58-.43-.15 0-.32-.02-.5-.02-.17 0-.45.06-.69.32-.24.26-.91.88-.91 2.16 0 1.28.93 2.52 1.06 2.69.13.17 1.83 2.79 4.44 3.91.62.27 1.1.43 1.48.55.62.2 1.19.17 1.64.1.5-.08 1.53-.63 1.74-1.23.22-.6.22-1.12.15-1.23-.07-.1-.24-.17-.5-.3z"/>
-      </svg>
-      <span class="cta-body">
-        <span class="cta-main">Cotizar ahora &nbsp;·&nbsp; 334 981 27 55</span>
-        <span class="cta-sub">Sin cita necesaria &nbsp;·&nbsp; Garantía 30 días</span>
-      </span>
-    </a>
-  </div>
-
-  <!-- LOCATION -->
+  <!-- UBICACIÓN -->
   <section class="location" id="ubicacion">
-    <p class="loc-label">Ubicación</p>
-    <p class="loc-address">
-      Rep. de Chile 247-A<br>
-      Col. 5 de Diciembre &nbsp;·&nbsp; Puerto Vallarta
-    </p>
-    <a class="maps-btn"
-       href="https://maps.app.goo.gl/fweAUNzi77eSqc1SA"
-       target="_blank" rel="noopener noreferrer">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2.2"
-           stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/>
-        <circle cx="12" cy="10" r="3"/>
-      </svg>
-      Ver en Maps
-    </a>
+    <div class="loc-card">
+      <div class="loc-map">[ MAPA · COL. 5 DE DICIEMBRE ]</div>
+      <div class="loc-foot">
+        <div>
+          <div class="loc-addr-main">Rep. de Chile 247-A</div>
+          <div class="loc-addr-sub">Col. 5 de Diciembre · Puerto Vallarta</div>
+        </div>
+        <a class="maps-btn"
+           href="https://maps.app.goo.gl/b4RaqzAjKcSjeXbz5"
+           target="_blank" rel="noopener noreferrer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/>
+            <circle cx="12" cy="10" r="3"/>
+          </svg>
+          Ver en Maps
+        </a>
+      </div>
+    </div>
   </section>
+
+  <div class="site-foot">FIXZONE · PUERTO VALLARTA · WE FIX FAST. YOU RELAX.</div>
 
 </div><!-- /.page-wrap -->
 
@@ -819,9 +818,9 @@
     </div>
 
     <button class="sheet-btn" id="sheet-send">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="#001020">
         <path d="M17.5 14.9c-.3-.15-1.75-.87-2.02-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.07-.15-.67-1.6-.92-2.2-.24-.57-.49-.5-.67-.5-.17 0-.37-.02-.57-.02-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.47s1.07 2.87 1.22 3.07c.15.2 2.1 3.2 5.1 4.48.71.31 1.27.5 1.7.63.72.23 1.37.2 1.89.12.58-.09 1.75-.72 2-1.41.25-.7.25-1.29.17-1.41-.07-.12-.27-.2-.57-.35z"/>
-        <path d="M12 2a10 10 0 00-8.65 15L2 22l5.1-1.33A10 10 0 1012 2z" fill="none" stroke="white" stroke-width="1.5"/>
+        <path d="M12 2a10 10 0 00-8.65 15L2 22l5.1-1.33A10 10 0 1012 2z" fill="none" stroke="#001020" stroke-width="1.5"/>
       </svg>
       Cotizar por WhatsApp
     </button>
@@ -853,11 +852,11 @@
       bar.classList.add('is-closed');
       textEl.textContent = 'Cerrado';
       let reopenMsg;
-      if (!isWeekday)          reopenMsg = 'el lunes a las 9:30';   // domingo
-      else if (t < OPEN_H)     reopenMsg = 'hoy a las 9:30';        // antes de abrir
-      else if (day === 6)      reopenMsg = 'el lunes a las 9:30';   // sábado noche
-      else                     reopenMsg = 'mañana a las 9:30';     // lun–vie noche
-      hoursEl.textContent = ' ·  Abre ' + reopenMsg;
+      if (!isWeekday)          reopenMsg = 'el lunes 9:30';     // domingo
+      else if (t < OPEN_H)     reopenMsg = 'hoy 9:30';          // antes de abrir
+      else if (day === 6)      reopenMsg = 'el lunes 9:30';     // sábado noche
+      else                     reopenMsg = 'mañana 9:30';       // lun–vie noche
+      hoursEl.textContent = 'Abre ' + reopenMsg;
     }
   })();
 
@@ -887,7 +886,6 @@
     deviceOpts.forEach(b => b.classList.remove('is-selected'));
 
     if (isMultiDevice) {
-      // Primero preguntamos el equipo; el modelo solo aplica a celulares
       selectedDevice = null;
       deviceSelectEl.hidden = false;
       modelSectionEl.hidden = true;
@@ -902,8 +900,6 @@
     }
 
     overlay.classList.add('is-open');
-    // Foco al input en desktop; en mobile evitar que el teclado
-    // tape el sheet antes de que termine la animación
     if (!modelSectionEl.hidden) {
       setTimeout(() => inputEl.focus(), 320);
     }
@@ -931,14 +927,12 @@
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
-  // Abrir sheet al tocar cualquier fila de servicio
   document.querySelectorAll('.svc-row').forEach(btn => {
     btn.addEventListener('click', () => {
       openSheet(btn.dataset.service, btn.dataset.icon, btn.dataset.multidevice === 'true');
     });
   });
 
-  // Selección de equipo (Celular / Mac / Apple Watch)
   deviceOpts.forEach(btn => {
     btn.addEventListener('click', () => {
       selectedDevice = btn.dataset.device;
@@ -956,21 +950,17 @@
     });
   });
 
-  // Enviar al presionar el botón o Enter en el input
   sendBtn.addEventListener('click', sendToWhatsApp);
   inputEl.addEventListener('keydown', e => {
     if (e.key === 'Enter') sendToWhatsApp();
   });
 
-  // Skip — abre WhatsApp sin modelo
   skipLink.addEventListener('click', () => sendToWhatsApp());
 
-  // Cerrar al tocar el overlay (fuera del sheet)
   overlay.addEventListener('click', e => {
     if (e.target === overlay) closeSheet();
   });
 
-  // Cerrar con Escape
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeSheet();
   });
