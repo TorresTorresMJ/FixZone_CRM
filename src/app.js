@@ -3275,39 +3275,56 @@ function renderReports() {
   }
 
   // ── Tickets por método de pago ───────────────────────────────────────────────
+  // Usa las transacciones individuales (Ingreso, Servicio) en lugar del campo
+  // payment_method del ticket, porque un ticket puede tener abonos con distintos
+  // métodos. Cada transacción lleva el método exacto del cobro parcial.
   {
     const tpmEl = document.querySelector("#reports-ticket-payment");
     if (tpmEl) {
       const ORDER = ["Efectivo","Transferencia","Terminal TC","Terminal TD","Link de pago","Otro"];
-      const ticketsPeriod = branchTickets().filter(t => {
-        const d = (t.createdAt||"").slice(0,10);
-        return d >= from && d <= to && t.paymentMethod && !t.tracking?.startsWith("[COT]");
-      });
+      // Include old transactions (ticket_id null) that have the tracking number
+      // embedded in the concept ("Anticipo [FZ] 0001", "Pago [FZ] 0001", etc.)
+      const serviceTxs = branchTransactions().filter(tx =>
+        tx.type === "Ingreso" &&
+        tx.category === "Servicio" &&
+        tx.paymentMethod &&
+        tx.date >= from && tx.date <= to &&
+        (tx.ticketId || /\[(FZ|COT)\]/.test(tx.concept || ""))
+      );
+
+      // Aggregate amounts per method; track unique ticket keys for the count
       const byMethod = {};
-      ticketsPeriod.forEach(t => {
-        const m = t.paymentMethod;
-        if (!byMethod[m]) byMethod[m] = { count:0, paid:0 };
-        byMethod[m].count++;
-        byMethod[m].paid += Number(t.paidAmount||0);
+      const ticketKeysByMethod = {};
+      serviceTxs.forEach(tx => {
+        const origin = findTransactionOrigin(tx);
+        const ticketKey = tx.ticketId || origin?.record?.id || tx.concept;
+        const m = tx.paymentMethod;
+        if (!byMethod[m]) byMethod[m] = { amount: 0 };
+        byMethod[m].amount += Number(tx.amount || 0);
+        if (!ticketKeysByMethod[m]) ticketKeysByMethod[m] = new Set();
+        ticketKeysByMethod[m].add(ticketKey);
       });
-      const totalTicketPaid = Object.values(byMethod).reduce((s,v)=>s+v.paid,0);
+
+      const totalAmount = Object.values(byMethod).reduce((s,v)=>s+v.amount, 0);
+      const totalTxs = serviceTxs.length;
       const sorted = Object.entries(byMethod).sort((a,b) => {
         const oa = ORDER.indexOf(a[0]), ob = ORDER.indexOf(b[0]);
-        return (oa===-1?99:oa) - (ob===-1?99:ob) || b[1].paid - a[1].paid;
+        return (oa===-1?99:oa) - (ob===-1?99:ob) || b[1].amount - a[1].amount;
       });
       const cards = sorted.map(([m,v]) => {
-        const pct = totalTicketPaid > 0 ? Math.round(v.paid/totalTicketPaid*100) : 0;
+        const pct = totalAmount > 0 ? Math.round(v.amount/totalAmount*100) : 0;
+        const nTickets = ticketKeysByMethod[m]?.size || 0;
         return `<div data-dd-tmethod="${escapeHtml(m)}" style="cursor:pointer;flex:1;min-width:130px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px">
           <div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m)}</div>
-          <div style="font-size:16px;font-weight:700;color:#2ecc71">${money.format(v.paid)}</div>
-          <div style="font-size:10px;color:rgba(255,255,255,.35);margin-top:2px">${v.count} ticket${v.count!==1?"s":""} · ${pct}%</div>
+          <div style="font-size:16px;font-weight:700;color:#2ecc71">${money.format(v.amount)}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.35);margin-top:2px">${nTickets} ticket${nTickets!==1?"s":""} · ${pct}%</div>
         </div>`;
       }).join("");
       tpmEl.innerHTML = sorted.length ? `
         <div class="card" style="margin-top:16px;border-left:3px solid rgba(var(--fz-primary-rgb),.6)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
             <h3 style="margin:0;font-size:14px">🎫 Tickets por método de pago — ${periodLabel}</h3>
-            <span style="font-size:11px;color:rgba(255,255,255,.4)">${ticketsPeriod.length} ticket${ticketsPeriod.length!==1?"s":""} · ${money.format(totalTicketPaid)} cobrado</span>
+            <span style="font-size:11px;color:rgba(255,255,255,.4)">${totalTxs} cobro${totalTxs!==1?"s":""} · ${money.format(totalAmount)} cobrado</span>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">${cards}</div>
         </div>` : "";
@@ -3315,22 +3332,25 @@ function renderReports() {
       tpmEl.querySelectorAll("[data-dd-tmethod]").forEach(el => {
         el.addEventListener("click", () => {
           const m = el.dataset.ddTmethod;
-          const list = ticketsPeriod.filter(t => t.paymentMethod === m)
-            .sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+          const methodTxs = serviceTxs.filter(tx => tx.paymentMethod === m)
+            .sort((a,b) => (b.date||"").localeCompare(a.date||""));
           openListDrilldown(
             `Tickets por método de pago — ${m}`,
-            `${periodLabel} · ${list.length} ticket${list.length!==1?"s":""} · ${money.format(list.reduce((s,t)=>s+Number(t.paidAmount||0),0))} cobrado`,
-            ["Folio","Cliente","Equipo","Pagado","Estado"],
-            list.map(t => ({
-              cells: [
-                escapeHtml(t.tracking||""),
-                escapeHtml(t.client||"—"),
-                escapeHtml(t.productName||"—"),
-                `<span style="color:#2ecc71">${money.format(t.paidAmount||0)}</span>`,
-                escapeHtml(t.status||""),
-              ],
-              onClick: () => openEditTicket(t.id),
-            }))
+            `${periodLabel} · ${methodTxs.length} cobro${methodTxs.length!==1?"s":""} · ${money.format(methodTxs.reduce((s,tx)=>s+Number(tx.amount||0),0))} cobrado`,
+            ["Fecha","Folio","Cliente","Monto"],
+            methodTxs.map(tx => {
+              const origin = findTransactionOrigin(tx);
+              const t = origin?.type === "ticket" ? origin.record : null;
+              return {
+                cells: [
+                  escapeHtml(tx.date||""),
+                  escapeHtml(t?.tracking||tx.concept||"—"),
+                  escapeHtml(t?.client||"—"),
+                  `<span style="color:#2ecc71">${money.format(tx.amount||0)}</span>`,
+                ],
+                onClick: t ? () => openEditTicket(t.id) : undefined,
+              };
+            })
           );
         });
       });
@@ -5050,11 +5070,16 @@ async function updateRemoteTransaction(txId, data) {
   if (tx && data.paymentMethod && data.paymentMethod !== tx.paymentMethod) {
     const origin = findTransactionOrigin(tx);
     if (origin?.type === "ticket") {
-      await supabaseClient.from("service_tickets")
-        .update({ payment_method: data.paymentMethod })
-        .eq("id", origin.record.id);
-      const tIdx = state.tickets.findIndex(t => t.id === origin.record.id);
-      if (tIdx !== -1) state.tickets[tIdx].paymentMethod = data.paymentMethod;
+      // Don't overwrite "Múltiple" — that flag means the ticket has mixed methods;
+      // correcting one transaction's method shouldn't reset that.
+      const targetTicket = origin.record;
+      if (targetTicket?.paymentMethod !== "Múltiple") {
+        await supabaseClient.from("service_tickets")
+          .update({ payment_method: data.paymentMethod })
+          .eq("id", targetTicket.id);
+        const tIdx = state.tickets.findIndex(t => t.id === targetTicket.id);
+        if (tIdx !== -1) state.tickets[tIdx].paymentMethod = data.paymentMethod;
+      }
     }
   }
 }
@@ -6750,6 +6775,9 @@ async function createRemoteTicket(r) {
 // Sin esto, corregir el método de pago desde el ticket dejaría Finanzas/Reportes
 // mostrando el valor viejo hasta el próximo pago — todo lo vinculado debe moverse junto.
 async function syncTicketPaymentMethodToTransactions(ticketId, tracking, paymentMethod) {
+  // Never clobber individual transaction methods with "Múltiple" — that label is only
+  // meaningful at the ticket level to indicate mixed methods.
+  if (!paymentMethod || paymentMethod === "Múltiple") return;
   await supabaseClient.from("transactions")
     .update({ payment_method: paymentMethod })
     .eq("ticket_id", ticketId);
@@ -8336,10 +8364,14 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
 
   try {
     if (dataMode === "remote" && isUUID) {
+      const existingMethod = ticket.paymentMethod;
+      const resolvedMethod = existingMethod && method && existingMethod !== method && existingMethod !== "Múltiple"
+        ? "Múltiple"
+        : (method || existingMethod || null);
       const { error } = await supabaseClient.from("service_tickets").update({
         paid_amount:    newPaid,
         payment_status: newStatus,
-        payment_method: method || null,
+        payment_method: resolvedMethod,
       }).eq("id", abonoTicketId);
       if (error) throw error;
 
@@ -8353,12 +8385,20 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
         ticketId:      abonoTicketId,
       });
 
+      logTicketEvent(abonoTicketId, "payment", {
+        note: `Abono: ${money.format(amount)}${method ? ` (${method})` : ""}`,
+      });
+
       try { await reloadState(); } catch(re) { console.warn("reload:", re); }
     }
     // Update local state regardless so UI reflects immediately
     const idx = state.tickets.findIndex(t => t.id === abonoTicketId);
     if (idx !== -1) {
-      state.tickets[idx] = { ...state.tickets[idx], paidAmount: newPaid, paymentStatus: newStatus, paymentMethod: method || state.tickets[idx].paymentMethod };
+      const cur = state.tickets[idx];
+      const localResolved = cur.paymentMethod && method && cur.paymentMethod !== method && cur.paymentMethod !== "Múltiple"
+        ? "Múltiple"
+        : (method || cur.paymentMethod);
+      state.tickets[idx] = { ...cur, paidAmount: newPaid, paymentStatus: newStatus, paymentMethod: localResolved };
     }
     abonoModal.close();
     render();
