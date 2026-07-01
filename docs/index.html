@@ -600,6 +600,13 @@
       .sheet-overlay, .sheet { transition: none !important; }
     }
   </style>
+  <script async src="https://googleetagmanager.com/gtag/js?id=G-X4QFLJNES2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-X4QFLJNES2');
+  </script>
   <!-- Cloudflare Web Analytics -->
   <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "acc0ad11e4294e05bb50fb175dbad096"}'></script>
   <!-- End Cloudflare Web Analytics -->
@@ -924,7 +931,15 @@
   function sendToWhatsApp() {
     const url = buildWaUrl(currentService, inputEl.value, selectedDevice || 'celular');
     closeSheet();
+    if (typeof gtag === 'function') {
+      gtag('event', 'conversion', {
+        send_to: 'G-X4QFLJNES2',
+        value: 1.0,
+        currency: 'MXN'
+      });
+    }
     window.open(url, '_blank', 'noopener,noreferrer');
+    setTimeout(() => { window.location.href = '/gracias'; }, 400);
   }
 
   document.querySelectorAll('.svc-row').forEach(btn => {
