@@ -10,9 +10,10 @@ Coloca aquí los archivos oficiales de RefaxZone:
   [cualquier imagen PNG, SVG, WEBP]
 
 Paleta oficial:
-  Principal  #E85D04
-  Secundario #F48C06
-  Profundo   #9D2D00
+Paleta oficial:
+  Principal  #085ACB
+  Secundario #2678E8
+  Profundo   #053E8F
 
 Nota: desde el CRM (tab Diseño → Editor de marca) puedes subir un logo
 y cambiará en tiempo real sin necesidad de subir archivos aquí.

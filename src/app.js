@@ -6904,6 +6904,13 @@ async function updateRemoteTicket(ticketId, r) {
     }).catch(err => console.warn("No se pudo notificar asignación:", err));
   }
 
+  // Cronómetro: se detiene y se quita automáticamente al llegar a "Listo"
+  if (stageChanged && r.status === "Listo" && oldTicket?.timerTargetAt) {
+    await supabaseClient.from("service_tickets").update({ timer_target_at: null }).eq("id", ticketId);
+    const tidx = state.tickets.findIndex(t => t.id === ticketId);
+    if (tidx !== -1) state.tickets[tidx] = { ...state.tickets[tidx], timerTargetAt: null };
+  }
+
   // Aviso: cambio de etapa del ticket, al técnico asignado
   if (stageChanged && assignedE?.id && assignedE.id !== currentEmployeeId()) {
     addNotif({
@@ -7766,8 +7773,12 @@ async function updateRemoteInvoice(invoiceId, r) {
   let fileUrl;
   const fileInput = document.querySelector("#receipt-file-input");
   if (fileInput?.files?.length) fileUrl = await uploadReceiptFile(fileInput.files[0]);
-  // Adjuntar/reemplazar el comprobante es prueba de que la factura ya existe.
-  const status = fileUrl ? "Facturado" : r.status;
+  // Adjuntar/reemplazar el comprobante es prueba de que la factura ya existe. Esto también
+  // cubre el caso en que el comprobante ya estaba adjunto de un guardado anterior y esta vez
+  // solo se edita otro campo — sin esto, re-guardar sin volver a seleccionar el archivo deja
+  // el estado en "Pendiente" aunque ya exista un comprobante.
+  const existingFileUrl = (state.invoices||[]).find(i => i.id === invoiceId)?.file_url;
+  const status = (fileUrl || existingFileUrl) ? "Facturado" : r.status;
 
   const payload = {
     type:           r.type,
