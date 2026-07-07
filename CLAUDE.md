@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 FixZone CRM is a **vanilla HTML/CSS/JS single-page app** for managing a cell-phone repair shop. It has no build step and no framework — the browser loads scripts directly via `<script>` tags in `index.html`. The backend is **Supabase** (PostgreSQL + Auth + RLS). Deployed on **Cloudflare Pages** (`fixzone-crm.pages.dev`) — push to `main` triggers auto-deploy.
 
+Measurement ID:G-X4QFLJNES2
+
 There are two branches/brands operated from the same codebase:
 - **Puerto Vallarta → FixZone** (blue palette, `#085ACB`)
 - **Puebla → RefaxZone** (orange palette, `#E85D04`)
