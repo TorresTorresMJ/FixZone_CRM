@@ -704,7 +704,7 @@ async function loadSupabaseState() {
     supabaseClient.from("supply_purchases").select("*, suppliers(name)").order("purchase_date",{ascending:false}),
     supabaseClient.from("transactions").select("*").order("transaction_date",{ascending:false}),
     supabaseClient.from("support_tasks").select("*, employees!support_tasks_assigned_to_fkey(full_name)").order("created_at",{ascending:false}),
-    supabaseClient.from("pos_sales").select("*").order("created_at",{ascending:false}).limit(50),
+    supabaseClient.from("pos_sales").select("*, pos_sale_items(*), customers(full_name), pos_returns(*, pos_return_items(*))").order("created_at",{ascending:false}).limit(50),
     supabaseClient.from("discount_codes").select("*").order("created_at",{ascending:false}),
     supabaseClient.from("service_types").select("*").order("sort_order"),
     supabaseClient.from("service_prices").select("*"),
@@ -833,13 +833,36 @@ async function loadSupabaseState() {
       assignedToId:t.assigned_to||null, createdBy:t.created_by||null,
       createdAt:(t.created_at||"").slice(0,10),
     })),
-    posSales: (psRes.data||[]).map(s => ({
-      id:s.id, total:Number(s.total||0), paymentMethod:s.payment_method||"",
-      discount:Number(s.discount_amount||0),
-      createdAt:(s.created_at||"").slice(0,10),
-      transactionId:s.transaction_id||null,
-      branch:branchRows.find(b=>b.id===s.branch_id)?.name||BRANCHES[0],
-    })),
+    posSales: (psRes.data||[]).map(s => {
+      const returns = s.pos_returns || [];
+      const returnedByItem = new Map();
+      returns.forEach(r => (r.pos_return_items||[]).forEach(ri => {
+        if (ri.sale_item_id) returnedByItem.set(ri.sale_item_id, (returnedByItem.get(ri.sale_item_id)||0) + Number(ri.quantity||0));
+      }));
+      return {
+        id:s.id, total:Number(s.total||0), paymentMethod:s.payment_method||"",
+        discount:Number(s.discount_amount||0),
+        createdAt:(s.created_at||"").slice(0,10),
+        createdAtRaw:s.created_at||"",
+        transactionId:s.transaction_id||null,
+        clientName:s.customers?.full_name||"",
+        items:(s.pos_sale_items||[]).map(i => ({
+          id:i.id, productId:i.product_id, name:i.description,
+          qty:Number(i.quantity||0), unitPrice:Number(i.unit_price||0),
+          returnedQty:returnedByItem.get(i.id)||0,
+        })),
+        returns:returns.map(r => ({
+          id:r.id, reason:r.reason||"", total:Number(r.total_refunded||0),
+          createdAt:(r.created_at||"").slice(0,10),
+          items:(r.pos_return_items||[]).map(ri => ({
+            productId:ri.product_id, name:ri.description,
+            qty:Number(ri.quantity||0), unitPrice:Number(ri.unit_price||0),
+          })),
+        })),
+        totalReturned:returns.reduce((s2,r)=>s2+Number(r.total_refunded||0),0),
+        branch:branchRows.find(b=>b.id===s.branch_id)?.name||BRANCHES[0],
+      };
+    }),
     discounts: (dcRes.data||[]).map(d => ({
       id:d.id, code:d.code, description:d.description||"",
       type:d.type, value:Number(d.value),
@@ -2356,22 +2379,63 @@ function renderPos() {
 function renderPosHistory() {
   const container = document.querySelector("#pos-history");
   if (!container) return;
-  const sales = (state.posSales || []).filter(s => !s.branch || s.branch === activeBranchId).slice(0, 15);
+  const sales = (state.posSales || []).filter(s => !s.branch || s.branch === activeBranchId);
   if (!sales.length) { container.innerHTML = ""; return; }
+
+  const groups = new Map(); // fecha (YYYY-MM-DD) -> ventas[]
+  sales.forEach(s => {
+    if (!groups.has(s.createdAt)) groups.set(s.createdAt, []);
+    groups.get(s.createdAt).push(s);
+  });
+  const days = [...groups.keys()].sort((a, b) => b.localeCompare(a));
+
   container.innerHTML = `
-    <div class="section-heading" style="margin-bottom:10px"><h2>Ventas recientes</h2></div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Fecha</th><th>Método</th><th style="text-align:right">Total</th><th></th></tr></thead>
-        <tbody>
-          ${sales.map(s => `<tr>
-            <td>${s.createdAt}</td>
-            <td>${escapeHtml(s.paymentMethod)}</td>
-            <td style="text-align:right"><strong>${money.format(s.total)}</strong></td>
-            <td><button class="mini-button" data-reprint-pos="${s.id}" title="Reimprimir recibo">🖨</button></td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
+    <div class="section-heading" style="margin-bottom:10px"><h2>Historial de ventas</h2></div>
+    ${days.map(day => {
+      const daySales    = groups.get(day);
+      const dayTotal    = daySales.reduce((s, v) => s + Number(v.total || 0), 0);
+      const dayReturned = daySales.reduce((s, v) => s + Number(v.totalReturned || 0), 0);
+      return `
+        <div class="pos-history-day">
+          <div class="pos-history-day-head">
+            <strong>${day}</strong>
+            <span class="muted" style="font-size:11px">${daySales.length} venta${daySales.length === 1 ? "" : "s"} · ${money.format(dayTotal)}${dayReturned > 0 ? ` · -${money.format(dayReturned)} devuelto` : ""}</span>
+          </div>
+          <div class="pos-history-day-body">
+            ${daySales.map(renderPosSaleRow).join("")}
+          </div>
+        </div>`;
+    }).join("")}`;
+}
+
+function renderPosSaleRow(s) {
+  const time = s.createdAtRaw
+    ? new Date(s.createdAtRaw).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false })
+    : "";
+  const itemsSummary   = (s.items || []).map(i => `${i.qty}× ${escapeHtml(i.name)}`).join(", ") || "—";
+  const canReturn      = (s.items || []).some(i => i.id && i.returnedQty < i.qty);
+  const returnsDetail  = (s.returns || []).length
+    ? `<div class="pos-history-sale-returns muted">${s.returns.map(r =>
+        `↩ ${r.createdAt}: ${r.items.map(i => `${i.qty}× ${escapeHtml(i.name)}`).join(", ")}${r.reason ? ` (${escapeHtml(r.reason)})` : ""} — -${money.format(r.total)}`
+      ).join("<br>")}</div>`
+    : "";
+  return `
+    <div class="pos-history-sale">
+      <div class="pos-history-sale-main">
+        <div class="pos-history-sale-info">
+          <div style="font-size:12px">${time} · ${escapeHtml(s.paymentMethod)}${s.clientName ? ` · ${escapeHtml(s.clientName)}` : ""}</div>
+          <div class="muted" style="font-size:11px">${itemsSummary}</div>
+        </div>
+        <div class="pos-history-sale-amount">
+          <strong>${money.format(s.total)}</strong>
+          ${s.totalReturned > 0 ? `<div style="font-size:10px;color:#ef4444">-${money.format(s.totalReturned)} devuelto</div>` : ""}
+        </div>
+        <div class="pos-history-sale-actions">
+          <button class="mini-button" data-reprint-pos="${s.id}" title="Reimprimir recibo">🖨</button>
+          ${canReturn ? `<button class="mini-button" data-return-pos="${s.id}" title="Registrar devolución">↩</button>` : ""}
+        </div>
+      </div>
+      ${returnsDetail}
     </div>`;
 }
 
@@ -2440,7 +2504,9 @@ function checkoutPos() {
 
     state.posSales = state.posSales || [];
     state.posSales.unshift({ id:sale.id, total, paymentMethod:method,
-      discount:posDiscount, createdAt:dateStamp(), branch:activeBranchId });
+      discount:posDiscount, createdAt:dateStamp(), createdAtRaw:new Date().toISOString(),
+      clientName, items:posCart.map(i => ({ productId:i.productId, name:i.name, qty:i.qty, unitPrice:i.unitPrice, returnedQty:0 })),
+      returns:[], totalReturned:0, branch:activeBranchId });
 
     lastPosSale = {
       items: posCart.map(i => ({ ...i })),
@@ -8425,6 +8491,128 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
   }
 });
 
+// ── POS return modal ───────────────────────────────────────────────────────────
+let posReturnSaleId = null;
+const posReturnModal = document.querySelector("#pos-return-modal");
+
+function openPosReturnModal(saleId) {
+  const sale = (state.posSales || []).find(s => s.id === saleId);
+  if (!sale || !posReturnModal) return;
+  posReturnSaleId = saleId;
+  document.querySelector("#pos-return-eyebrow").textContent = `${sale.createdAt} · ${money.format(sale.total)}`;
+
+  const itemsContainer = document.querySelector("#pos-return-items");
+  const rows = (sale.items || []).map((i, idx) => {
+    const remaining = Math.max(0, i.qty - (i.returnedQty || 0));
+    if (remaining <= 0) return "";
+    return `
+      <div class="pos-return-item-row">
+        <label>
+          <input type="checkbox" data-return-check="${idx}" />
+          ${escapeHtml(i.name)} <span class="muted">(${money.format(i.unitPrice)} c/u · disp. ${remaining})</span>
+        </label>
+        <input type="number" data-return-qty="${idx}" min="1" max="${remaining}" step="1" value="${remaining}" disabled />
+      </div>`;
+  }).join("");
+  itemsContainer.innerHTML = rows || `<p class="muted" style="font-size:12px">Todos los productos de esta venta ya fueron devueltos.</p>`;
+
+  document.querySelector("#pos-return-reason").value = "";
+  updatePosReturnTotal();
+  posReturnModal.showModal();
+}
+window.openPosReturnModal = openPosReturnModal;
+
+function updatePosReturnTotal() {
+  const sale = (state.posSales || []).find(s => s.id === posReturnSaleId);
+  const totalEl = document.querySelector("#pos-return-total");
+  if (!sale || !totalEl) return;
+  let total = 0;
+  (sale.items || []).forEach((i, idx) => {
+    const check = document.querySelector(`[data-return-check="${idx}"]`);
+    const qtyInput = document.querySelector(`[data-return-qty="${idx}"]`);
+    if (check?.checked) total += Number(qtyInput.value || 0) * i.unitPrice;
+  });
+  totalEl.textContent = total > 0 ? `Total a reembolsar: ${money.format(total)}` : "";
+}
+
+document.querySelector("#pos-return-items")?.addEventListener("change", e => {
+  if (e.target.matches("[data-return-check]")) {
+    const idx = e.target.dataset.returnCheck;
+    const qtyInput = document.querySelector(`[data-return-qty="${idx}"]`);
+    if (qtyInput) qtyInput.disabled = !e.target.checked;
+  }
+  updatePosReturnTotal();
+});
+document.querySelector("#pos-return-items")?.addEventListener("input", e => {
+  if (e.target.matches("[data-return-qty]")) updatePosReturnTotal();
+});
+
+document.querySelector("#close-pos-return-modal")?.addEventListener("click", () => posReturnModal?.close());
+document.querySelector("#cancel-pos-return")?.addEventListener("click",       () => posReturnModal?.close());
+
+document.querySelector("#pos-return-form")?.addEventListener("submit", async e => {
+  e.preventDefault();
+  const sale = (state.posSales || []).find(s => s.id === posReturnSaleId);
+  if (!sale) return;
+  if (dataMode !== "remote") { showErrorToast("Conecta a Supabase para registrar devoluciones."); return; }
+
+  const reason = document.querySelector("#pos-return-reason").value.trim();
+  const selected = [];
+  (sale.items || []).forEach((i, idx) => {
+    const check = document.querySelector(`[data-return-check="${idx}"]`);
+    const qtyInput = document.querySelector(`[data-return-qty="${idx}"]`);
+    if (check?.checked) {
+      const qty = Math.min(Number(qtyInput.value || 0), i.qty - (i.returnedQty || 0));
+      if (qty > 0) selected.push({ saleItemId: i.id, productId: i.productId, name: i.name, qty, unitPrice: i.unitPrice });
+    }
+  });
+  if (!selected.length) { showErrorToast("Selecciona al menos un producto a devolver."); return; }
+
+  const total = selected.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  setLoading(true, "Procesando devolución…");
+  try {
+    const branchId = await branchIdByName(sale.branch || activeBranchId);
+
+    const { data: ret, error: retErr } = await supabaseClient.from("pos_returns").insert({
+      sale_id: sale.id, branch_id: branchId, employee_id: currentEmployee?.id || null,
+      reason: reason || null, total_refunded: total,
+    }).select("id").single();
+    if (retErr) throw retErr;
+
+    const { error: itemsErr } = await supabaseClient.from("pos_return_items").insert(
+      selected.map(i => ({
+        return_id: ret.id, sale_item_id: i.saleItemId, product_id: i.productId,
+        description: i.name, quantity: i.qty, unit_price: i.unitPrice,
+      }))
+    );
+    if (itemsErr) throw itemsErr;
+
+    const { data: tx } = await supabaseClient.from("transactions").insert({
+      branch_id: branchId, transaction_date: dateStamp(),
+      type: "Egreso", category: "Devolución",
+      concept: `Devolución venta POS: ${selected.map(i => `${i.qty}× ${i.name}`).join(", ")}`,
+      amount: total, payment_method: sale.paymentMethod || null,
+      created_by: currentEmployee?.id || null,
+    }).select("id").single();
+    if (tx?.id) await supabaseClient.from("pos_returns").update({ transaction_id: tx.id }).eq("id", ret.id);
+
+    // Stock ya fue restaurado por el trigger de pos_return_items; reflejar en local state
+    for (const i of selected) {
+      const prod = state.products.find(p => p.id === i.productId);
+      if (prod) prod.stock = Number(prod.stock) + i.qty;
+    }
+
+    posReturnModal.close();
+    showToast(`✓ Devolución registrada: ${money.format(total)}`);
+    render();
+    reloadState().catch(er => console.warn("POS return reload:", er));
+  } catch(err) {
+    showErrorToast(`Error al registrar devolución: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 // EVENT LISTENERS
 // ──────────────────────────────────────────────────────────────────────────────
@@ -8589,6 +8777,10 @@ document.addEventListener("click", e => {
     printPosRecibo();
     return;
   }
+
+  // Open return modal from history
+  const returnPos = e.target.closest("[data-return-pos]");
+  if (returnPos) { openPosReturnModal(returnPos.dataset.returnPos); return; }
 
   // Clear cart
   if (e.target.closest("#pos-clear-cart")) {
@@ -8892,11 +9084,17 @@ window.viewSupportTaskDetail = viewSupportTaskDetail;
 
 // Chrome/Chromium does not evaluate var() inside @page { size }, so we inject
 // a <style> with the literal value before every print call.
-function doPrint() {
+function doPrint(filenameBase) {
   const w = "58mm";
   let s = document.getElementById("fz-print-size");
   if (!s) { s = document.createElement("style"); s.id = "fz-print-size"; document.head.appendChild(s); }
   s.textContent = `@media print { @page { size: ${w} auto; margin: 0; } }`;
+  if (filenameBase) {
+    const prevTitle = document.title;
+    document.title = filenameBase;
+    const restoreTitle = () => { document.title = prevTitle; window.removeEventListener("afterprint", restoreTitle); };
+    window.addEventListener("afterprint", restoreTitle);
+  }
   const imgs = [...document.querySelectorAll("#print-receipt img")];
   const unloaded = imgs.filter(img => !img.complete);
   if (unloaded.length === 0) { window.print(); return; }
@@ -9048,7 +9246,10 @@ function printPosRecibo() {
       <p class="rct-thanks">★ Gracias por su compra ★</p>
       <p class="rct-dash">${D}</p>
     </div>`;
-  doPrint();
+  const [y, m, d] = (date || dateStamp()).split("-");
+  const fileDate    = `${d}-${m}-${y.slice(2)}`;
+  const brandSlug   = (brand.displayName || activeBranchId).replace(/\s+/g, "");
+  doPrint(`${brandSlug}_POS_${fileDate}`);
 }
 
 function printTicket(ticket) {

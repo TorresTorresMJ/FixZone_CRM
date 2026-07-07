@@ -74,6 +74,7 @@ There is no test suite and no linter configured.
 | `supabase/40_contaduria_access_flag.sql` | Agrega `employees.can_access_contaduria` (boolean) y actualiza `private.is_admin_it_or_kevin()` para usarlo en vez de comparar `full_name = 'kevin mijangos'` — reemplaza la excepción hardcodeada por un flag editable desde Usuarios |
 | `supabase/41_app_settings.sql` | `app_settings` table — almacén genérico key/value (jsonb) para configuración que antes vivía solo en `localStorage` (plantillas de WhatsApp, mensajes rápidos, etc.), RLS abierto a empleados activos. Primera sección migrada: `wa_templates` |
 | `supabase/42_realtime_notifications.sql` | Agrega `notifications` y `team_tasks` a la publicación `supabase_realtime` — permite que el frontend se suscriba a `postgres_changes` para que la campanita y el checklist de equipo se actualicen al instante en vez de esperar el polling de 90s o un refresh manual |
+| `supabase/43_pos_returns.sql` | `pos_returns` + `pos_return_items` tables — devoluciones de ventas POS, con trigger que restaura el stock del producto (inverso del trigger de `13_pos_tables.sql`). RLS incluye el rol `it` desde el inicio (a diferencia de `pos_sales`/`pos_sale_items`, que necesitaron el parche aparte de la migración 28) |
 | `supabase/functions/scan-receipt/` | Edge Function — recibe imagen base64, llama a Gemini vision API (free tier, `gemini-3.1-flash-lite`), devuelve campos extraídos del comprobante (para insumos, devuelve un array `items[]` con una línea por producto del ticket). PDFs caen a llenado manual. Requiere secret `GEMINI_API_KEY`. |
 
 ## Architecture
@@ -179,6 +180,12 @@ The POS view (`#pos-view`) handles **direct retail sales** — selling products 
 **Important:** `supabase/13_pos_tables.sql` must be applied in the Supabase SQL Editor before the POS section works in production. Without it, checkout will fail with a table-not-found error.
 
 **Discount codes in POS**: the cart panel shows a "Código descuento" text input + "Aplicar" button. On apply, `applyDiscount(subtotal, code, "pos")` validates against `state.discounts` (loaded from `discount_codes` table). A valid code sets `posDiscount` and `posDiscountCode`; typing a manual amount in the discount field clears `posDiscountCode`.
+
+**Receipt printing (`printPosRecibo()`)**: reads from `lastPosSale` (set right after checkout, or rebuilt from `state.posSales` when reprinting from history via `[data-reprint-pos]`). `loadSupabaseState()`/`reloadState()` join `pos_sale_items(*)` and `customers(full_name)` onto the `pos_sales` query so `state.posSales[].items`/`.clientName` are always populated — without this join the receipt renders with no product lines (it only had `total`/`paymentMethod`). `doPrint(filenameBase)` takes an optional filename that becomes `document.title` for the duration of the print (restored on `afterprint`) so "Guardar como PDF" suggests `{BrandName}_POS_dd-mm-aa` instead of the page title.
+
+**Historial de POS (`renderPosHistory()`)**: renders every sale in `state.posSales` (branch-filtered) grouped by day (`createdAt`, newest first), each row showing time, payment method, client, and a one-line product summary (`qty× name, …`) — no separate "detail" view needed since the summary is always inline. Each sale has a 🖨 reprint button and, if it still has returnable items, a ↩ button opening `#pos-return-modal` (`openPosReturnModal()`).
+
+**Devoluciones (`pos_returns`/`pos_return_items`, migration 43)**: `openPosReturnModal(saleId)` lists the sale's items with remaining (non-returned) quantity, letting the user check which ones and how many to return. On submit: INSERT `pos_returns` (header: reason, `total_refunded`) → INSERT `pos_return_items` (one row per returned line, `sale_item_id` FK back to the original `pos_sale_items` row) → DB trigger `pos_return_items_restore_stock` adds the quantity back to `products.stock` → INSERT an `"Egreso"`/`"Devolución"` transaction linked back via `pos_returns.transaction_id`. `state.posSales[].items[].returnedQty` (summed from joined `pos_returns`) caps how much of each line can still be returned — once fully returned an item drops out of the return modal, and once every item is fully returned the ↩ button disappears from that sale's row.
 
 ### Cotizaciones
 
@@ -363,6 +370,7 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 40. `40_contaduria_access_flag.sql` — adds `employees.can_access_contaduria` (boolean); `private.is_admin_it_or_kevin()` now checks this flag instead of comparing `full_name`
 41. `41_app_settings.sql` — generic key/value `app_settings` table for config previously stored only in `localStorage`; first section migrated is `wa_templates`
 42. `42_realtime_notifications.sql` — adds `notifications` and `team_tasks` to the `supabase_realtime` publication so the frontend can subscribe to `postgres_changes`
+43. `43_pos_returns.sql` — `pos_returns` + `pos_return_items` tables for POS returns, with a trigger that restores product stock
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.
 
@@ -408,6 +416,8 @@ All UI text, form labels, status values, and copy are in **Spanish**.
 - **Sidebar tooltip position**: `NAV_TOOLTIPS` renders tooltips at `left: 220px` (sidebar width). If the sidebar width changes, update that value in `initNavTooltips()`.
 - **Adding a new view**: (1) add nav button in `index.html`, (2) add `<section class="view" id="{name}-view">`, (3) add `"{name}"` to the relevant role tabs in `PERMISSIONS`, (4) add to `PERM_SECTIONS`, (5) add entry to `NAV_TOOLTIPS`, (6) call `render{Name}()` from `render()`.
 - **POS requires migration 13**: `supabase/13_pos_tables.sql` must be applied in the Supabase SQL Editor. Until then, `checkoutPos()` will throw a table-not-found error.
+- **POS devoluciones require migration 43**: `supabase/43_pos_returns.sql` creates `pos_returns`/`pos_return_items`. Without it, the ↩ button never appears (`state.posSales[].items[].id` still resolves, but `openPosReturnModal()`'s INSERT will fail with a table-not-found error) — same failure mode as migration 13 for `checkoutPos()`.
+- **POS receipts need the `pos_sale_items`/`customers` join in `loadSupabaseState()`**: `state.posSales` only carries `total`/`paymentMethod` unless the `pos_sales` query embeds `pos_sale_items(*)` and `customers(full_name)`. If that join is ever removed, `printPosRecibo()` reprints (from `[data-reprint-pos]`) will silently drop all product lines — the immediate post-checkout print still works because `lastPosSale` is built straight from `posCart`, so this bug only shows up on reprint/reload, not on the very first print.
 - **Cotizaciones require migration 16**: `supabase/16_quote_items.sql` adds the `quote_items` JSONB column. Without it, saving a cotización with line items will silently discard them.
 - **Discount codes require migration 18**: `supabase/18_discount_codes.sql`. Without it, `state.discounts` stays `[]` and all discount code lookups fail silently (returns `{valid: false}`).
 - **`applyDiscount` scope must match exactly**: valid scope values are `"pos"`, `"cotizacion"`, `"ticket"`. A mismatch (e.g. passing `"tickets"`) always returns `{valid: false}` — check the scope array in the `discount_codes` row and the call site.

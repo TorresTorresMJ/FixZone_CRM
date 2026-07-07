@@ -648,6 +648,31 @@
     </div>
   </dialog>
 
+  <!-- ── POS return modal ─────────────────────────────────────────────────── -->
+  <dialog class="modal" id="pos-return-modal" style="max-width:420px">
+    <div class="modal-header">
+      <div>
+        <small class="eyebrow" id="pos-return-eyebrow">Devolución</small>
+        <h2 class="modal-title">Registrar devolución</h2>
+      </div>
+      <button class="icon-button" type="button" id="close-pos-return-modal" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="pos-return-form" class="form-fields">
+        <div id="pos-return-items"></div>
+        <div class="field">
+          <label for="pos-return-reason">Motivo (opcional)</label>
+          <input id="pos-return-reason" type="text" placeholder="Ej. producto defectuoso" />
+        </div>
+        <div id="pos-return-total" style="font-size:13px;font-weight:600"></div>
+        <div class="modal-actions">
+          <button type="button" class="ghost-button" id="cancel-pos-return">Cancelar</button>
+          <button type="submit" class="primary-action">Registrar devolución</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
   <!-- ── Confirm modal ────────────────────────────────────────────────────── -->
   <dialog class="modal" id="confirm-modal" style="max-width:380px">
     <div class="modal-header" style="border-bottom:none;padding-bottom:0">
