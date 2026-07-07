@@ -14,6 +14,10 @@ body {
 
 button, input, select { font: inherit; }
 button { cursor: pointer; }
+/* Sin esto, Chrome/Edge dibujan la lista desplegada de <select> con fondo
+   blanco nativo; como el texto hereda blanco del tema oscuro, las opciones
+   son ilegibles salvo la que está resaltada en azul al pasar el mouse. */
+select { color-scheme: dark; }
 
 /* ── Login / Change Password screens ─────────────────────────────────────── */
 #login-screen,
@@ -897,7 +901,7 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   color: var(--fz-white);
 }
 
-.field option { color: #101217; }
+select option { color: #101217; }
 
 /* ── Kanban: columnas compactas, auto-fill en escritorio, hover reveal ──── */
 /* En escritorio las columnas se reparten el espacio; sólo hay scroll si la
@@ -1691,6 +1695,13 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .pos-add-btn:hover:not(:disabled) { background: rgba(var(--fz-primary-rgb), 0.35); }
 .pos-add-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .low-stock { color: #f59e0b; font-size: 12px; white-space: nowrap; }
+.pos-side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 14px;
+}
 .pos-cart-panel {
   border: 1px solid rgba(255,255,255,0.09);
   border-radius: 8px;
@@ -1699,8 +1710,6 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  position: sticky;
-  top: 14px;
 }
 .pos-cart-items {
   min-height: 80px;
@@ -1731,14 +1740,27 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .pos-total-row.grand { font-size: 18px; font-weight: 700; color: var(--fz-primary); margin-top: 4px; }
 @media (max-width: 900px) {
   .pos-layout { grid-template-columns: 1fr; }
-  .pos-cart-panel { position: static; }
+  .pos-side-panel { position: static; }
 }
-.pos-history-day { margin-bottom: 16px; }
+#pos-history {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 8px;
+  background: rgba(20,20,28,0.9);
+  padding: 14px 16px;
+}
+.pos-history-days {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pos-history-day { }
 .pos-history-day-head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 6px 2px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 2px;
   border-bottom: 1px solid rgba(255,255,255,0.1);
   margin-bottom: 6px;
 }
@@ -1750,23 +1772,18 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   padding: 8px 10px;
 }
 .pos-history-sale-main {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 10px;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .pos-history-sale-info { min-width: 0; }
-.pos-history-sale-amount { text-align: right; white-space: nowrap; }
+.pos-history-sale-amount { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .pos-history-sale-actions { display: flex; gap: 4px; }
 .pos-history-sale-returns {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px dashed rgba(255,255,255,0.1);
   font-size: 11px;
-}
-@media (max-width: 640px) {
-  .pos-history-sale-main { grid-template-columns: 1fr; }
-  .pos-history-sale-amount { text-align: left; }
 }
 .pos-return-item-row {
   display: flex;

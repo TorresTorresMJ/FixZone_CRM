@@ -2390,22 +2390,24 @@ function renderPosHistory() {
   const days = [...groups.keys()].sort((a, b) => b.localeCompare(a));
 
   container.innerHTML = `
-    <div class="section-heading" style="margin-bottom:10px"><h2>Historial de ventas</h2></div>
-    ${days.map(day => {
-      const daySales    = groups.get(day);
-      const dayTotal    = daySales.reduce((s, v) => s + Number(v.total || 0), 0);
-      const dayReturned = daySales.reduce((s, v) => s + Number(v.totalReturned || 0), 0);
-      return `
-        <div class="pos-history-day">
-          <div class="pos-history-day-head">
-            <strong>${day}</strong>
-            <span class="muted" style="font-size:11px">${daySales.length} venta${daySales.length === 1 ? "" : "s"} · ${money.format(dayTotal)}${dayReturned > 0 ? ` · -${money.format(dayReturned)} devuelto` : ""}</span>
-          </div>
-          <div class="pos-history-day-body">
-            ${daySales.map(renderPosSaleRow).join("")}
-          </div>
-        </div>`;
-    }).join("")}`;
+    <div class="section-heading" style="margin-bottom:8px"><h2 style="font-size:14px">Ventas recientes</h2></div>
+    <div class="pos-history-days">
+      ${days.map(day => {
+        const daySales    = groups.get(day);
+        const dayTotal    = daySales.reduce((s, v) => s + Number(v.total || 0), 0);
+        const dayReturned = daySales.reduce((s, v) => s + Number(v.totalReturned || 0), 0);
+        return `
+          <div class="pos-history-day">
+            <div class="pos-history-day-head">
+              <strong style="font-size:12px">${day}</strong>
+              <span class="muted" style="font-size:11px">${daySales.length} venta${daySales.length === 1 ? "" : "s"} · ${money.format(dayTotal)}${dayReturned > 0 ? ` · -${money.format(dayReturned)} devuelto` : ""}</span>
+            </div>
+            <div class="pos-history-day-body">
+              ${daySales.map(renderPosSaleRow).join("")}
+            </div>
+          </div>`;
+      }).join("")}
+    </div>`;
 }
 
 function renderPosSaleRow(s) {
@@ -2427,12 +2429,14 @@ function renderPosSaleRow(s) {
           <div class="muted" style="font-size:11px">${itemsSummary}</div>
         </div>
         <div class="pos-history-sale-amount">
-          <strong>${money.format(s.total)}</strong>
-          ${s.totalReturned > 0 ? `<div style="font-size:10px;color:#ef4444">-${money.format(s.totalReturned)} devuelto</div>` : ""}
-        </div>
-        <div class="pos-history-sale-actions">
-          <button class="mini-button" data-reprint-pos="${s.id}" title="Reimprimir recibo">🖨</button>
-          ${canReturn ? `<button class="mini-button" data-return-pos="${s.id}" title="Registrar devolución">↩</button>` : ""}
+          <div>
+            <strong>${money.format(s.total)}</strong>
+            ${s.totalReturned > 0 ? `<div style="font-size:10px;color:#ef4444">-${money.format(s.totalReturned)} devuelto</div>` : ""}
+          </div>
+          <div class="pos-history-sale-actions">
+            <button class="mini-button" data-reprint-pos="${s.id}" title="Reimprimir recibo">🖨</button>
+            ${canReturn ? `<button class="mini-button" data-return-pos="${s.id}" title="Registrar devolución">↩</button>` : ""}
+          </div>
         </div>
       </div>
       ${returnsDetail}
