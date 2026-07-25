@@ -393,8 +393,14 @@ async function afterLogin(authUser) {
     // Revela el shell con skeletons (ver index.html) mientras reloadState() carga
     // los datos de Supabase, en vez de dejar la pantalla en blanco/login.
     showApp();
-    await reloadState();
+    // Se marca "remote" ANTES de reloadState(), no después: el "finally" de
+    // reloadState() llama setLoading(false), que pinta el footer ("Supabase activo" /
+    // "Base local activa") según dataMode en ese instante. Si se asigna después de el
+    // await, el footer queda mostrando "Base local activa" para siempre tras cada login
+    // (nada más lo repinta), aunque los datos sí sean remotos — un falso indicio de modo
+    // local que no refleja el estado real.
     dataMode = "remote";
+    await reloadState();
     if (currentEmployee?.default_branch_id) {
       const branch = [...lookups.branchesByName.values()]
         .find(b => b.id === currentEmployee.default_branch_id);
@@ -618,8 +624,8 @@ async function handleChangePassword(e) {
       .eq("id", currentEmployee.id);
     currentEmployee.force_password_change = false;
     document.querySelector("#change-password-screen").style.display = "none";
-    await reloadState();
     dataMode = "remote";
+    await reloadState();
     showApp();
     render();
   } catch(err) {
@@ -1448,6 +1454,10 @@ function ticketCard(ticket, perms, idx = 0) {
       </span>
     </div>` : "";
 
+  const itemsCountHtml = (ticket.quoteItems?.length || 0) > 0
+    ? `<div style="margin-top:4px;font-size:10px;color:rgba(255,255,255,.4)">🧾 ${ticket.quoteItems.length} partida${ticket.quoteItems.length>1?"s":""}</div>`
+    : "";
+
   const timerBadge = ticket.timerTargetAt ? timerBadgeData(ticket.timerTargetAt) : null;
   const timerHtml = timerBadge
     ? `<div data-timer-badge data-timer-target="${escapeHtml(ticket.timerTargetAt)}" style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:${timerBadge.bg};border:1px solid ${timerBadge.border};color:${timerBadge.color}">⏱️ ${timerBadge.label}</div>`
@@ -1475,6 +1485,7 @@ function ticketCard(ticket, perms, idx = 0) {
     ${timerHtml}
     ${dueDateHtml}
     ${priceHtml}
+    ${itemsCountHtml}
     <div class="ticket-actions">
       <button class="mini-button" data-print-ticket="${ticket.id}" title="Opciones de impresión">🖨</button>
       <button class="mini-button" style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);color:#25d366" data-wa-ticket="${ticket.id}" title="Enviar por WhatsApp">💬</button>
@@ -5462,6 +5473,144 @@ function buildQuoteItemsSection(currentCode = "") {
     </div>`;
 }
 
+// ── Ticket service items builder ──────────────────────────────────────────────
+// Desglose opcional de varios servicios/productos dentro de un mismo ticket (a
+// diferencia de "cotizacion", el ticket conserva su campo plano "Monto reparación"
+// para el caso común de un solo cobro — este builder solo entra en juego si se
+// agrega al menos una partida, momento en el que el campo se vuelve de solo lectura
+// y se sincroniza con la suma de partidas menos el descuento, igual que en cotizaciones.
+let ticketItemsDraft = [];
+
+function ticketItemsSubtotal() {
+  return ticketItemsDraft.reduce((s, i) => s + Number(i.qty||0) * Number(i.unitPrice||0), 0);
+}
+
+function renderTicketItemsDraft() {
+  const rowsEl  = document.querySelector("#ti-rows");
+  const emptyEl = document.querySelector("#ti-empty");
+  if (!rowsEl) return;
+  emptyEl && (emptyEl.style.display = ticketItemsDraft.length ? "none" : "");
+  const serviceTypes = state.serviceTypes || [];
+  const INP = `border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;padding:5px 8px`;
+  rowsEl.innerHTML = ticketItemsDraft.map((item, idx) => {
+    const descField = item.type === "Servicio"
+      ? `<select class="ti-desc" data-idx="${idx}" style="font-size:12px;padding:5px 6px;${INP}">
+           <option value="">— Tipo de servicio —</option>
+           ${serviceTypes.map(t=>`<option value="${escapeHtml(t.name)}" ${item.description===t.name?"selected":""}>${escapeHtml(t.name)}</option>`).join("")}
+         </select>`
+      : `<input class="ti-desc" data-idx="${idx}" type="text"
+           placeholder="${item.type==="Producto"?"Nombre del producto…":"Descripción…"}"
+           value="${escapeHtml(item.description||"")}" style="font-size:13px;${INP}">`;
+    return `
+    <div class="ti-row" style="display:grid;grid-template-columns:100px 1fr 52px 88px 26px;gap:6px;align-items:center;margin-bottom:4px">
+      <select class="ti-type" data-idx="${idx}" style="font-size:12px;padding:5px 6px;${INP}">
+        ${["Servicio","Refacción","Producto"].map(t=>`<option ${item.type===t?"selected":""}>${t}</option>`).join("")}
+      </select>
+      ${descField}
+      <input class="ti-qty" data-idx="${idx}" type="number" value="${item.qty}" min="1" style="font-size:13px;text-align:center;${INP}">
+      <input class="ti-price" data-idx="${idx}" type="number" value="${item.unitPrice||""}" placeholder="Precio" min="0" step="0.01" style="font-size:13px;${INP}">
+      <button type="button" class="ti-del" data-idx="${idx}" title="Eliminar" style="padding:2px 5px;font-size:13px;opacity:.5;cursor:pointer;background:none;border:none;color:inherit">✕</button>
+    </div>`;
+  }).join("");
+  updateTicketItemsHidden();
+}
+
+function updateTicketItemsHidden() {
+  const jsonInput = document.querySelector("#ti-items-json");
+  if (jsonInput) jsonInput.value = JSON.stringify(ticketItemsDraft);
+  const subtotal = ticketItemsSubtotal();
+  const subEl   = document.querySelector("#ti-subtotal");
+  const subWrap = document.querySelector("#ti-subtotal-wrap");
+  if (subEl)   subEl.textContent = money.format(subtotal);
+  if (subWrap) subWrap.style.display = ticketItemsDraft.length ? "flex" : "none";
+  formFields._recalcTicketAmount?.();
+}
+
+function initTicketItemsBuilder(existingItems = []) {
+  ticketItemsDraft = existingItems.map(i => ({ ...i }));
+  renderTicketItemsDraft();
+
+  document.querySelector("#ti-add-service")?.addEventListener("click", () => {
+    ticketItemsDraft.push({ type: "Servicio", description: "", qty: 1, unitPrice: 0 });
+    renderTicketItemsDraft();
+    document.querySelectorAll(".ti-desc")[ticketItemsDraft.length - 1]?.focus();
+  });
+  document.querySelector("#ti-add-product")?.addEventListener("click", () => {
+    ticketItemsDraft.push({ type: "Producto", description: "", qty: 1, unitPrice: 0 });
+    renderTicketItemsDraft();
+    document.querySelectorAll(".ti-desc")[ticketItemsDraft.length - 1]?.focus();
+  });
+
+  document.querySelector("#ti-rows")?.addEventListener("input", e => {
+    const idx = Number(e.target.dataset.idx);
+    if (isNaN(idx) || !ticketItemsDraft[idx]) return;
+    if (e.target.tagName === "SELECT") return;
+    if (e.target.classList.contains("ti-desc"))       ticketItemsDraft[idx].description = e.target.value;
+    else if (e.target.classList.contains("ti-qty"))   ticketItemsDraft[idx].qty = Math.max(1, Number(e.target.value)||1);
+    else if (e.target.classList.contains("ti-price")) ticketItemsDraft[idx].unitPrice = Number(e.target.value)||0;
+    updateTicketItemsHidden();
+  });
+  document.querySelector("#ti-rows")?.addEventListener("change", e => {
+    const idx = Number(e.target.dataset.idx);
+    if (isNaN(idx) || !ticketItemsDraft[idx]) return;
+    if (e.target.classList.contains("ti-type")) {
+      ticketItemsDraft[idx].type = e.target.value;
+      ticketItemsDraft[idx].description = "";
+      renderTicketItemsDraft();
+      return;
+    }
+    if (e.target.classList.contains("ti-desc") && ticketItemsDraft[idx].type === "Servicio") {
+      const svcName = e.target.value;
+      ticketItemsDraft[idx].description = svcName;
+      if (svcName) {
+        const deviceName = formFields.querySelector("#productName")?.value?.trim();
+        const branchId   = (state.branches||[]).find(b=>b.name===activeBranchId)?.id;
+        const stype      = (state.serviceTypes||[]).find(t=>t.name===svcName);
+        if (stype) {
+          const rec = deviceName ? (state.servicePrices||[]).find(p =>
+            p.deviceModel.toLowerCase() === deviceName.toLowerCase() &&
+            p.serviceTypeId === stype.id &&
+            (!p.branchId || p.branchId === branchId)
+          ) : null;
+          const finalPrice = (rec && rec.price > 0) ? rec.price : (stype.defaultPrice > 0 ? stype.defaultPrice : 0);
+          if (finalPrice > 0) {
+            ticketItemsDraft[idx].unitPrice = finalPrice;
+            const priceInputs = document.querySelectorAll(".ti-price");
+            if (priceInputs[idx]) priceInputs[idx].value = finalPrice;
+            showToast(`💡 Precio: ${money.format(finalPrice)}${stype.defaultPrice>0&&!rec?" (base del servicio)":""}`);
+          }
+        }
+      }
+      updateTicketItemsHidden();
+    }
+  });
+  document.querySelector("#ti-rows")?.addEventListener("click", e => {
+    const del = e.target.closest(".ti-del");
+    if (!del) return;
+    ticketItemsDraft.splice(Number(del.dataset.idx), 1);
+    renderTicketItemsDraft();
+  });
+}
+
+function buildTicketItemsSection() {
+  return `
+    <div class="field is-wide" id="ticket-items-section" style="margin-top:10px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;opacity:.65">Desglose de servicios (opcional)</label>
+        <div style="display:flex;gap:6px">
+          <button type="button" class="mini-button" id="ti-add-service" style="font-size:11px;padding:3px 10px">+ Servicio</button>
+          <button type="button" class="mini-button" id="ti-add-product" style="font-size:11px;padding:3px 10px">+ Producto</button>
+        </div>
+      </div>
+      <p id="ti-empty" class="muted" style="font-size:11px;margin:0 0 6px">Si el ticket es un solo cobro, no necesitas esto — captura el monto arriba. Agrega partidas solo si quieres desglosar varios servicios/productos; el total se sincroniza automáticamente.</p>
+      <div id="ti-rows"></div>
+      <div id="ti-subtotal-wrap" style="display:none;justify-content:flex-end;gap:8px;margin-top:6px;font-size:12px">
+        <span class="muted">Subtotal partidas</span><strong id="ti-subtotal">$0.00</strong>
+      </div>
+      <input type="hidden" name="quoteItemsJson" id="ti-items-json" value="[]">
+    </div>`;
+}
+
 function openForm(type, prefill = {}) {
   activeForm      = type;
   editingTicketId = null;
@@ -5477,6 +5626,7 @@ function openForm(type, prefill = {}) {
   }
   // FIX: show photo info note when creating a ticket (photos available after first save)
   if (type === "ticket") {
+    formFields.innerHTML += buildTicketItemsSection();
     formFields.innerHTML += `
       <div class="field is-wide" style="margin-top:8px">
         <label>Fotos del equipo</label>
@@ -5506,7 +5656,7 @@ function openForm(type, prefill = {}) {
   }
   initDeviceAutocomplete();
   if (type === "ticket" || type === "cotizacion") initClientAutocomplete();
-  if (type === "ticket") { initPriceAutofill(); initDiscountAutofill(); initTicketCotizadorWidget(); }
+  if (type === "ticket") { initPriceAutofill(); initDiscountAutofill(); initTicketCotizadorWidget(); initTicketItemsBuilder(prefill.quoteItems||[]); }
   openModal();
 }
 
@@ -5577,12 +5727,13 @@ function openEditTicket(ticketId) {
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["ticket"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, ticket[name] ?? "", optional)
-  ).join("") + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
+  ).join("") + buildTicketItemsSection() + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
   initDeviceAutocomplete();
   initClientAutocomplete();
   initPriceAutofill();
   initDiscountAutofill();
   initTicketCotizadorWidget();
+  initTicketItemsBuilder(ticket.quoteItems || []);
   openModal();
   initPhotoUpload(ticketId);
   loadTicketParts(ticketId);
@@ -6211,6 +6362,7 @@ function initPriceAutofill() {
   if (!deviceInput || !serviceSelect || !amountInput) return;
 
   const lookupPrice = () => {
+    if (ticketItemsDraft.length > 0) return; // el desglose de partidas manda el monto
     const device  = deviceInput.value.trim();
     const svcName = serviceSelect.value;
     if (!svcName) return;
@@ -6246,14 +6398,30 @@ function initDiscountAutofill() {
   const repairInput  = formFields.querySelector("#repairAmount");
   if (!codeSelect || !amountInput || !repairInput) return;
 
+  // Cuando hay partidas en el desglose (ticketItemsDraft), "Monto reparación" deja de
+  // ser editable a mano: se recalcula como suma de partidas menos el descuento, igual
+  // que en cotizaciones (ver ticketAmounts()). Sin partidas, se mantiene el flujo plano
+  // de siempre — el monto se captura directo y el descuento se resta al mostrar el total.
   const recalc = () => {
-    if (!codeSelect.value) return; // sin código: el monto queda editable manualmente
-    const result = applyDiscount(Number(repairInput.value || 0), codeSelect.value, "ticket");
-    amountInput.value = result.valid ? result.amount.toFixed(2) : 0;
+    const hasItems = ticketItemsDraft.length > 0;
+    const subtotal = hasItems ? ticketItemsSubtotal() : Number(repairInput.value || 0);
+    if (codeSelect.value) {
+      const result = applyDiscount(subtotal, codeSelect.value, "ticket");
+      amountInput.value = result.valid ? result.amount.toFixed(2) : 0;
+    }
+    if (hasItems) {
+      repairInput.value = Math.max(0, subtotal - Number(amountInput.value || 0)).toFixed(2);
+    }
+    repairInput.readOnly = hasItems;
+    repairInput.style.opacity = hasItems ? "0.65" : "";
+    const cotWidget = formFields.querySelector("#ticket-cot-widget");
+    if (cotWidget) cotWidget.style.display = hasItems ? "none" : "";
   };
 
   codeSelect.addEventListener("change", recalc);
   repairInput.addEventListener("input", recalc);
+  formFields._recalcTicketAmount = recalc;
+  recalc();
 }
 
 function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=false) {
@@ -6466,20 +6634,19 @@ recordForm.addEventListener("submit", async e => {
   if (activeForm === "ticket" && editingTicketId) {
     data.repairAmount = Number(data.repairAmount||0);
     data.paidAmount   = Number(data.paidAmount||0);
+    // El desglose de partidas (ticketItemsDraft) es opcional en el formulario plano de
+    // ticket — si el técnico agregó al menos una, "Monto reparación" ya llega calculado
+    // como neto (suma de partidas − descuento, ver initDiscountAutofill). Si no se usó,
+    // se limpia quote_items para que el monto editado se interprete siempre como bruto
+    // (pre-descuento) — igual que antes de este builder.
+    data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
+    delete data.quoteItemsJson;
+    const hasItems = data.quoteItems.length > 0;
     // El estado de pago se calcula contra el TOTAL NETO (monto - descuento), no contra
     // el monto bruto — comparar contra el bruto hacía que un ticket ya pagado al 100%
     // (pagado == neto) se quedara marcado "Abonado" para siempre.
-    const netTotal = Math.max(0, data.repairAmount - Number(data.discountAmount||0));
+    const netTotal = hasItems ? data.repairAmount : Math.max(0, data.repairAmount - Number(data.discountAmount||0));
     data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=netTotal && netTotal>0 ? "Pagado" : "Abonado");
-    // El formulario plano de ticket no tiene constructor de partidas (eso es solo en
-    // "cotizacion") — si el ticket viene de una cotización convertida, todavía carga
-    // un quote_items viejo en la DB. ticketAmounts() interpreta repairAmount distinto
-    // según haya o no quoteItems (post-descuento vs pre-descuento), así que mantener
-    // ese arreglo viejo mientras "Monto reparación" se edita como monto plano produce
-    // un descuento mal calculado (ej. resta el descuento dos veces). Al guardar desde
-    // este formulario, se limpia quote_items para que el monto editado se interprete
-    // siempre como pre-descuento.
-    data.quoteItems = [];
     try {
       const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTicketId);
       if (dataMode==="remote" && isRealUUID) {
@@ -6508,9 +6675,9 @@ recordForm.addEventListener("submit", async e => {
   if (activeForm==="ticket" || activeForm==="cotizacion") {
     data.tracking      = activeForm==="cotizacion" ? nextCotTracking() : nextTracking(nextTicketSequence());
     data.repairAmount  = Number(data.repairAmount||0);
+    data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
+    delete data.quoteItemsJson;
     if (activeForm==="cotizacion") {
-      data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
-      delete data.quoteItemsJson;
       // Derive issue from line-item descriptions if not filled manually; fall back to
       // notes, then a placeholder, so a cotización without items doesn't violate the
       // not-null constraint on service_tickets.issue_description.
@@ -6525,7 +6692,8 @@ recordForm.addEventListener("submit", async e => {
       data.assignedTo    = data.assignedTo || "";
     } else {
       data.paidAmount    = Number(data.paidAmount||0);
-      const netTotal = Math.max(0, data.repairAmount - Number(data.discountAmount||0));
+      const hasItems = data.quoteItems.length > 0;
+      const netTotal = hasItems ? data.repairAmount : Math.max(0, data.repairAmount - Number(data.discountAmount||0));
       data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=netTotal && netTotal>0 ? "Pagado" : "Abonado");
     }
   }
@@ -6703,13 +6871,17 @@ async function createRemoteTicket(r) {
   // without this, a client entered without phone never gets a customers row, and fields
   // like "¿Cómo nos conocieron?" have nowhere to be saved and get silently discarded).
   if (!customer && r.client) {
-    const { data: newCust } = await supabaseClient.from("customers").insert({
+    const { data: newCust, error: newCustErr } = await supabaseClient.from("customers").insert({
       full_name: r.client,
       phone: r.clientPhone||null,
       branch_id: await branchIdByName(r.branch||activeBranchId),
       how_found: r.howFound||null,
       how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
     }).select().single();
+    // Un error aquí (típicamente RLS) antes se ignoraba en silencio: el ticket se
+    // guardaba igual pero sin customer_id, dejando el teléfono/canal de referencia
+    // sin dónde persistir para siempre — sin ningún aviso de que algo falló.
+    if (newCustErr) throw new Error(`No se pudo registrar el cliente "${r.client}": ${newCustErr.message}`);
     if (newCust) {
       customer = { id: newCust.id };
       lookups.customersByName.set(r.client, customer);
@@ -6721,17 +6893,19 @@ async function createRemoteTicket(r) {
     // Sincroniza teléfono si el usuario capturó uno distinto al guardado —
     // esto permite corregir un número equivocado desde un ticket/cotización posterior.
     if (r.clientPhone && r.clientPhone !== existingClient?.phone) {
-      await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+      const { error: phoneErr } = await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+      if (phoneErr) throw new Error(`No se pudo guardar el teléfono del cliente: ${phoneErr.message}`);
       const idx = state.clients.findIndex(c=>c.id===customer.id);
       if (idx>=0) state.clients[idx].phone = r.clientPhone;
     }
     // Sincroniza "¿Cómo nos conocieron?" si cambió — permite corregir el canal
     // de referencia en un ticket/cotización posterior sin perder la información.
     if (r.howFound !== undefined && r.howFound !== existingClient?.howFound) {
-      await supabaseClient.from("customers").update({
+      const { error: hfErr } = await supabaseClient.from("customers").update({
         how_found: r.howFound||null,
         how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
       }).eq("id", customer.id);
+      if (hfErr) throw new Error(`No se pudo guardar "¿Cómo nos conocieron?": ${hfErr.message}`);
       const idx = state.clients.findIndex(c=>c.id===customer.id);
       if (idx>=0) { state.clients[idx].howFound = r.howFound||""; state.clients[idx].howFoundOther = r.howFound==="Otro" ? (r.howFoundOther||"") : ""; }
     }
@@ -6743,8 +6917,12 @@ async function createRemoteTicket(r) {
   }
   const assignedE = lookups.employeesByName.get(r.assignedTo);
   const branchId  = await branchIdByName(r.branch||activeBranchId);
-  // Auto-apply discount code if provided
-  const disc = r.discountCode ? applyDiscount(Number(r.repairAmount||0), r.discountCode) : { amount: Number(r.discountAmount||0), pct: 0 };
+  // Auto-apply discount code if provided. Si hay quoteItems (desglose de partidas), el
+  // descuento ya viene pre-calculado por el builder de líneas contra el subtotal correcto
+  // — recalcularlo aquí usaría repairAmount ya neto como si fuera bruto (descuento doble).
+  const disc = (!r.quoteItems?.length && r.discountCode)
+    ? applyDiscount(Number(r.repairAmount||0), r.discountCode)
+    : { amount: Number(r.discountAmount||0), pct: Number(r.discountPct||0) };
   const { data, error } = await supabaseClient.from("service_tickets").insert({
     customer_id:customer?.id||null, customer_name:r.client,
     product_name:r.productName, issue_description:r.issue,
@@ -6870,36 +7048,48 @@ async function updateRemoteTicket(ticketId, r) {
 
   // Auto-register or update customer phone/referral source when editing
   if (r.client) {
-    let customer = lookups.customersByName.get(r.client) || (oldTicket?.customerId ? { id: oldTicket.customerId } : null);
+    // The ticket's own FK always wins over a name lookup: two different customers can
+    // share the same full_name (e.g. two walk-ins both named "Leonardo"), and
+    // customersByName only keeps one of them — using it first would silently sync the
+    // phone/referral edit onto an unrelated customer row while the one actually linked
+    // to this ticket (and read back via customer_id on reload) stays blank forever.
+    let customer = (oldTicket?.customerId ? { id: oldTicket.customerId } : null) || lookups.customersByName.get(r.client);
     if (!customer) {
-      const { data: newCust } = await supabaseClient.from("customers").insert({
+      const { data: newCust, error: newCustErr } = await supabaseClient.from("customers").insert({
         full_name: r.client,
         phone: r.clientPhone||null,
         branch_id: await branchIdByName(r.branch||activeBranchId),
         how_found: r.howFound||null,
         how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
       }).select().single();
+      // Sin este chequeo, un error aquí (ej. RLS) se ignoraba en silencio: el ticket
+      // seguía sin customer_id, y el teléfono capturado en el formulario desaparecía
+      // sin ningún aviso — parecía "guardado" pero nunca tuvo dónde persistir.
+      if (newCustErr) throw new Error(`No se pudo registrar el cliente "${r.client}": ${newCustErr.message}`);
       if (newCust) {
         customer = { id: newCust.id };
         lookups.customersByName.set(r.client, customer);
         state.clients.unshift({ id:newCust.id, name:r.client, phone:r.clientPhone||"", email:"", device:"", devices:[], lastVisit:dateStamp(), status:"Activo", branch:r.branch||activeBranchId, howFound:r.howFound||"", howFoundOther:r.howFoundOther||"" });
         showToast(`✓ Cliente "${r.client}" registrado automáticamente`);
-        await supabaseClient.from("service_tickets").update({ customer_id: newCust.id }).eq("id", ticketId);
+        const { error: linkErr } = await supabaseClient.from("service_tickets").update({ customer_id: newCust.id }).eq("id", ticketId);
+        if (linkErr) throw new Error(`No se pudo vincular el cliente al ticket: ${linkErr.message}`);
       }
     } else if (customer) {
       if (r.clientPhone) {
         const existing = state.clients.find(c=>c.id===customer.id);
         if (r.clientPhone !== existing?.phone) {
-          await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+          const { error: phoneErr } = await supabaseClient.from("customers").update({ phone: r.clientPhone }).eq("id", customer.id);
+          if (phoneErr) throw new Error(`No se pudo guardar el teléfono del cliente: ${phoneErr.message}`);
           const idx = state.clients.findIndex(c=>c.id===customer.id);
           if (idx>=0) state.clients[idx].phone = r.clientPhone;
         }
       }
       if (r.howFound !== undefined && r.howFound !== oldTicket?.howFound) {
-        await supabaseClient.from("customers").update({
+        const { error: hfErr } = await supabaseClient.from("customers").update({
           how_found: r.howFound||null,
           how_found_other: r.howFound==="Otro" ? (r.howFoundOther||null) : null,
         }).eq("id", customer.id);
+        if (hfErr) throw new Error(`No se pudo guardar "¿Cómo nos conocieron?": ${hfErr.message}`);
         const idx = state.clients.findIndex(c=>c.id===customer.id);
         if (idx>=0) { state.clients[idx].howFound = r.howFound||""; state.clients[idx].howFoundOther = r.howFound==="Otro" ? (r.howFoundOther||"") : ""; }
       }
@@ -7062,7 +7252,7 @@ async function updateRemoteTicket(ticketId, r) {
       physical_condition:   r.physicalCondition||null,
     }).eq("id", oldTicket.deviceId);
   } else if (r.productName || r.imei || r.color || r.accessories || r.physicalCondition) {
-    const customer = lookups.customersByName.get(r.client) || (oldTicket?.customerId ? { id: oldTicket.customerId } : null);
+    const customer = (oldTicket?.customerId ? { id: oldTicket.customerId } : null) || lookups.customersByName.get(r.client);
     const { data: dev } = await supabaseClient.from("customer_devices").insert({
       customer_id:          customer?.id||null,
       product_name:         r.productName||"Sin nombre",
@@ -8183,7 +8373,8 @@ function waLink(phone, message) {
 }
 
 function showWhatsAppToast(ticket, msgText) {
-  const client = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const client = (ticket.customerId && state.clients.find(c => c.id === ticket.customerId))
+    || state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone  = ticket.phone || client?.phone || "";
   if (!phone) return;
   const link = waLink(phone, msgText);
@@ -8193,7 +8384,8 @@ function showWhatsAppToast(ticket, msgText) {
 function showWAPanel(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
-  const client = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const client = (ticket.customerId && state.clients.find(c => c.id === ticket.customerId))
+    || state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone  = ticket.phone || client?.phone || "";
   const brand  = window.getBranchBrand(ticket.branch || activeBranchId);
 
@@ -9111,7 +9303,8 @@ function doPrint(filenameBase) {
 
 // ── Receipt variants ──────────────────────────────────────────────────────────
 function printRecibo(ticket, type) {
-  const client    = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const client    = (ticket.customerId && state.clients.find(c => c.id === ticket.customerId))
+    || state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const { subtotal: repair, discount, total } = ticketAmounts(ticket);
   const paid      = Number(ticket.paidAmount || 0);
   const pending   = Math.max(0, total - paid);
@@ -9387,7 +9580,8 @@ async function buildCotizacionCanvas(ticket) {
   // Usa la fecha/hora real de creación del ticket, no la del momento de generar la imagen
   const createdDate = ticket.createdAtFull ? new Date(ticket.createdAtFull) : new Date();
   const timeStr  = createdDate.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", hour12:false });
-  const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const client   = (ticket.customerId && state.clients.find(c => c.id === ticket.customerId))
+    || state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone    = ticket.clientPhone || client?.phone || "";
 
   // Layout vertical 390px — tarjeta optimizada para compartir por WhatsApp
@@ -9512,7 +9706,8 @@ async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
   const { subtotal: repairAmt, discount: discAmt, total } = ticketAmounts(ticket);
   const paidAmt  = Number(ticket.paidAmount || 0);
   const pending  = Math.max(0, total - paidAmt);
-  const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const client   = (ticket.customerId && state.clients.find(c => c.id === ticket.customerId))
+    || state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const phone    = ticket.clientPhone || client?.phone || "";
   const qrTarget = receiptQrTarget(ticket.id);
   const qrImage  = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=4&data=${encodeURIComponent(qrTarget)}`;
@@ -10021,7 +10216,8 @@ async function shareQuoteWhatsApp(ticketId) {
     ? items.reduce((s, i) => s + (i.qty || 1) * (i.unitPrice || 0), 0)
     : Number(ticket.repairAmount || 0) + discAmt;
   const total    = Math.max(0, subtotal - discAmt);
-  const client   = state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
+  const client   = (ticket.customerId && state.clients.find(c => c.id === ticket.customerId))
+    || state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const rawPhone = ticket.clientPhone || ticket.phone || client?.phone || "";
   const phone    = rawPhone.replace(/\D/g, "").replace(/^52/, "");
 
@@ -10507,6 +10703,18 @@ function viewTicketDetail(ticketId) {
     ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
     : "";
 
+  const items = ticket.quoteItems || [];
+  const itemsHtml = items.length
+    ? `<div class="tdv-issue" style="margin-bottom:10px">
+        <p class="muted" style="font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em">Desglose de servicios</p>
+        ${items.map(i => `
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0">
+            <span>${escapeHtml(i.type)} — ${escapeHtml(i.description||"")}${i.qty>1?` (${i.qty}×)`:""}</span>
+            <span style="white-space:nowrap;margin-left:8px">${money.format(i.qty*i.unitPrice)}</span>
+          </div>`).join("")}
+      </div>`
+    : "";
+
   // Eliminar instancia previa si existe
   document.querySelector("#tdv-dialog")?.remove();
 
@@ -10544,6 +10752,7 @@ function viewTicketDetail(ticketId) {
         ${row("Estado de pago", ticket.paymentStatus)}
         ${ticket.paymentMethod ? row("Método de pago", ticket.paymentMethod) : ""}
       </div>
+      ${itemsHtml}
       ${ticket.recibidoAt ? `
       <div class="detail-row" style="margin-bottom:10px;align-items:center">
         <span>Fecha de recepción</span>
