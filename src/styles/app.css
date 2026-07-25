@@ -1850,6 +1850,27 @@ select option { color: #101217; }
 }
 .device-suggestion-chip:hover { background: rgba(var(--fz-primary-rgb,8,90,203), .2); }
 
+/* ── Patrón de desbloqueo (NIP/patrón widget + detalle) ───────────────────── */
+.unlock-pattern-grid { display: flex; justify-content: center; }
+.pattern-grid-inner { position: relative; }
+.pattern-lines { position: absolute; left: 0; top: 0; pointer-events: none; }
+.pattern-lines line { stroke: var(--fz-primary, #085ACB); stroke-width: 3; stroke-linecap: round; }
+.pattern-dot {
+  position: absolute;
+  width: 18px; height: 18px;
+  margin: -9px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.12);
+  border: 2px solid rgba(255,255,255,.35);
+  cursor: pointer;
+  padding: 0;
+  transition: background .15s, border-color .15s, transform .15s;
+}
+.pattern-dot:hover { border-color: rgba(255,255,255,.6); }
+.pattern-dot.is-active { background: var(--fz-primary, #085ACB); border-color: var(--fz-primary, #085ACB); }
+.pattern-dot.is-current { transform: scale(1.25); box-shadow: 0 0 0 5px rgba(var(--fz-primary-rgb,8,90,203), .35); }
+.pattern-grid-inner.is-readonly .pattern-dot { cursor: default; pointer-events: none; }
+
 /* Ocultar flechitas de inputs numéricos en la tabla de precios */
 input[type=number].pv-price::-webkit-inner-spin-button,
 input[type=number].pv-price::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

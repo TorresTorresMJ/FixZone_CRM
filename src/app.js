@@ -199,6 +199,7 @@ const formSchemas = {
       ["color","Color","text",null,false,true],
       ["accessories","Accesorios recibidos","text",null,true,true],
       ["physicalCondition","Condición física","select",["Bueno","Regular","Con daños","Muy dañado"]],
+      ["unlockCode","Código de desbloqueo (NIP o patrón)","unlock-code",null,true,true],
       ["serviceType","Tipo de servicio","service-type-select",null,false,true],
       ["issue","Falla / trabajo","text",null,true],
       ["priority","Prioridad","select",["Normal","Media","Alta","Urgente"]],
@@ -253,6 +254,7 @@ const formSchemas = {
       ["client","Cliente","client-autocomplete"],
       ["clientPhone","Teléfono de contacto (opcional)","tel",null,false,true],
       ["productName","Dispositivo / equipo","device-autocomplete"],
+      ["unlockCode","Código de desbloqueo (NIP o patrón)","unlock-code",null,true,true],
       ["howFound","¿Cómo nos conocieron?","select",["",...REFERRAL_SOURCES],false,true],
       ["howFoundOther","Especificar (si elegiste \"Otro\")","text",null,false,true],
       ["branch","Sucursal","select",BRANCHES],
@@ -809,6 +811,9 @@ async function loadSupabaseState() {
         color:dev?.color||"",
         accessories:dev?.accessories_received||"",
         physicalCondition:dev?.physical_condition||"",
+        unlockType:dev?.unlock_type||"", unlockPin:dev?.unlock_pin||"",
+        unlockPattern:Array.isArray(dev?.unlock_pattern) ? dev.unlock_pattern : [],
+        unlockCode:{ type:dev?.unlock_type||"", pin:dev?.unlock_pin||"", pattern:Array.isArray(dev?.unlock_pattern) ? dev.unlock_pattern : [] },
         // Customer phone — enable search by phone number and pre-populate edit form
         phone:cust?.phone||"",
         clientPhone:cust?.phone||"",
@@ -4567,10 +4572,10 @@ function renderQuickMessages() {
   if (!el) return;
   // Skip re-render if the user is in edit mode — avoids overwriting unsaved changes
   if (el.querySelector("#qm-save-btn")) return;
-  const msgs = loadQuickMessages();
   let editMode = false;
 
   const render = () => {
+    const msgs = loadQuickMessages();
     const fresh = el.cloneNode(false);
     el.replaceWith(fresh);
     const container = document.querySelector("#quick-messages-manager");
@@ -5655,7 +5660,7 @@ function openForm(type, prefill = {}) {
     if (dcAmtPrefill  && prefill.discountAmount) dcAmtPrefill.value = prefill.discountAmount;
   }
   initDeviceAutocomplete();
-  if (type === "ticket" || type === "cotizacion") initClientAutocomplete();
+  if (type === "ticket" || type === "cotizacion") { initClientAutocomplete(); initUnlockCodeField(); }
   if (type === "ticket") { initPriceAutofill(); initDiscountAutofill(); initTicketCotizadorWidget(); initTicketItemsBuilder(prefill.quoteItems||[]); }
   openModal();
 }
@@ -5717,6 +5722,7 @@ function openEditTicket(ticketId) {
     initQuoteItemsBuilder(ticket.quoteItems || []);
     initDeviceAutocomplete();
     initClientAutocomplete();
+    initUnlockCodeField();
     openModal();
     return;
   }
@@ -5730,6 +5736,7 @@ function openEditTicket(ticketId) {
   ).join("") + buildTicketItemsSection() + buildPhotoUploadSection(ticketId) + `<div id="ticket-parts-section"></div><div id="ticket-events-section"></div>`;
   initDeviceAutocomplete();
   initClientAutocomplete();
+  initUnlockCodeField();
   initPriceAutofill();
   initDiscountAutofill();
   initTicketCotizadorWidget();
@@ -5980,6 +5987,109 @@ function getAllDeviceNames() {
   loadDeviceModels().forEach(add);
   (state.tickets || []).forEach(t => { if (t.productName) add(t.productName); });
   return result.sort((a, b) => a.localeCompare(b, "es"));
+}
+
+// ── Unlock code (NIP / patrón) widget ───────────────────────────────────────
+// Builds the 3x3 dot-grid markup used both by the editable form widget and the
+// read-only replay shown in viewTicketDetail(). Dots are absolutely positioned
+// inside a fixed-size box; an SVG overlay draws the connecting lines.
+function patternGridMarkup() {
+  const size = 180, pad = 30, step = (size - 2*pad) / 2;
+  let dots = "";
+  for (let i=0;i<9;i++) {
+    const r = Math.floor(i/3), c = i%3;
+    dots += `<button type="button" class="pattern-dot" data-dot="${i}" style="left:${pad+c*step}px;top:${pad+r*step}px"></button>`;
+  }
+  return `<div class="pattern-grid-inner" style="width:${size}px;height:${size}px">
+    <svg class="pattern-lines" width="${size}" height="${size}"></svg>
+    ${dots}
+  </div>`;
+}
+
+// Wires click-to-record (editable) or replay-only (read-only) behavior onto a host
+// element that already contains patternGridMarkup(). Returns a small controller used
+// by both the form widget (clear/preview buttons) and the ticket-detail auto-play.
+function wirePatternGrid(host, { sequence = [], editable = true, hiddenInput = null } = {}) {
+  const inner = host.querySelector(".pattern-grid-inner");
+  const svg   = inner?.querySelector(".pattern-lines");
+  const dots  = [...(inner?.querySelectorAll(".pattern-dot") || [])];
+  if (inner && !editable) inner.classList.add("is-readonly");
+  let seq = [...sequence];
+
+  const dotPos = i => ({ x: dots[i].offsetLeft + dots[i].offsetWidth/2, y: dots[i].offsetTop + dots[i].offsetHeight/2 });
+
+  function redraw(uptoCount = seq.length) {
+    const shown = seq.slice(0, uptoCount);
+    dots.forEach((d,i) => d.classList.toggle("is-active", shown.includes(i)));
+    if (svg) {
+      svg.innerHTML = shown.slice(1).map((idx,i) => {
+        const a = dotPos(shown[i]), b = dotPos(idx);
+        return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" />`;
+      }).join("");
+    }
+  }
+  redraw();
+
+  if (editable) {
+    dots.forEach((btn,i) => {
+      btn.addEventListener("click", () => {
+        if (seq.includes(i)) return;
+        seq.push(i);
+        redraw();
+        if (hiddenInput) hiddenInput.value = JSON.stringify(seq);
+      });
+    });
+  }
+
+  return {
+    getSequence() { return seq; },
+    clear() {
+      seq = [];
+      redraw();
+      if (hiddenInput) hiddenInput.value = "[]";
+    },
+    // Replays the recorded sequence dot-by-dot — the "gif" of the pattern trace.
+    animate() {
+      if (!seq.length) return;
+      let i = 0;
+      dots.forEach(d => d.classList.remove("is-current"));
+      const step = () => {
+        if (i > seq.length) return;
+        redraw(i);
+        dots.forEach(d => d.classList.remove("is-current"));
+        if (i > 0) dots[seq[i-1]]?.classList.add("is-current");
+        i++;
+        setTimeout(step, 420);
+      };
+      step();
+    },
+  };
+}
+
+// Wires the "Código de desbloqueo" field rendered by fieldTemplate('unlock-code', ...):
+// toggles NIP vs patrón sub-sections and attaches the editable pattern grid.
+function initUnlockCodeField(container = formFields) {
+  const typeSel  = container.querySelector("#unlockType");
+  const pinWrap  = container.querySelector("#unlock-pin-wrap");
+  const patWrap  = container.querySelector("#unlock-pattern-wrap");
+  const gridHost = container.querySelector("#unlock-pattern-grid");
+  const hidden   = container.querySelector("#unlockPatternJson");
+  if (!typeSel || !gridHost) return;
+
+  let initial = [];
+  try { initial = JSON.parse(gridHost.dataset.pattern || "[]"); } catch { initial = []; }
+  gridHost.innerHTML = patternGridMarkup();
+  const ctl = wirePatternGrid(gridHost, { sequence: initial, editable: true, hiddenInput: hidden });
+
+  const syncVisibility = () => {
+    if (pinWrap) pinWrap.style.display = typeSel.value === "pin" ? "block" : "none";
+    if (patWrap) patWrap.style.display = typeSel.value === "patron" ? "block" : "none";
+  };
+  syncVisibility();
+  typeSel.addEventListener("change", syncVisibility);
+
+  container.querySelector("#unlock-pattern-clear")?.addEventListener("click", () => ctl.clear());
+  container.querySelector("#unlock-pattern-preview")?.addEventListener("click", () => ctl.animate());
 }
 
 function initDeviceAutocomplete(container = formFields) {
@@ -6514,6 +6624,32 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
       </select>
     </div>`;
   }
+  if (ftype==="unlock-code") {
+    const val   = defaultValue || {};
+    const type  = val.type || "";
+    const pin   = val.pin || "";
+    const patternJson = escapeHtml(JSON.stringify(val.pattern || []));
+    return `<div class="field ${wide?"is-wide":""}" id="unlockCode-wrap">
+      <label for="unlockType">${labelHtml}</label>
+      <select id="unlockType" name="unlockType">
+        <option value="">— Ninguno —</option>
+        <option value="pin" ${type==="pin"?"selected":""}>NIP / contraseña numérica</option>
+        <option value="patron" ${type==="patron"?"selected":""}>Patrón</option>
+      </select>
+      <div id="unlock-pin-wrap" style="display:none;margin-top:8px">
+        <input id="unlockPin" name="unlockPin" type="text" inputmode="numeric" autocomplete="off"
+          maxlength="12" placeholder="Ej. 1234" value="${escapeHtml(pin)}" />
+      </div>
+      <div id="unlock-pattern-wrap" style="display:none;margin-top:8px">
+        <div id="unlock-pattern-grid" class="unlock-pattern-grid" data-pattern='${patternJson}'></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button type="button" class="mini-button" id="unlock-pattern-clear">Borrar</button>
+          <button type="button" class="mini-button" id="unlock-pattern-preview">▶ Ver animación</button>
+        </div>
+      </div>
+      <input type="hidden" id="unlockPatternJson" name="unlockPatternJson" value='${patternJson}' />
+    </div>`;
+  }
   const val = defaultValue ?? (ftype==="date" && name!=="dueDate" ? new Date().toISOString().slice(0,10) : "");
   const step = ftype==="number" ? ` step="0.01"` : "";
   return `<div class="field ${wide?"is-wide":""}">
@@ -6558,6 +6694,14 @@ recordForm.addEventListener("submit", async e => {
   const schema = formSchemas[activeForm];
   const data   = Object.fromEntries(new FormData(recordForm).entries());
   for (const [name,,ftype] of schema.fields) if (ftype==="number") data[name]=Number(data[name]||0);
+  // Unlock code widget (ticket/cotizacion): parse the recorded pattern sequence and
+  // bundle {type,pin,pattern} back into unlockCode so re-opening the edit form (before
+  // a reloadState() round-trip) can still prefill fieldTemplate('unlock-code', ...).
+  if (data.unlockPatternJson !== undefined) {
+    try { data.unlockPattern = JSON.parse(data.unlockPatternJson || "[]"); } catch { data.unlockPattern = []; }
+    delete data.unlockPatternJson;
+    data.unlockCode = { type: data.unlockType || "", pin: data.unlockPin || "", pattern: data.unlockPattern };
+  }
 
   // ── EDIT: generic (client, supply, transaction, cotizacion) ──────
   if (editingTicketId && activeForm !== "ticket") {
@@ -6946,18 +7090,26 @@ async function createRemoteTicket(r) {
   // Includes productName so cotizaciones (which only collect the device name,
   // not IMEI/color/etc.) still link a device to the client.
   let deviceId = null;
-  if (r.productName||r.imei||r.color||r.accessories||r.physicalCondition) {
-    const { data: dev } = await supabaseClient.from("customer_devices").insert({
+  if (r.productName||r.imei||r.color||r.accessories||r.physicalCondition||r.unlockType) {
+    const { data: dev, error: devErr } = await supabaseClient.from("customer_devices").insert({
       customer_id:          customer?.id||null,
       product_name:         r.productName||"Sin nombre",
       imei:                 r.imei||null,
       color:                r.color||null,
       accessories_received: r.accessories||null,
       physical_condition:   r.physicalCondition||null,
+      unlock_type:          r.unlockType||null,
+      unlock_pin:           r.unlockType==="pin"    ? (r.unlockPin||null) : null,
+      unlock_pattern:       r.unlockType==="patron" && r.unlockPattern?.length ? r.unlockPattern : null,
     }).select("id").single();
+    // Sin este chequeo, un fallo aquí (RLS u otro) se ignoraba en silencio: el ticket
+    // se guardaba igual pero sin device_id ni fila en customer_devices, dejando el
+    // "Equipo" del cliente vacío para siempre en la ficha de Clientes — sin aviso.
+    if (devErr) throw new Error(`No se pudo registrar el equipo: ${devErr.message}`);
     if (dev?.id) {
       deviceId = dev.id;
-      await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", data.id);
+      const { error: linkDevErr } = await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", data.id);
+      if (linkDevErr) throw new Error(`No se pudo vincular el equipo al ticket: ${linkDevErr.message}`);
     }
   }
 
@@ -6975,6 +7127,9 @@ async function createRemoteTicket(r) {
     discountCode:r.discountCode||"", discountAmount:disc.amount, discountPct:disc.pct,
     imei:r.imei||"", color:r.color||"",
     accessories:r.accessories||"", physicalCondition:r.physicalCondition||"",
+    unlockType:r.unlockType||"", unlockPin:r.unlockType==="pin" ? (r.unlockPin||"") : "",
+    unlockPattern:r.unlockType==="patron" ? (r.unlockPattern||[]) : [],
+    unlockCode:r.unlockCode||{type:"",pin:"",pattern:[]},
     quoteItems: r.quoteItems||[],
     waitingPart:false, waitingPartNote:"",
     timerTargetAt:null,
@@ -7244,25 +7399,37 @@ async function updateRemoteTicket(ticketId, r) {
   // (includes productName so cotizaciones, which only collect the device name,
   // still link/backfill a device for the client).
   if (oldTicket?.deviceId) {
-    await supabaseClient.from("customer_devices").update({
+    const { error: devUpdErr } = await supabaseClient.from("customer_devices").update({
       product_name:         r.productName||"Sin nombre",
       imei:                 r.imei||null,
       color:                r.color||null,
       accessories_received: r.accessories||null,
       physical_condition:   r.physicalCondition||null,
+      unlock_type:          r.unlockType||null,
+      unlock_pin:           r.unlockType==="pin"    ? (r.unlockPin||null) : null,
+      unlock_pattern:       r.unlockType==="patron" && r.unlockPattern?.length ? r.unlockPattern : null,
     }).eq("id", oldTicket.deviceId);
-  } else if (r.productName || r.imei || r.color || r.accessories || r.physicalCondition) {
+    if (devUpdErr) throw new Error(`No se pudo actualizar el equipo: ${devUpdErr.message}`);
+  } else if (r.productName || r.imei || r.color || r.accessories || r.physicalCondition || r.unlockType) {
     const customer = (oldTicket?.customerId ? { id: oldTicket.customerId } : null) || lookups.customersByName.get(r.client);
-    const { data: dev } = await supabaseClient.from("customer_devices").insert({
+    const { data: dev, error: devErr } = await supabaseClient.from("customer_devices").insert({
       customer_id:          customer?.id||null,
       product_name:         r.productName||"Sin nombre",
       imei:                 r.imei||null,
       color:                r.color||null,
       accessories_received: r.accessories||null,
       physical_condition:   r.physicalCondition||null,
+      unlock_type:          r.unlockType||null,
+      unlock_pin:           r.unlockType==="pin"    ? (r.unlockPin||null) : null,
+      unlock_pattern:       r.unlockType==="patron" && r.unlockPattern?.length ? r.unlockPattern : null,
     }).select("id").single();
+    // Mismo patrón que en createRemoteTicket: sin este chequeo, un fallo aquí dejaba
+    // el ticket sin device_id y el "Equipo" del cliente vacío para siempre, sin aviso —
+    // exactamente el síntoma reportado ("no añadió el campo de equipo al cliente").
+    if (devErr) throw new Error(`No se pudo registrar el equipo: ${devErr.message}`);
     if (dev?.id) {
-      await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", ticketId);
+      const { error: linkDevErr } = await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", ticketId);
+      if (linkDevErr) throw new Error(`No se pudo vincular el equipo al ticket: ${linkDevErr.message}`);
     }
   }
 }
@@ -10687,6 +10854,33 @@ function setupDogCursor() {
 // ──────────────────────────────────────────────────────────────────────────────
 // TICKET DETAIL VIEW — dialog independiente (no usa recordForm ni activeForm)
 // ──────────────────────────────────────────────────────────────────────────────
+// Shared by viewTicketDetail() and viewQuoteDetail(): renders the NIP row and,
+// for patrones, a read-only pattern-grid block that auto-replays on open (the
+// "gif de seguimiento" — a looping trace of the recorded unlock sequence).
+function unlockCodeDetailHtml(ticket) {
+  return (ticket.unlockType === "pin" && ticket.unlockPin)
+    ? `<div class="detail-row"><span>NIP / Contraseña</span><strong>${escapeHtml(ticket.unlockPin)}</strong></div>`
+    : "";
+}
+function unlockPatternDetailHtml(ticket) {
+  if (ticket.unlockType !== "patron" || !ticket.unlockPattern?.length) return "";
+  return `<div class="tdv-issue" style="margin-bottom:10px">
+    <p class="muted" style="font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em">Patrón de desbloqueo</p>
+    <div id="tdv-pattern-grid" class="unlock-pattern-grid" data-pattern='${escapeHtml(JSON.stringify(ticket.unlockPattern))}'></div>
+    <button type="button" class="mini-button" id="tdv-pattern-preview" style="margin-top:8px">▶ Ver animación</button>
+  </div>`;
+}
+function wireUnlockPatternDetail(dlg) {
+  const host = dlg.querySelector("#tdv-pattern-grid");
+  if (!host) return;
+  let seq = [];
+  try { seq = JSON.parse(host.dataset.pattern || "[]"); } catch { seq = []; }
+  host.innerHTML = patternGridMarkup();
+  const ctl = wirePatternGrid(host, { sequence: seq, editable: false });
+  dlg.querySelector("#tdv-pattern-preview")?.addEventListener("click", () => ctl.animate());
+  ctl.animate();
+}
+
 function viewTicketDetail(ticketId) {
   const ticket = state.tickets.find(t => t.id === ticketId);
   if (!ticket) return;
@@ -10737,6 +10931,7 @@ function viewTicketDetail(ticketId) {
         ${row("Cliente",      ticket.client)}
         ${row("Equipo",       ticket.productName || ticket.device)}
         ${row("IMEI / serie", ticket.imei)}
+        ${unlockCodeDetailHtml(ticket)}
         ${row("Técnico",      ticket.assignedTo)}
         ${ticket.createdByName ? row("Registrado por", ticket.createdByName) : ""}
         ${row("Sucursal",     ticket.branch)}
@@ -10753,6 +10948,7 @@ function viewTicketDetail(ticketId) {
         ${ticket.paymentMethod ? row("Método de pago", ticket.paymentMethod) : ""}
       </div>
       ${itemsHtml}
+      ${unlockPatternDetailHtml(ticket)}
       ${ticket.recibidoAt ? `
       <div class="detail-row" style="margin-bottom:10px;align-items:center">
         <span>Fecha de recepción</span>
@@ -10797,6 +10993,10 @@ function viewTicketDetail(ticketId) {
   dlg.addEventListener("close", () => dlg.remove(), { once: true });
 
   dlg.showModal();
+  // Debe ir DESPUÉS de showModal(): mientras el <dialog> no tiene [open], el UA
+  // stylesheet lo mantiene en display:none, y offsetLeft/offsetWidth (usados por
+  // wirePatternGrid para calcular las líneas del patrón) devuelven 0 hasta entonces.
+  wireUnlockPatternDetail(dlg);
 }
 
 function viewQuoteDetail(ticketId) {
@@ -10845,11 +11045,13 @@ function viewQuoteDetail(ticketId) {
       <div class="tdv-grid" style="margin-bottom:14px">
         ${row("Cliente",  ticket.client)}
         ${row("Equipo",   ticket.productName || ticket.device)}
+        ${unlockCodeDetailHtml(ticket)}
         ${row("Sucursal", ticket.branch)}
         ${row("Fecha",    ticket.createdAt)}
       </div>
       ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${itemsHtml}
+      ${unlockPatternDetailHtml(ticket)}
       <div id="ticket-events-section"></div>
     </div>
     <menu class="modal-actions" style="padding:16px 22px">
@@ -10875,6 +11077,7 @@ function viewQuoteDetail(ticketId) {
   dlg.addEventListener("close", () => dlg.remove(), { once: true });
 
   dlg.showModal();
+  wireUnlockPatternDetail(dlg); // después de showModal(): ver nota en viewTicketDetail()
 }
 
 function viewSupportTaskDetail(taskId) {
