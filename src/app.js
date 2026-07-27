@@ -7105,11 +7105,20 @@ async function createRemoteTicket(r) {
     // Sin este chequeo, un fallo aquí (RLS u otro) se ignoraba en silencio: el ticket
     // se guardaba igual pero sin device_id ni fila en customer_devices, dejando el
     // "Equipo" del cliente vacío para siempre en la ficha de Clientes — sin aviso.
-    if (devErr) throw new Error(`No se pudo registrar el equipo: ${devErr.message}`);
+    // Si falla, se revierte (borra) el ticket recién insertado arriba: de lo contrario
+    // el usuario ve el error, da clic en "Guardar" de nuevo, y como el ticket ya había
+    // quedado guardado, el reintento crea uno duplicado en vez de repetir la operación.
+    if (devErr) {
+      await supabaseClient.from("service_tickets").delete().eq("id", data.id);
+      throw new Error(`No se pudo registrar el equipo: ${devErr.message}`);
+    }
     if (dev?.id) {
       deviceId = dev.id;
       const { error: linkDevErr } = await supabaseClient.from("service_tickets").update({ device_id: dev.id }).eq("id", data.id);
-      if (linkDevErr) throw new Error(`No se pudo vincular el equipo al ticket: ${linkDevErr.message}`);
+      if (linkDevErr) {
+        await supabaseClient.from("service_tickets").delete().eq("id", data.id);
+        throw new Error(`No se pudo vincular el equipo al ticket: ${linkDevErr.message}`);
+      }
     }
   }
 
