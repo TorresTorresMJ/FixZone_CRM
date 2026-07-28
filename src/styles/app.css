@@ -574,6 +574,7 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 .status.ready, .type-pill.type-income { background: rgba(44,185,120,0.16); color: #7af0b1; }
 .status.waiting, .type-pill.type-expense { background: rgba(255,185,80,0.16); color: #ffd18c; }
 .status.warranty { background: rgba(166,126,255,0.16); color: #c8b4ff; }
+.status.cancelled { background: rgba(255,92,92,0.16); color: #ff8a8a; }
 .status.urgent, .low-stock { background: rgba(255,83,83,0.16); color: #ff9b9b; }
 
 /* ── Role badges ─────────────────────────────────────────────────────────── */

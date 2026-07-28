@@ -9,7 +9,16 @@ const money        = new Intl.NumberFormat("es-MX", { style: "currency", currenc
 // guardarlos — de lo contrario el valor crudo con decimales basura se guarda en la DB y reaparece
 // en cualquier input/campo que lo muestre sin pasar por money.format() (que sí redondea al mostrar).
 function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
-const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entregado", "Garantia"];
+// Los <input type="number"> cambian su valor al hacer scroll con el mouse mientras
+// tienen foco (comportamiento nativo del navegador, no de esta app) — típicamente
+// por 1 "step" (0.01 en campos de dinero). Esto hacía que escribir "100" en "Monto
+// reparación" y luego mover el mouse/scroll para pasar al siguiente campo lo dejara
+// en "99.99" sin que el usuario tocara el teclado. Quitar el foco al detectar scroll
+// evita que el navegador aplique el ajuste.
+document.addEventListener("wheel", () => {
+  if (document.activeElement?.type === "number") document.activeElement.blur();
+}, { passive: true });
+const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entregado", "Garantia", "Cancelado"];
 let kanbanSort = "fecha_desc"; // "fecha_desc" | "fecha_asc" | "cliente_az" | "prioridad" | "fecha_limite"
 let kanbanAssigneeFilter = ""; // "" = todos, o nombre del técnico asignado
 const supportStages = ["Pendiente", "En progreso", "Resuelto"];
@@ -1039,7 +1048,7 @@ function renderMetrics() {
   const todayTxs    = branchTxs.filter(t => t.date === today);
   const income      = sumByType(todayTxs,"Ingreso");
   const expenses    = sumByType(todayTxs,"Egreso");
-  const openTickets = branchTickets().filter(t=>t.status!=="Entregado" && t.status!=="Cotizacion").length;
+  const openTickets = branchTickets().filter(t=>t.status!=="Entregado" && t.status!=="Cotizacion" && t.status!=="Cancelado").length;
   const lowStockItems = branchProducts().filter(p=>Number(p.stock)<=Number(p.minStock)&&Number(p.minStock)>0);
 
   document.querySelector("#metric-grid").innerHTML = [
@@ -1063,7 +1072,7 @@ function renderMetrics() {
   }
 
   document.querySelector("#active-ticket-list").innerHTML = branchTickets()
-    .filter(t=>t.status!=="Entregado" && t.status!=="Cotizacion").slice(0,5).map(ticketCard).join("")
+    .filter(t=>t.status!=="Entregado" && t.status!=="Cotizacion" && t.status!=="Cancelado").slice(0,5).map(ticketCard).join("")
     ||emptyMessage("No hay tickets activos.", {label:"+ Nuevo ticket", onclick:"openForm('ticket')"});
 
   document.querySelector("#recent-activity").innerHTML = branchTxs
@@ -1431,12 +1440,13 @@ function ticketCard(ticket, perms, idx = 0) {
   const paidAmt = Number(ticket.paidAmount ?? (paid ? repair : 0));
   const stClass = ticket.status==="Listo"||ticket.status==="Entregado" ? "ready"
                 : ticket.status==="Cotizacion" ? "waiting"
-                : ticket.status==="Garantia"   ? "warranty" : "";
+                : ticket.status==="Garantia"   ? "warranty"
+                : ticket.status==="Cancelado"  ? "cancelled" : "";
 
   // Due date badge — red if overdue, orange if due today (only while the ticket is still open)
   let dueDateHtml = "";
   if (ticket.dueDate) {
-    const isOpen = ticket.status !== "Entregado" && ticket.status !== "Garantia";
+    const isOpen = ticket.status !== "Entregado" && ticket.status !== "Garantia" && ticket.status !== "Cancelado";
     const today = dateStamp();
     const overdue = isOpen && ticket.dueDate < today;
     const dueToday = isOpen && ticket.dueDate === today;
@@ -1502,6 +1512,7 @@ function ticketCard(ticket, perms, idx = 0) {
       ${ticket.paymentStatus!=="Pagado"&&repair>0?`<button class="mini-button" data-abono-ticket="${ticket.id}">Abonar</button>`:""}
       ${/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ticket.id)?`<button class="mini-button" data-qr-ticket="${ticket.id}" title="QR Técnico">📱</button>`:""}
       <button class="mini-button" data-edit-ticket="${ticket.id}">Editar</button>
+      ${ticket.status!=="Cancelado"&&ticket.status!=="Entregado"?`<button class="mini-button danger-btn" data-cancel-ticket="${ticket.id}" title="Cancelar ticket — la reparación no se pudo realizar">Cancelar</button>`:""}
       ${perms.canDeleteTickets?`<button class="mini-button danger-btn" data-delete-ticket="${ticket.id}">✕</button>`:""}
     </div>
   </article>`;
@@ -2874,8 +2885,8 @@ function renderReports() {
       if (!name) continue;
       if (!deviceMap[name]) deviceMap[name] = { count:0, revenue:0, completed:0 };
       deviceMap[name].count++;
-      // Cotizaciones no generan ingreso real; solo contar revenue de tickets reales
-      if (!t.tracking?.startsWith("[COT]")) deviceMap[name].revenue += Number(t.repairAmount||0);
+      // Cotizaciones no generan ingreso real; tickets cancelados se reembolsaron — ninguno cuenta como revenue
+      if (!t.tracking?.startsWith("[COT]") && t.status!=="Cancelado") deviceMap[name].revenue += Number(t.repairAmount||0);
       if (["Listo","Entregado"].includes(t.status)) deviceMap[name].completed++;
     }
     const deviceRanking = Object.entries(deviceMap)
@@ -2948,7 +2959,7 @@ function renderReports() {
     const emp = t.assignedTo || "Sin asignar";
     if (!byEmp[emp]) byEmp[emp] = { tickets:0, completed:0, revenue:0 };
     byEmp[emp].tickets++;
-    byEmp[emp].revenue += Number(t.repairAmount || 0);
+    if (t.status!=="Cancelado") byEmp[emp].revenue += Number(t.repairAmount || 0);
     if (["Listo","Entregado"].includes(t.status)) byEmp[emp].completed++;
   }
   const empRows = Object.entries(byEmp)
@@ -9237,6 +9248,10 @@ document.addEventListener("click", async e => {
   const approveBtn = e.target.closest("[data-approve-quote]");
   if (approveBtn) { approveQuoteToTicket(approveBtn.dataset.approveQuote); return; }
 
+  // Cancel ticket (reparación no realizada — reembolsa abono si lo hubo)
+  const cancelTicketBtn = e.target.closest("[data-cancel-ticket]");
+  if (cancelTicketBtn) { cancelTicket(cancelTicketBtn.dataset.cancelTicket); return; }
+
   // Delete ticket
   const delTicket = e.target.closest("[data-delete-ticket]");
   if (delTicket) { handleDeleteTicket(delTicket.dataset.deleteTicket); return; }
@@ -9360,6 +9375,67 @@ document.addEventListener("click", async e => {
     return;
   }
 });
+
+// Cancela un ticket porque la reparación no se pudo realizar. Si tenía un abono/pago
+// registrado, se resetea a $0 y se devuelve al cliente como un Egreso/Devolución —
+// para que quede reflejado en Movimientos, Finanzas y Balance (nunca queda "perdido").
+function cancelTicket(id) {
+  const idx = state.tickets.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  const ticket = state.tickets[idx];
+  if (ticket.status === "Cancelado") return;
+  const refund = round2(Number(ticket.paidAmount || 0));
+  const msg = refund > 0
+    ? `¿Cancelar el ticket ${ticket.tracking}? Se registrará una devolución de ${money.format(refund)} al cliente como Egreso.`
+    : `¿Cancelar el ticket ${ticket.tracking}? La reparación se marcará como no realizada.`;
+  showConfirmModal(msg, {
+    label: "Cancelar ticket",
+    danger: true,
+    onConfirm: async () => {
+      const reason = (prompt("Motivo de la cancelación (opcional):", "") ?? "").trim();
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      try {
+        if (dataMode === "remote" && isUUID) {
+          const { error } = await supabaseClient.from("service_tickets").update({
+            stage:          "Cancelado",
+            paid_amount:    0,
+            payment_status: "Pendiente",
+          }).eq("id", id);
+          if (error) throw error;
+
+          if (refund > 0) {
+            await createRemoteTransaction({
+              date:          dateStamp(),
+              type:          "Egreso",
+              concept:       `Devolución cancelación ${ticket.tracking}${reason ? ` — ${reason}` : ""}`,
+              category:      "Devolución",
+              amount:        refund,
+              paymentMethod: ticket.paymentMethod || null,
+              ticketId:      id,
+            });
+          }
+
+          logTicketEvent(id, "cancelled", {
+            fromStage: ticket.status, toStage: "Cancelado",
+            note: `✕ Ticket cancelado${reason ? `: ${reason}` : ""}${refund > 0 ? ` — Reembolso registrado: ${money.format(refund)}` : ""}`,
+          });
+
+          try { await reloadState(); } catch (re) { console.warn("reload:", re); }
+        }
+        // Actualiza el estado local siempre — cubre el modo local y también el modo
+        // remoto si reloadState() falló después de un guardado exitoso (no fatal).
+        const i2 = state.tickets.findIndex(t => t.id === id);
+        if (i2 !== -1) state.tickets[i2] = { ...state.tickets[i2], status: "Cancelado", paidAmount: 0, paymentStatus: "Pendiente" };
+        if (dataMode !== "remote") saveState();
+        render();
+        showToast(`✓ Ticket ${ticket.tracking} cancelado${refund > 0 ? ` — devolución de ${money.format(refund)} registrada` : ""}`);
+      } catch (err) {
+        showErrorToast(`No se pudo cancelar el ticket: ${err.message}`);
+      }
+    }
+  });
+}
+window.cancelTicket = cancelTicket;
 
 function handleDeleteTicket(id) {
   showConfirmModal("¿Eliminar este ticket?", {
@@ -10918,7 +10994,8 @@ function viewTicketDetail(ticketId) {
   const balance = Math.max(0, total - paidAmt);
   const stClass = ticket.status === "Listo" || ticket.status === "Entregado" ? "ready"
                 : ticket.status === "Cotizacion" ? "waiting"
-                : ticket.status === "Garantia"   ? "warranty" : "";
+                : ticket.status === "Garantia"   ? "warranty"
+                : ticket.status === "Cancelado"  ? "cancelled" : "";
 
   const row = (label, val) => val
     ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
@@ -10994,6 +11071,7 @@ function viewTicketDetail(ticketId) {
     </div>
     <menu class="modal-actions" style="padding:16px 22px">
       <button type="button" class="ghost-button" id="tdv-close2">Cerrar</button>
+      ${ticket.status!=="Cancelado"&&ticket.status!=="Entregado"?`<button type="button" class="ghost-button danger-btn" id="tdv-cancel" style="padding:0 20px">Cancelar ticket</button>`:""}
       ${perms.canEditTickets ? `<button type="button" class="primary-action" id="tdv-edit" style="padding:0 20px">Editar</button>` : ""}
     </menu>`;
 
@@ -11009,6 +11087,11 @@ function viewTicketDetail(ticketId) {
   dlg.querySelector("#tdv-edit")?.addEventListener("click", () => {
     dlg.close();
     openEditTicket(ticketId);
+  });
+  // Cancelar ticket
+  dlg.querySelector("#tdv-cancel")?.addEventListener("click", () => {
+    dlg.close();
+    cancelTicket(ticketId);
   });
   // Editar fecha de recepción — guarda solo este campo, requiere clic explícito en "Guardar"
   dlg.querySelector("#tdv-recibido-save")?.addEventListener("click", async () => {
