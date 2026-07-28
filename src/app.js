@@ -4,6 +4,11 @@
 
 const storageKey   = "fixzone-crm-v1";
 const money        = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
+// Redondea a 2 decimales evitando el ruido de punto flotante de JS (ej. 0.1+0.2=0.30000000000000004).
+// Usar siempre después de sumar/restar montos en dinero (abonos, subtotales, descuentos) antes de
+// guardarlos — de lo contrario el valor crudo con decimales basura se guarda en la DB y reaparece
+// en cualquier input/campo que lo muestre sin pasar por money.format() (que sí redondea al mostrar).
+function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entregado", "Garantia"];
 let kanbanSort = "fecha_desc"; // "fecha_desc" | "fecha_asc" | "cliente_az" | "prioridad" | "fecha_limite"
 let kanbanAssigneeFilter = ""; // "" = todos, o nombre del técnico asignado
@@ -1413,8 +1418,8 @@ function ticketAmounts(ticket) {
   const repair    = Number(ticket.repairAmount ?? ticket.total ?? 0);
   const discount  = Number(ticket.discountAmount || 0);
   const hasItems  = (ticket.quoteItems?.length || 0) > 0;
-  const subtotal  = hasItems ? repair + discount : repair;
-  const total     = hasItems ? repair : Math.max(0, repair - discount);
+  const subtotal  = round2(hasItems ? repair + discount : repair);
+  const total     = round2(hasItems ? repair : Math.max(0, repair - discount));
   return { repair, subtotal, discount, total };
 }
 
@@ -4738,7 +4743,7 @@ function applyDiscount(baseAmount, code, scope = "ticket") {
   if (!d) return { amount: 0, pct: 0, label: "", valid: false };
   const pct    = d.type === "percent" ? Number(d.value) : 0;
   const fixed  = d.type === "fixed"   ? Number(d.value) : 0;
-  const amount = fixed + (baseAmount * pct / 100);
+  const amount = round2(fixed + (baseAmount * pct / 100));
   return { amount: Math.min(amount, baseAmount), pct, label: d.description || d.code, valid: true, id: d.id };
 }
 
@@ -5232,10 +5237,10 @@ function renderQuoteItemsDraft() {
 }
 
 function updateQuoteItemsHiddenInputs() {
-  const subtotal     = quoteItemsDraft.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  const subtotal     = round2(quoteItemsDraft.reduce((s, i) => s + i.qty * i.unitPrice, 0));
   const code         = (document.querySelector("#qi-discount-code")?.value || "").trim().toUpperCase();
   const discAmt      = Number(document.querySelector("#qi-discount-amount")?.value || 0);
-  const total        = Math.max(0, subtotal - discAmt);
+  const total        = round2(Math.max(0, subtotal - discAmt));
   const totalEl      = document.querySelector("#qi-total");
   const amountInput  = document.querySelector("#qi-repair-amount");
   const jsonInput    = document.querySelector("#qi-items-json");
@@ -5379,15 +5384,19 @@ function initQuoteItemsBuilder(existingItems = []) {
       if (statusEl) { statusEl.textContent = "Código no válido"; statusEl.style.color = "#ff6b6b"; }
       const dcAmt = document.querySelector("#qi-discount-amount");
       const dcCode = document.querySelector("#qi-discount-code");
+      const dcId = document.querySelector("#qi-discount-id");
       if (dcAmt) dcAmt.value = "0";
       if (dcCode) dcCode.value = "";
+      if (dcId) dcId.value = "";
       updateQuoteItemsHiddenInputs();
       return;
     }
     const dcAmt  = document.querySelector("#qi-discount-amount");
     const dcCode = document.querySelector("#qi-discount-code");
+    const dcId   = document.querySelector("#qi-discount-id");
     if (dcAmt)  dcAmt.value  = result.amount.toFixed(2);
     if (dcCode) dcCode.value = code;
+    if (dcId)   dcId.value   = result.id || "";
     if (statusEl) { statusEl.textContent = `✓ -${money.format(result.amount)}`; statusEl.style.color = "#2ed573"; }
     const manualAmt = document.querySelector("#qi-manual-discount-amount");
     const manualPct = document.querySelector("#qi-manual-discount-pct");
@@ -5400,11 +5409,13 @@ function initQuoteItemsBuilder(existingItems = []) {
     const amt = Math.max(0, Number(e.target.value) || 0);
     const dcAmt  = document.querySelector("#qi-discount-amount");
     const dcCode = document.querySelector("#qi-discount-code");
+    const dcId   = document.querySelector("#qi-discount-id");
     const pctInput  = document.querySelector("#qi-manual-discount-pct");
     const codeSelect = document.querySelector("#qi-code-input");
     const statusEl = document.querySelector("#qi-code-status");
     if (dcAmt)  dcAmt.value  = amt.toFixed(2);
     if (dcCode) dcCode.value = "";
+    if (dcId)   dcId.value   = "";
     if (pctInput) pctInput.value = "";
     if (codeSelect) codeSelect.value = "";
     if (statusEl) statusEl.textContent = "";
@@ -5417,11 +5428,13 @@ function initQuoteItemsBuilder(existingItems = []) {
     const amt = subtotal * pct / 100;
     const dcAmt  = document.querySelector("#qi-discount-amount");
     const dcCode = document.querySelector("#qi-discount-code");
+    const dcId   = document.querySelector("#qi-discount-id");
     const amtInput  = document.querySelector("#qi-manual-discount-amount");
     const codeSelect = document.querySelector("#qi-code-input");
     const statusEl = document.querySelector("#qi-code-status");
     if (dcAmt)  dcAmt.value  = amt.toFixed(2);
     if (dcCode) dcCode.value = "";
+    if (dcId)   dcId.value   = "";
     if (amtInput) amtInput.value = "";
     if (codeSelect) codeSelect.value = "";
     if (statusEl) statusEl.textContent = "";
@@ -5475,6 +5488,7 @@ function buildQuoteItemsSection(currentCode = "") {
       <input type="hidden" name="quoteItemsJson" id="qi-items-json" value="[]">
       <input type="hidden" name="discountCode" id="qi-discount-code" value="">
       <input type="hidden" name="discountAmount" id="qi-discount-amount" value="0">
+      <input type="hidden" name="discountId" id="qi-discount-id" value="">
     </div>`;
 }
 
@@ -5487,7 +5501,7 @@ function buildQuoteItemsSection(currentCode = "") {
 let ticketItemsDraft = [];
 
 function ticketItemsSubtotal() {
-  return ticketItemsDraft.reduce((s, i) => s + Number(i.qty||0) * Number(i.unitPrice||0), 0);
+  return round2(ticketItemsDraft.reduce((s, i) => s + Number(i.qty||0) * Number(i.unitPrice||0), 0));
 }
 
 function renderTicketItemsDraft() {
@@ -6776,8 +6790,8 @@ recordForm.addEventListener("submit", async e => {
 
   // ── EDIT TICKET ────────────────────────────────────────────────────────────
   if (activeForm === "ticket" && editingTicketId) {
-    data.repairAmount = Number(data.repairAmount||0);
-    data.paidAmount   = Number(data.paidAmount||0);
+    data.repairAmount = round2(data.repairAmount||0);
+    data.paidAmount   = round2(data.paidAmount||0);
     // El desglose de partidas (ticketItemsDraft) es opcional en el formulario plano de
     // ticket — si el técnico agregó al menos una, "Monto reparación" ya llega calculado
     // como neto (suma de partidas − descuento, ver initDiscountAutofill). Si no se usó,
@@ -6789,7 +6803,7 @@ recordForm.addEventListener("submit", async e => {
     // El estado de pago se calcula contra el TOTAL NETO (monto - descuento), no contra
     // el monto bruto — comparar contra el bruto hacía que un ticket ya pagado al 100%
     // (pagado == neto) se quedara marcado "Abonado" para siempre.
-    const netTotal = hasItems ? data.repairAmount : Math.max(0, data.repairAmount - Number(data.discountAmount||0));
+    const netTotal = hasItems ? data.repairAmount : round2(Math.max(0, data.repairAmount - Number(data.discountAmount||0)));
     data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=netTotal && netTotal>0 ? "Pagado" : "Abonado");
     try {
       const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTicketId);
@@ -6818,7 +6832,7 @@ recordForm.addEventListener("submit", async e => {
 
   if (activeForm==="ticket" || activeForm==="cotizacion") {
     data.tracking      = activeForm==="cotizacion" ? nextCotTracking() : nextTracking(nextTicketSequence());
-    data.repairAmount  = Number(data.repairAmount||0);
+    data.repairAmount  = round2(data.repairAmount||0);
     data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
     delete data.quoteItemsJson;
     if (activeForm==="cotizacion") {
@@ -6835,9 +6849,9 @@ recordForm.addEventListener("submit", async e => {
       data.priority      = "Normal";
       data.assignedTo    = data.assignedTo || "";
     } else {
-      data.paidAmount    = Number(data.paidAmount||0);
+      data.paidAmount    = round2(data.paidAmount||0);
       const hasItems = data.quoteItems.length > 0;
-      const netTotal = hasItems ? data.repairAmount : Math.max(0, data.repairAmount - Number(data.discountAmount||0));
+      const netTotal = hasItems ? data.repairAmount : round2(Math.max(0, data.repairAmount - Number(data.discountAmount||0)));
       data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=netTotal && netTotal>0 ? "Pagado" : "Abonado");
     }
   }
@@ -7122,6 +7136,12 @@ async function createRemoteTicket(r) {
     }
   }
 
+  // Marca el código de descuento como usado (respeta max_uses) — el id viene de
+  // applyDiscount() cuando no hay quoteItems, o del hidden #qi-discount-id cuando
+  // el código se aplicó desde el builder de partidas (ver buildQuoteItemsSection()).
+  const discIdToMark = r.quoteItems?.length ? (r.discountId||null) : (disc.id||null);
+  if (discIdToMark) markDiscountUsed(discIdToMark);
+
   const branchName = [...lookups.branchesByName.values()].find(b=>b.id===branchId)?.name || BRANCHES[0];
   const mapped = {
     id:data.id, tracking:data.tracking_number, client:data.customer_name,
@@ -7297,6 +7317,14 @@ async function updateRemoteTicket(ticketId, r) {
   }).eq("id", ticketId);
   if (error) throw error;
 
+  // Marca el código como usado solo si se acaba de aplicar/cambiar en esta edición —
+  // si el código no cambió respecto al ticket ya guardado, no se vuelve a contar
+  // (si no, cada vez que se reabre y guarda el ticket se inflaría used_count).
+  if (r.discountCode && r.discountCode !== oldTicket?.discountCode) {
+    const discIdToMark = r.quoteItems?.length ? (r.discountId||null) : (disc.id||null);
+    if (discIdToMark) markDiscountUsed(discIdToMark);
+  }
+
   // Trazabilidad bidireccional: si el método de pago del ticket cambió (se corrigió
   // desde el form de edición), refleja el mismo método en TODAS las transacciones de
   // ingreso ya generadas para este ticket (anticipo/pago/abono) — si no, Finanzas
@@ -7314,7 +7342,7 @@ async function updateRemoteTicket(ticketId, r) {
       type:          "Ingreso",
       concept:       `Pago ${oldTicket?.tracking || ticketId}`,
       category:      "Servicio",
-      amount:        newPaid - oldPaid,
+      amount:        round2(newPaid - oldPaid),
       paymentMethod: r.paymentMethod || "",
       ticketId,
     });
@@ -8780,7 +8808,7 @@ function openAbonoModal(ticketId) {
   abonoTicketId = ticketId;
   const total   = Number(ticket.repairAmount || 0);
   const paid    = Number(ticket.paidAmount   || 0);
-  const pending = Math.max(0, total - paid);
+  const pending = round2(Math.max(0, total - paid));
   document.querySelector("#abono-modal-title").textContent   = `Abono — ${ticket.tracking}`;
   document.querySelector("#abono-modal-eyebrow").textContent = ticket.client;
   document.querySelector("#abono-summary").innerHTML = `
@@ -8807,7 +8835,7 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
   if (amount <= 0) return;
 
   const total     = Number(ticket.repairAmount || 0);
-  const newPaid   = Number(ticket.paidAmount || 0) + amount;
+  const newPaid   = round2(Number(ticket.paidAmount || 0) + amount);
   const newStatus = newPaid >= total ? "Pagado" : "Abonado";
   const isUUID    = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(abonoTicketId);
 
@@ -9479,8 +9507,6 @@ function doPrint(filenameBase) {
 
 // ── Receipt variants ──────────────────────────────────────────────────────────
 function printRecibo(ticket, type) {
-  const client    = (ticket.customerId && state.clients.find(c => c.id === ticket.customerId))
-    || state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const { subtotal: repair, discount, total } = ticketAmounts(ticket);
   const paid      = Number(ticket.paidAmount || 0);
   const pending   = Math.max(0, total - paid);
@@ -9500,7 +9526,6 @@ function printRecibo(ticket, type) {
     <p class="rct-dash">${D}</p>
     <p class="rct-label">CLIENTE:</p>
     <p class="rct-value">${escapeHtml(ticket.client)}</p>
-    <p class="rct-value">Tel: ${escapeHtml(client?.phone||ticket.phone||"No registrado")}</p>
     <p class="rct-dash">${D}</p>
     <p class="rct-label">EQUIPO:</p>
     <p class="rct-value">${escapeHtml(ticket.productName)}</p>
@@ -9626,7 +9651,6 @@ function printPosRecibo() {
 }
 
 function printTicket(ticket) {
-  const client    = state.clients.find(c => c.name.toLowerCase() === ticket.client.toLowerCase());
   const { subtotal: repairAmt } = ticketAmounts(ticket);
   const paidAmt   = Number(ticket.paidAmount ?? 0);
   const received  = Number(ticket.amountReceived ?? paidAmt ?? 0);
@@ -9667,8 +9691,6 @@ function printTicket(ticket) {
 
   <p class="rct-label">CLIENTE:</p>
   <p class="rct-value">${escapeHtml(ticket.client)}</p>
-  <p class="rct-value">Tel: ${escapeHtml(client?.phone || "No registrado")}</p>
-  <p class="rct-value">Email: ${escapeHtml(client?.email || "No registrado")}</p>
 
   <p class="rct-dash">${D}</p>
 
@@ -9747,12 +9769,10 @@ async function buildCotizacionCanvas(ticket) {
   const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
   const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
   const items    = ticket.quoteItems || [];
-  const discAmt  = Number(ticket.discountAmount || 0);
-  // repairAmount stores the post-discount total; derive pre-discount subtotal for display
-  const subtotal = items.length
-    ? items.reduce((s, i) => s + (i.qty || 1) * (i.unitPrice || 0), 0)
-    : Number(ticket.repairAmount || 0) + discAmt;
-  const total    = Math.max(0, subtotal - discAmt);
+  // Centralizado en ticketAmounts() — no recalcular a mano aquí (ver comentario en su
+  // definición: hacerlo por separado es justo lo que causó que el descuento se
+  // "perdiera" visualmente en cotizaciones sin partidas).
+  const { subtotal, discount: discAmt, total } = ticketAmounts(ticket);
   // Usa la fecha/hora real de creación del ticket, no la del momento de generar la imagen
   const createdDate = ticket.createdAtFull ? new Date(ticket.createdAtFull) : new Date();
   const timeStr  = createdDate.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", hour12:false });
@@ -10386,12 +10406,10 @@ async function shareQuoteWhatsApp(ticketId) {
   if (!ticket) return;
   const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
   const items    = ticket.quoteItems || [];
-  const discAmt  = Number(ticket.discountAmount || 0);
-  // repairAmount stores the post-discount total; derive pre-discount subtotal for display
-  const subtotal = items.length
-    ? items.reduce((s, i) => s + (i.qty || 1) * (i.unitPrice || 0), 0)
-    : Number(ticket.repairAmount || 0) + discAmt;
-  const total    = Math.max(0, subtotal - discAmt);
+  // Centralizado en ticketAmounts() — no recalcular a mano aquí (ver comentario en su
+  // definición: hacerlo por separado es justo lo que causó que el descuento se
+  // "perdiera" visualmente en cotizaciones sin partidas).
+  const { subtotal, discount: discAmt, total } = ticketAmounts(ticket);
   const client   = (ticket.customerId && state.clients.find(c => c.id === ticket.customerId))
     || state.clients.find(c => c.name?.toLowerCase() === ticket.client?.toLowerCase());
   const rawPhone = ticket.clientPhone || ticket.phone || client?.phone || "";
