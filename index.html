@@ -25,7 +25,9 @@
   <!-- ── App shell (hidden until login) ─────────────────────────────────── -->
   <div class="app-shell" style="display:none">
     <aside class="sidebar" aria-label="Navegacion principal">
-      <div class="brand" style="flex-direction:column;align-items:flex-start;gap:4px">
+      <div class="brand" role="button" tabindex="0" title="Ir a Home" aria-label="Ir a Home"
+        style="flex-direction:column;align-items:flex-start;gap:4px;cursor:pointer"
+        onclick="setView('dashboard')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();setView('dashboard');}">
         <img src="./assets/brand/fixzone/LOGO-FIXZONE.png" alt="FixZone"
           style="width:160px;height:auto;max-height:44px;object-fit:contain;border-radius:4px"
           onerror="this.style.display='none'" />

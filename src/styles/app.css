@@ -401,17 +401,30 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 .view.is-visible { display: block; }
 
 /* ── Metric grids ────────────────────────────────────────────────────────── */
-.metric-grid, .inventory-grid, .finance-summary {
+/* inventory-grid: cantidad variable de tarjetas (cotizaciones pendientes, etc.)
+   — auto-fill que envuelve a varias filas es lo correcto aquí. */
+.inventory-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 14px;
 }
-/* Report-grid: columnas más densas — auto-fill para adaptarse al ancho */
-.report-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
+/* metric-grid y report-grid: cantidad de tarjetas FIJA (siempre las mismas 4
+   métricas de Home/Finanzas, o las mismas tarjetas resumen de Reportes) — deben
+   caber siempre en una sola fila en vez de envolver a una 2ª fila y duplicar la
+   altura. flex (no grid auto-fill) reparte el ancho disponible entre las que
+   haya, sin importar cuántas sean ni qué tan angosto esté el contenedor; si el
+   contenedor es más angosto que el mínimo legible de cada tarjeta, la fila
+   scrollea horizontalmente en vez de envolver o aplastar el texto. */
+.metric-grid, .report-grid {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
+.metric-grid { gap: 14px; }
+.report-grid { gap: 10px; }
+.metric-grid > .metric   { flex: 1 1 0; min-width: 90px; }
+.report-grid > .report-card { flex: 1 1 0; min-width: 80px; }
 
 .metric, .product-card, .report-card, .home, .kanban-column {
   border: 1px solid rgba(255,255,255,0.09);
@@ -440,20 +453,32 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
   .skeleton-card { animation: none; }
 }
 
-.metric, .product-card { padding: 18px; }
+.product-card { padding: 18px; }
 .metric span, .product-card span, .report-card span, .muted { color: var(--fz-gray-light); }
-.metric strong { display: block; margin-top: 8px; font-size: 26px; background: none; }
+
+/* .metric y .report-card son "contenedores de consulta" (container queries) —
+   su letra/números escalan con el ancho de SU PROPIA tarjeta (cqw), no con el
+   viewport, así que cuando el flex row las achica para caber varias en una
+   fila (ver .metric-grid/.report-grid arriba), el texto se achica con ellas
+   en vez de forzar overflow o un mínimo grande que las vuelva a hacer anchas. */
+.metric {
+  container-type: inline-size;
+  padding: clamp(10px, 9cqw, 18px);
+}
+.metric span   { font-size: clamp(11px, 6cqw, 13px); }
+.metric strong { display: block; margin-top: 8px; font-size: clamp(14px, 11cqw, 24px); background: none; }
 
 /* Report card: etiqueta → número → nota, apilados y bien proporcionados */
 .report-card {
-  padding: 14px 16px;
+  container-type: inline-size;
+  padding: clamp(8px, 7cqw, 14px) clamp(9px, 8cqw, 16px);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-.report-card span   { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-.report-card strong { display: block; font-size: 22px; font-weight: 700; line-height: 1.2; background: none; }
-.report-card p      { margin: 0; font-size: 12px; }
+.report-card span   { font-size: clamp(9px, 5.5cqw, 11px); text-transform: uppercase; letter-spacing: 0.04em; }
+.report-card strong { display: block; font-size: clamp(12px, 10cqw, 20px); font-weight: 700; line-height: 1.2; background: none; }
+.report-card p      { margin: 0; font-size: clamp(9px, 5.5cqw, 11px); }
 
 /* ── Reportes: secciones plegables ──────────────────────────────────────── */
 .rpt-collapse-header {
@@ -501,6 +526,41 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
   font-size: 11px; color: rgba(255,255,255,.45);
 }
 .traffic-legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+
+.mini-button:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ── Widget del dashboard: navegación de semana minimalista ─────────────── */
+.traffic-mini-nav {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin: 0 0 8px; font-size: 10px; font-weight: 600; color: rgba(255,255,255,.5);
+  letter-spacing: .01em;
+}
+.traffic-mini-nav-btn {
+  background: none; border: none; color: rgba(255,255,255,.5); cursor: pointer;
+  font-size: 12px; line-height: 1; padding: 1px 5px; border-radius: 4px;
+  transition: background .12s ease, color .12s ease;
+}
+.traffic-mini-nav-btn:hover:not(:disabled) { background: rgba(var(--fz-primary-rgb),.15); color: var(--fz-primary); }
+.traffic-mini-nav-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+/* ── Modo Explorar: calendario mensual ──────────────────────────────────── */
+.traffic-calendar { margin-bottom: 4px; }
+/* Columnas de ancho fijo (no 1fr) — sin esto, el grid estira cada celda al
+   ancho completo de la tarjeta y, con aspect-ratio 1/1, la altura crece con
+   ella: en una tarjeta de Reportes ancha el calendario terminaba gigante. */
+.traffic-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 42px)); gap: 4px; justify-content: center; }
+.traffic-cal-header { margin-bottom: 4px; }
+.traffic-cal-weekday { text-align: center; font-size: 11px; color: rgba(255,255,255,.4); padding-bottom: 2px; }
+.traffic-cal-cell {
+  aspect-ratio: 1 / 1; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; position: relative; transition: transform .12s ease, outline-color .12s ease;
+  outline: 1px solid transparent; outline-offset: -1px;
+}
+.traffic-cal-cell.traffic-cal-blank { cursor: default; background: transparent !important; }
+.traffic-cal-daynum { font-size: 12px; font-weight: 600; color: rgba(255,255,255,.85); }
+.traffic-cal-star { position: absolute; top: 1px; right: 2px; font-size: 9px; }
+.traffic-cal-cell.is-busiest { outline: 2px solid var(--fz-primary); outline-offset: -2px; }
+.traffic-cal-cell:hover, .traffic-cal-cell:focus-visible { transform: scale(1.08); z-index: 2; }
 
 .traffic-popover {
   position: fixed; z-index: 10000; background: #1a1a2e; border: 1px solid rgba(255,255,255,.15);
@@ -726,7 +786,7 @@ th, td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.07); te
 th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 
 /* ── Products — Excel-like inventory table ───────────────────────────────── */
-.inventory-grid, .report-grid, .finance-summary { margin-bottom: 14px; }
+.inventory-grid, .metric-grid, .report-grid { margin-bottom: 14px; }
 
 .inventory-table-wrap {
   overflow: auto;
@@ -1139,12 +1199,9 @@ select option { color: #101217; }
      todavía sobra espacio para 2; forzarlo a 1 sola estira cada card de ticket/
      movimiento a lo ancho de toda la pantalla, dejando un hueco vacío enorme entre
      el folio y sus botones, y empuja Pendientes/Afluencia fuera de la pantalla. */
-  /* metric-grid tampoco se fuerza a 2 columnas aquí — su auto-fill base
-     (minmax(200px,1fr)) ya cabe en una sola línea de 4 en este ancho; forzar 2×2
-     solo infla su altura y empuja el resto del dashboard fuera de la pantalla. */
-  /* report-grid usa su propio auto-fill denso (minmax(160px,1fr)) — forzarlo a 2
-     columnas infla cada tarjeta a la mitad del ancho de la pantalla sin necesidad. */
-  .inventory-grid, .finance-summary {
+  /* metric-grid y report-grid ya no necesitan override aquí — son flex de una
+     sola fila (ver regla base) que se auto-ajusta a cualquier ancho. */
+  .inventory-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .marketing-grid    { grid-template-columns: 1fr; }
@@ -1174,13 +1231,16 @@ select option { color: #101217; }
   .auth-info small { display: none; }
   .quick-fab { width: 34px; height: 34px; }
 
-  /* Métricas: 2 columnas en mobile */
-  .metric-grid, .inventory-grid, .finance-summary {
+  /* Métricas: siguen en una sola fila en mobile, solo con mínimos y padding
+     más angostos para que 4 tarjetas quepan en una pantalla de teléfono. */
+  .metric-grid { gap: 8px; }
+  .metric-grid > .metric { min-width: 92px; padding: 10px; }
+  .metric strong { font-size: 17px; margin-top: 4px; }
+  .report-grid > .report-card { min-width: 88px; padding: 10px 12px; }
+  .inventory-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
-  .metric strong { font-size: 20px; }
-  .report-grid { grid-template-columns: 1fr; }
 
   /* Dashboard: recién aquí (pantalla angosta de verdad) se apila a 1 columna */
   .dashboard-grid { grid-template-columns: 1fr; }

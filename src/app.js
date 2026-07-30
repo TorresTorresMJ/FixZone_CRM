@@ -235,6 +235,7 @@ const formSchemas = {
       ["item","Artículo / insumo","supply-item-autocomplete",null,true],
       ["quantity","Cantidad","number"],
       ["total","Total MXN","number"],
+      ["ticket_id","Vincular a ticket (uso interno)","ticket-select",null,true,true],
     ],
   },
   transaction: {
@@ -845,7 +846,7 @@ async function loadSupabaseState() {
       id:p.id, date:p.purchase_date, supplier:p.suppliers?.name||"Sin proveedor",
       item:p.item_name, quantity:Number(p.quantity||0), total:Number(p.total_amount||0),
       product_id:p.product_id||null, receipt_url:p.receipt_url||null,
-      transaction_id:p.transaction_id||null,
+      transaction_id:p.transaction_id||null, ticket_id:p.ticket_id||null,
       branch:branchRows.find(b=>b.id===p.branch_id)?.name||BRANCHES[0],
     })),
     transactions: (txRes.data||[]).map(t => ({
@@ -1532,9 +1533,12 @@ function ticketCard(ticket, perms, idx = 0) {
 }
 
 function renderSupplies() {
-  document.querySelector("#supplies-table").innerHTML = bySearch(branchSupplies()).map(i=>`
+  document.querySelector("#supplies-table").innerHTML = bySearch(branchSupplies()).map(i=>{
+    const linkedTicket = i.ticket_id ? state.tickets.find(t => t.id === i.ticket_id) : null;
+    return `
     <tr style="cursor:pointer" onclick="if(!event.target.closest('.supply-actions')&&!event.target.closest('a'))viewSupplyDetail('${i.id}')">
-      <td>${i.date}</td><td>${escapeHtml(i.supplier)}</td><td>${escapeHtml(i.item)}</td>
+      <td>${i.date}</td><td>${escapeHtml(i.supplier)}</td>
+      <td>${escapeHtml(i.item)}${linkedTicket ? `<br><span class="mini-button" style="font-size:10px;padding:1px 6px;display:inline-block;margin-top:3px" onclick="event.stopPropagation();viewTicketDetail('${linkedTicket.id}')" title="Ticket vinculado (uso interno)">🎫 ${escapeHtml(linkedTicket.tracking)}</span>` : ''}</td>
       <td>${i.quantity}</td><td><strong>${money.format(i.total)}</strong></td>
       <td>${i.receipt_url ? `<a href="${escapeHtml(i.receipt_url)}" target="_blank" class="mini-button">📄 Ver</a>` : ''}</td>
       <td style="white-space:nowrap" class="supply-actions">
@@ -1542,7 +1546,8 @@ function renderSupplies() {
         <button class="mini-button danger-btn" data-delete-supply="${i.id}">✕</button>
       </td>
     </tr>
-  `).join("")||tableEmpty(7);
+  `;
+  }).join("")||tableEmpty(7);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2620,7 +2625,7 @@ function renderFinance() {
 
   // Metrics row
   document.querySelector("#finance-metrics").innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
+    <div class="metric-grid">
       <article class="metric" style="--i:0">
         <span>Ingresos</span>
         <strong class="type-income" style="font-size:22px">${money.format(income)}</strong>
@@ -2812,25 +2817,48 @@ async function fetchTrafficEvents(from, to) {
   return data || [];
 }
 
+// Rango de horas ESTABLE por sucursal, calculado una sola vez a partir del
+// histórico completo — no por bucket. Si se calculara por bucket (como antes),
+// una semana floja con visitas solo entre 10 y 16h mostraba nada más esas
+// filas, distinto a la semana anterior: la cuadrícula "saltaba" de tamaño al
+// navegar y parecía que faltaban horas. Con un rango fijo, todas las vistas
+// (agregado, semana, mes, widget del dashboard) usan las mismas filas — solo
+// cambia qué tan llena está cada celda.
+let trafficHourRangeByBranch  = new Map(); // activeBranchId -> {minHour,maxHour}
+let trafficHourRangePending   = new Map(); // activeBranchId -> Promise
+
+function computeHourRange(events) {
+  let minHour = 9, maxHour = 20;
+  if (events.length) {
+    const hours = events.map(ev => new Date(ev.created_at).getHours());
+    minHour = Math.max(9, Math.min(...hours));
+    maxHour = Math.min(23, Math.max(...hours) + 1);
+  }
+  return { minHour, maxHour };
+}
+
+function ensureTrafficHourRange() {
+  if (trafficHourRangeByBranch.has(activeBranchId)) return Promise.resolve(trafficHourRangeByBranch.get(activeBranchId));
+  if (trafficHourRangePending.has(activeBranchId)) return trafficHourRangePending.get(activeBranchId);
+  const promise = fetchTrafficEvents("2000-01-01", dateStamp()).then(events => {
+    const ticketIds = new Set(branchTickets().map(t => t.id));
+    const range = computeHourRange(events.filter(ev => ticketIds.has(ev.ticket_id)));
+    trafficHourRangeByBranch.set(activeBranchId, range);
+    trafficHourRangePending.delete(activeBranchId);
+    return range;
+  });
+  trafficHourRangePending.set(activeBranchId, promise);
+  return promise;
+}
+
 function loadTrafficBucket(from, to) {
   const key = trafficCacheKey(from, to);
   if (trafficCacheMap.has(key)) return Promise.resolve(trafficCacheMap.get(key));
   if (trafficPending.has(key)) return trafficPending.get(key);
-  const promise = fetchTrafficEvents(from, to).then(events => {
+  const promise = Promise.all([fetchTrafficEvents(from, to), ensureTrafficHourRange()]).then(([events, hourRange]) => {
     const ticketIds = new Set(branchTickets().map(t => t.id));
     const inBranch = events.filter(ev => ticketIds.has(ev.ticket_id));
-    // Rango de horas fijo entre los 3 toggles (evita que la cuadrícula cambie de
-    // tamaño al alternar Ambos/Recibido/Entregado). Piso fijo en las 9 — la
-    // sucursal abre 9:30, así que no hay margen hacia abajo (evita una columna
-    // de las 8 que nunca tiene visitas reales y obliga a hacer scroll lateral);
-    // el techo sí conserva 1h de margen sobre la última hora con datos.
-    let minHour = 9, maxHour = 20;
-    if (inBranch.length) {
-      const hours = inBranch.map(ev => new Date(ev.created_at).getHours());
-      minHour = Math.max(9, Math.min(...hours));
-      maxHour = Math.min(23, Math.max(...hours) + 1);
-    }
-    const bucket = { minHour, maxHour, events: inBranch };
+    const bucket = { minHour: hourRange.minHour, maxHour: hourRange.maxHour, events: inBranch };
     trafficCacheMap.set(key, bucket);
     trafficPending.delete(key);
     return bucket;
@@ -2928,66 +2956,71 @@ function trafficCalendarHtml(monthStr, dailyCounts) {
 
 // Markup de la cuadrícula (fila de horas + una fila por día) — reutilizado por
 // la tarjeta completa de Reportes y por el widget compacto del dashboard.
+// Transpuesta: columnas = días de la semana, filas = horas (hacia abajo) — más
+// fácil de leer para cruzar día×hora que la versión anterior (filas = días),
+// igual que un horario de clases o la vista semanal de un calendario.
 function trafficGridHtml(grid, ticketGrid, maxCount, minHour, maxHour) {
-  const hourLabels = Array.from({length:maxHour-minHour+1}, (_,i)=>minHour+i)
-    .map(h=>`<div class="traffic-hour-label">${String(h).padStart(2,"0")}</div>`).join("");
-  const rows = grid.map((row,d)=>`
+  const dayHeaderCells = TRAFFIC_DAY_SHORT.map(d=>`<div class="traffic-hour-label">${d}</div>`).join("");
+  const rows = Array.from({length:maxHour-minHour+1}, (_,h)=>{
+    const hour = h+minHour;
+    const cells = grid.map((dayRow,d)=>{
+      const count = dayRow[h];
+      const label = `${TRAFFIC_DAY_LABELS[d]} ${String(hour).padStart(2,"0")}:00 — ${count} visita${count===1?"":"s"}${count?" (clic para ver tickets)":""}`;
+      const ids = ticketGrid[d][h].join(",");
+      return `<div class="traffic-cell" tabindex="0" style="background:${trafficAlpha(count,maxCount)}" data-traffic-tip="${escapeHtml(label)}" data-ticket-ids="${ids}"></div>`;
+    }).join("");
+    return `
     <div class="traffic-row">
-      <div class="traffic-day-label">${TRAFFIC_DAY_SHORT[d]}</div>
-      ${row.map((count,h)=>{
-        const hour = h+minHour;
-        const label = `${TRAFFIC_DAY_LABELS[d]} ${String(hour).padStart(2,"0")}:00 — ${count} visita${count===1?"":"s"}${count?" (clic para ver tickets)":""}`;
-        const ids = ticketGrid[d][h].join(",");
-        return `<div class="traffic-cell" tabindex="0" style="background:${trafficAlpha(count,maxCount)}" data-traffic-tip="${escapeHtml(label)}" data-ticket-ids="${ids}"></div>`;
-      }).join("")}
-    </div>`).join("");
+      <div class="traffic-day-label">${String(hour).padStart(2,"0")}</div>
+      ${cells}
+    </div>`;
+  }).join("");
   return `
     <div class="traffic-heatmap">
       <div class="traffic-row traffic-hours-row">
         <div class="traffic-day-label"></div>
-        ${hourLabels}
+        ${dayHeaderCells}
       </div>
       ${rows}
     </div>`;
 }
 
-function wireTrafficCellTooltips(containerSel) {
-  const attach = (cell, { clickable }) => {
-    let tip = null;
-    const show = () => {
-      tip = document.createElement("div");
-      tip.className = "traffic-tooltip-bubble";
-      tip.textContent = cell.dataset.trafficTip;
-      tip.style.cssText = "position:fixed;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:6px 10px;font-size:11px;line-height:1.4;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5)";
-      document.body.appendChild(tip);
-      const rect = cell.getBoundingClientRect();
-      const tipRect = tip.getBoundingClientRect();
-      tip.style.left = `${Math.max(4, rect.left + rect.width/2 - tipRect.width/2)}px`;
-      tip.style.top  = `${rect.top - tipRect.height - 8}px`;
-    };
-    const hide = () => { tip?.remove(); tip = null; };
-    cell.addEventListener("mouseenter", show);
-    cell.addEventListener("mouseleave", hide);
-    cell.addEventListener("focus", show);
-    cell.addEventListener("blur", hide);
-    // Celdas hora×día: clic abre el popover de tickets. Celdas del calendario
-    // mensual: solo tooltip — el clic navega a esa semana (wireCalendarDayClicks).
-    if (clickable) cell.addEventListener("click", () => { hide(); showTrafficCellTickets(cell); });
-  };
-  document.querySelectorAll(`${containerSel} .traffic-cell[data-traffic-tip]`).forEach(cell => attach(cell, {clickable:true}));
-  document.querySelectorAll(`${containerSel} .traffic-cal-cell[data-traffic-tip]`).forEach(cell => attach(cell, {clickable:false}));
-}
-
-// Popover con los tickets exactos detrás de una celda del heatmap — deja
-// verificar/auditar la cuenta en vez de confiar a ciegas en el número.
+// Tooltip y popover de celdas de afluencia — DELEGADOS en document, no atados
+// a cada celda. Antes se creaba un tooltip por celda con listeners propios;
+// las celdas se destruyen y recrean en cada re-render (innerHTML), y si el
+// mouse seguía encima justo cuando eso pasaba, el navegador no siempre dispara
+// mouseleave sobre un elemento que desapareció en vez de haber sido abandonado
+// por el cursor — el tooltip quedaba huérfano en document.body, y ni cambiar
+// de sección lo limpiaba (esa parte del DOM no se toca al ocultar una vista).
+// Delegar en document (que nunca se destruye) y reusar UN solo elemento de
+// tooltip / popover elimina el problema de raíz: no hay nada que se pueda
+// "olvidar" de limpiar.
+let trafficTooltipEl   = null;
 let trafficCellPopoverEl = null;
+
+function trafficTooltipTarget(e) {
+  return e.target.closest?.(".traffic-cell[data-traffic-tip], .traffic-cal-cell[data-traffic-tip]") || null;
+}
+function hideTrafficTooltip() {
+  trafficTooltipEl?.remove();
+  trafficTooltipEl = null;
+}
+function showTrafficTooltip(cell) {
+  hideTrafficTooltip();
+  const tip = document.createElement("div");
+  tip.className = "traffic-tooltip-bubble";
+  tip.textContent = cell.dataset.trafficTip;
+  tip.style.cssText = "position:fixed;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:6px 10px;font-size:11px;line-height:1.4;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5)";
+  document.body.appendChild(tip);
+  const rect = cell.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+  tip.style.left = `${Math.max(4, rect.left + rect.width/2 - tipRect.width/2)}px`;
+  tip.style.top  = `${rect.top - tipRect.height - 8}px`;
+  trafficTooltipEl = tip;
+}
 function closeTrafficCellPopover() {
   trafficCellPopoverEl?.remove();
   trafficCellPopoverEl = null;
-  document.removeEventListener("click", onTrafficPopoverOutsideClick, true);
-}
-function onTrafficPopoverOutsideClick(e) {
-  if (trafficCellPopoverEl && !trafficCellPopoverEl.contains(e.target)) closeTrafficCellPopover();
 }
 function showTrafficCellTickets(cell) {
   closeTrafficCellPopover();
@@ -3007,7 +3040,7 @@ function showTrafficCellTickets(cell) {
   pop.className = "traffic-popover";
   pop.innerHTML = `
     <div class="traffic-popover-head">
-      <strong>${ids.length} visita${ids.length===1?"":"s"}</strong>
+      <strong>${uniqueIds.length} ticket${uniqueIds.length===1?"":"s"}</strong>
       <button type="button" class="ghost-button" data-close-pop style="padding:2px 6px;font-size:12px;min-height:0">✕</button>
     </div>
     ${rows}`;
@@ -3023,43 +3056,82 @@ function showTrafficCellTickets(cell) {
   pop.querySelectorAll("[data-open-ticket]").forEach(btn => {
     btn.onclick = () => { closeTrafficCellPopover(); viewTicketDetail(btn.dataset.openTicket); };
   });
-  setTimeout(() => document.addEventListener("click", onTrafficPopoverOutsideClick, true), 0);
+}
+
+// Un solo set de listeners, registrado una vez al cargar el script — nunca se
+// re-wirea por render, así que no hay ventana en la que quede desincronizado.
+document.addEventListener("mouseover", e => { const c = trafficTooltipTarget(e); if (c) showTrafficTooltip(c); });
+document.addEventListener("mouseout",  e => { const c = trafficTooltipTarget(e); if (c && !c.contains(e.relatedTarget)) hideTrafficTooltip(); });
+document.addEventListener("focusin",   e => { const c = trafficTooltipTarget(e); if (c) showTrafficTooltip(c); });
+document.addEventListener("focusout",  e => { const c = trafficTooltipTarget(e); if (c) hideTrafficTooltip(); });
+document.addEventListener("click", e => {
+  const cell = e.target.closest?.(".traffic-cell[data-ticket-ids]");
+  if (cell) { hideTrafficTooltip(); showTrafficCellTickets(cell); return; }
+  if (trafficCellPopoverEl && !e.target.closest(".traffic-popover")) closeTrafficCellPopover();
+});
+
+// Los tooltips y el popover de tickets se appendean a document.body, fuera del
+// contenedor que cada render reemplaza con innerHTML — si el usuario está con
+// el mouse encima de una celda justo cuando algo dispara un re-render (render()
+// se llama muy seguido: cualquier alta/edición de ticket, el poll de 90s,
+// realtime, etc.), el navegador NO dispara mouseleave sobre un elemento que
+// fue destruido por innerHTML en vez de que el mouse se haya movido — el
+// tooltip queda huérfano en document.body para siempre. Barrer cualquier
+// resto ANTES de reconstruir el DOM evita que se acumulen.
+function clearTrafficOverlays() {
+  hideTrafficTooltip();
+  closeTrafficCellPopover();
 }
 
 // ── Tarjeta completa: Reportes → Afluencia de clientes ──────────────────────
+// Dos modos: "Semana típica" (agregado de todas las semanas del período de
+// Reportes en un solo patrón lunes-domingo) y "Explorar" (navega semana por
+// semana o mes por mes — para distinguir si un casillero concurrido es un pico
+// real de un solo día, o la suma de varias semanas distintas).
 function renderTrafficHeatmap(from, to) {
+  trafficPeriodRange = { from, to };
+  clearTrafficOverlays();
   const el = document.querySelector("#reports-traffic");
   if (!el) return;
   if (!supabaseClient) { el.innerHTML = ""; return; }
 
+  const stageToggleHtml = `<div style="display:flex;gap:6px">
+    ${[["all","Ambos"],["Recibido","Recibido"],["Entregado","Entregado"]].map(([v,label])=>
+      `<button class="mini-button${trafficViewMode===v?" is-active":""}" data-traffic-view="${v}">${label}</button>`).join("")}
+  </div>`;
+  const modeToggleHtml = `<div style="display:flex;gap:6px">
+    ${[[false,"Semana típica"],[true,"Explorar"]].map(([v,label])=>
+      `<button class="mini-button${trafficBrowseMode===v?" is-active":""}" data-traffic-mode="${v}">${label}</button>`).join("")}
+  </div>`;
+  const header = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:4px">
+      <div>
+        <h3 style="margin:0 0 4px;font-size:14px">Afluencia de clientes</h3>
+        <p class="muted" style="margin:0;font-size:11px">Cuándo llegan tus clientes — recepción y entrega de equipos</p>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">${stageToggleHtml}${modeToggleHtml}</div>
+    </div>`;
+
+  if (trafficBrowseMode) renderTrafficBrowseBody(el, header);
+  else renderTrafficAggregateBody(el, from, to, header);
+}
+
+function renderTrafficAggregateBody(el, from, to, header) {
   const key = trafficCacheKey(from, to);
   const bucket = trafficCacheMap.get(key);
   if (!bucket) {
-    el.innerHTML = `<div class="card" style="margin-top:16px"><p class="muted" style="margin:0">Cargando afluencia de clientes…</p></div>`;
+    el.innerHTML = `<div class="card" style="margin-top:16px">${header}<p class="muted" style="margin:8px 0 0">Cargando afluencia de clientes…</p></div>`;
+    wireTrafficCommon();
     loadTrafficBucket(from, to).then(() => renderTrafficHeatmap(from, to));
     return;
   }
 
   const { minHour, maxHour, events } = bucket;
   const { filtered, grid, ticketGrid, maxCount, peak } = buildTrafficGrid(events, trafficViewMode, minHour, maxHour);
-  const toggleHtml = `<div style="display:flex;gap:6px">
-    ${[["all","Ambos"],["Recibido","Recibido"],["Entregado","Entregado"]].map(([v,label])=>
-      `<button class="mini-button${trafficViewMode===v?" is-active":""}" data-traffic-view="${v}">${label}</button>`).join("")}
-  </div>`;
 
   if (!filtered.length) {
-    el.innerHTML = `
-      <div class="card" style="margin-top:16px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px">
-          <div>
-            <h3 style="margin:0 0 4px;font-size:14px">Afluencia de clientes</h3>
-            <p class="muted" style="margin:0;font-size:11px">Cuándo llegan tus clientes — recepción y entrega de equipos</p>
-          </div>
-          ${toggleHtml}
-        </div>
-        ${emptyMessage("Sin datos de afluencia en este período.")}
-      </div>`;
-    wireTrafficToggle(from, to);
+    el.innerHTML = `<div class="card" style="margin-top:16px">${header}${emptyMessage("Sin datos de afluencia en este período.")}</div>`;
+    wireTrafficCommon();
     enhanceCollapsibleSection("reports-traffic");
     return;
   }
@@ -3071,13 +3143,8 @@ function renderTrafficHeatmap(from, to) {
 
   el.innerHTML = `
     <div class="card" style="margin-top:16px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:4px">
-        <div>
-          <h3 style="margin:0 0 4px;font-size:14px">Afluencia de clientes</h3>
-          <p class="muted" style="margin:0;font-size:11px">Cuándo llegan tus clientes — ${viewLabel} (${totalVisits} visitas en el período)</p>
-        </div>
-        ${toggleHtml}
-      </div>
+      ${header}
+      <p class="muted" style="margin:0 0 4px;font-size:11px">${viewLabel} — ${totalVisits} visitas en el período (suma de todas las semanas)</p>
       <p style="margin:4px 0 14px;font-size:12px;color:var(--fz-primary)">
         📍 Más concurrido: <strong>${TRAFFIC_DAY_LABELS[peak.day]} ${String(peak.hour).padStart(2,"0")}:00</strong> (${peak.count} visitas)
       </p>
@@ -3088,22 +3155,175 @@ function renderTrafficHeatmap(from, to) {
         <span>Más concurrido</span>
       </div>
     </div>`;
-  wireTrafficToggle(from, to);
-  wireTrafficCellTooltips("#reports-traffic");
+  wireTrafficCommon();
   enhanceCollapsibleSection("reports-traffic");
 }
 
-function wireTrafficToggle(from, to) {
-  document.querySelectorAll("#reports-traffic [data-traffic-view]").forEach(btn=>{
-    btn.onclick = () => { trafficViewMode = btn.dataset.trafficView; renderTrafficHeatmap(from, to); };
+// ── Modo Explorar: navega una semana o un mes específico a la vez ───────────
+function renderTrafficBrowseBody(el, header) {
+  if (!trafficBrowseAnchor) trafficBrowseAnchor = trafficPeriodRange.to || dateStamp();
+  const granularityToggleHtml = `<div style="display:flex;gap:6px">
+    ${[["week","Semana"],["month","Mes"]].map(([v,label])=>
+      `<button class="mini-button${trafficBrowseGranularity===v?" is-active":""}" data-traffic-gran="${v}">${label}</button>`).join("")}
+  </div>`;
+  if (trafficBrowseGranularity === "month") renderTrafficMonthBody(el, header, granularityToggleHtml);
+  else renderTrafficWeekBody(el, header, granularityToggleHtml);
+}
+
+function renderTrafficWeekBody(el, header, granularityToggleHtml) {
+  const [weekFrom, weekTo] = weekRangeForDate(trafficBrowseAnchor);
+  const key = trafficCacheKey(weekFrom, weekTo);
+  const bucket = trafficCacheMap.get(key);
+  const isCurrentWeek = weekRangeForDate(dateStamp())[0] === weekFrom;
+  const navHtml = `
+    <div style="display:flex;align-items:center;gap:14px;margin:10px 0 14px;flex-wrap:wrap">
+      ${granularityToggleHtml}
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="mini-button" data-traffic-nav="-7">‹</button>
+        <strong style="font-size:13px;min-width:180px;text-align:center">Semana del ${fmtDayMonth(weekFrom)} al ${fmtDayMonth(weekTo)}</strong>
+        <button class="mini-button" data-traffic-nav="7"${isCurrentWeek?" disabled":""}>›</button>
+      </div>
+    </div>`;
+
+  if (!bucket) {
+    el.innerHTML = `<div class="card" style="margin-top:16px">${header}${navHtml}<p class="muted" style="margin:0">Cargando semana…</p></div>`;
+    wireTrafficCommon();
+    loadTrafficBucket(weekFrom, weekTo).then(() => renderTrafficHeatmap(trafficPeriodRange.from, trafficPeriodRange.to));
+    return;
+  }
+
+  const { minHour, maxHour, events } = bucket;
+  const { filtered, grid, ticketGrid, maxCount, peak } = buildTrafficGrid(events, trafficViewMode, minHour, maxHour);
+  const totalVisits = grid.flat().reduce((a,b)=>a+b, 0);
+
+  el.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      ${header}
+      ${navHtml}
+      ${filtered.length ? `
+        <p style="margin:0 0 14px;font-size:12px;color:var(--fz-primary)">
+          📍 Más concurrido: <strong>${TRAFFIC_DAY_LABELS[peak.day]} ${String(peak.hour).padStart(2,"0")}:00</strong> (${peak.count} visitas) — ${totalVisits} en esta semana
+        </p>
+        ${trafficGridHtml(grid, ticketGrid, maxCount, minHour, maxHour)}
+        <div class="traffic-legend">
+          <span>Menos concurrido</span>
+          ${[0,.14,.28,.46,.68,.92].map(a=>`<span class="traffic-legend-swatch" style="background:${a?`rgba(var(--fz-primary-rgb),${a})`:"rgba(255,255,255,.04)"}"></span>`).join("")}
+          <span>Más concurrido</span>
+        </div>` : emptyMessage("Sin visitas esa semana.")}
+    </div>`;
+  wireTrafficCommon();
+  enhanceCollapsibleSection("reports-traffic");
+}
+
+function renderTrafficMonthBody(el, header, granularityToggleHtml) {
+  const [monthFrom, monthTo] = monthRangeForDate(trafficBrowseAnchor);
+  const monthStr = trafficBrowseAnchor.slice(0,7);
+  const key = trafficCacheKey(monthFrom, monthTo);
+  const bucket = trafficCacheMap.get(key);
+  const isCurrentMonth = monthStr === dateStamp().slice(0,7);
+  const navHtml = `
+    <div style="display:flex;align-items:center;gap:14px;margin:10px 0 14px;flex-wrap:wrap">
+      ${granularityToggleHtml}
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="mini-button" data-traffic-nav="-1m">‹</button>
+        <strong style="font-size:13px;min-width:140px;text-align:center">${TRAFFIC_MONTH_LABELS[Number(monthStr.slice(5,7))-1]} ${monthStr.slice(0,4)}</strong>
+        <button class="mini-button" data-traffic-nav="1m"${isCurrentMonth?" disabled":""}>›</button>
+      </div>
+    </div>`;
+
+  if (!bucket) {
+    el.innerHTML = `<div class="card" style="margin-top:16px">${header}${navHtml}<p class="muted" style="margin:0">Cargando calendario…</p></div>`;
+    wireTrafficCommon();
+    loadTrafficBucket(monthFrom, monthTo).then(() => renderTrafficHeatmap(trafficPeriodRange.from, trafficPeriodRange.to));
+    return;
+  }
+
+  const { events } = bucket;
+  const dailyCounts = buildDailyTrafficCounts(events, trafficViewMode);
+  const { html: calHtml, busiestDate, busiestCount } = trafficCalendarHtml(monthStr, dailyCounts);
+  const peakLine = busiestDate
+    ? `<p style="margin:4px 0 14px;font-size:12px;color:var(--fz-primary)">🏆 Día más concurrido: <strong>${fmtDayMonth(busiestDate)}</strong> (${busiestCount} ticket${busiestCount===1?"":"s"}) — clic en un día para ver esa semana</p>`
+    : `<p class="muted" style="margin:4px 0 14px;font-size:12px">Sin visitas registradas este mes.</p>`;
+
+  el.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      ${header}
+      ${navHtml}
+      ${peakLine}
+      ${calHtml}
+      <div class="traffic-legend">
+        <span>Menos concurrido</span>
+        ${[0,.14,.28,.46,.68,.92].map(a=>`<span class="traffic-legend-swatch" style="background:${a?`rgba(var(--fz-primary-rgb),${a})`:"rgba(255,255,255,.04)"}"></span>`).join("")}
+        <span>Más concurrido</span>
+      </div>
+    </div>`;
+  wireTrafficCommon();
+  wireCalendarDayClicks();
+  enhanceCollapsibleSection("reports-traffic");
+}
+
+// Wiring compartido por las 3 variantes de la tarjeta (agregado/semana/mes):
+// toggle de etapa, toggle Semana típica↔Explorar, toggle de granularidad y
+// flechas de navegación — todas re-renderizan con trafficPeriodRange (el
+// último [from,to] del filtro de Reportes), nunca con params locales, para
+// que cambiar de modo siempre vuelva al período correcto.
+function wireTrafficCommon() {
+  document.querySelectorAll("#reports-traffic [data-traffic-view]").forEach(btn => {
+    btn.onclick = () => { trafficViewMode = btn.dataset.trafficView; renderTrafficHeatmap(trafficPeriodRange.from, trafficPeriodRange.to); };
+  });
+  document.querySelectorAll("#reports-traffic [data-traffic-mode]").forEach(btn => {
+    btn.onclick = () => {
+      trafficBrowseMode = btn.dataset.trafficMode === "true";
+      if (trafficBrowseMode && !trafficBrowseAnchor) trafficBrowseAnchor = trafficPeriodRange.to || dateStamp();
+      renderTrafficHeatmap(trafficPeriodRange.from, trafficPeriodRange.to);
+    };
+  });
+  document.querySelectorAll("#reports-traffic [data-traffic-gran]").forEach(btn => {
+    btn.onclick = () => { trafficBrowseGranularity = btn.dataset.trafficGran; renderTrafficHeatmap(trafficPeriodRange.from, trafficPeriodRange.to); };
+  });
+  document.querySelectorAll("#reports-traffic [data-traffic-nav]").forEach(btn => {
+    btn.onclick = () => {
+      const nav = btn.dataset.trafficNav;
+      if (nav === "-1m" || nav === "1m") {
+        const [y,m] = trafficBrowseAnchor.slice(0,7).split("-").map(Number);
+        const d = new Date(y, m-1 + (nav==="1m"?1:-1), 1);
+        trafficBrowseAnchor = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
+      } else {
+        const d = new Date(`${trafficBrowseAnchor}T12:00:00`);
+        d.setDate(d.getDate()+Number(nav));
+        trafficBrowseAnchor = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      }
+      renderTrafficHeatmap(trafficPeriodRange.from, trafficPeriodRange.to);
+    };
   });
 }
 
+function wireCalendarDayClicks() {
+  document.querySelectorAll("#reports-traffic .traffic-cal-cell[data-cal-date]").forEach(cell => {
+    cell.onclick = () => {
+      trafficBrowseAnchor = cell.dataset.calDate;
+      trafficBrowseGranularity = "week";
+      renderTrafficHeatmap(trafficPeriodRange.from, trafficPeriodRange.to);
+    };
+  });
+}
+
+function fmtWeekShort(weekFrom, weekTo) {
+  const [,m1,d1] = weekFrom.split("-").map(Number);
+  const [,m2,d2] = weekTo.split("-").map(Number);
+  const mon1 = TRAFFIC_MONTH_LABELS[m1-1].slice(0,3).toLowerCase();
+  const mon2 = TRAFFIC_MONTH_LABELS[m2-1].slice(0,3).toLowerCase();
+  return m1===m2 ? `${d1}–${d2} ${mon1}` : `${d1} ${mon1} – ${d2} ${mon2}`;
+}
+
 // ── Widget compacto: Home → "🚶 Afluencia en el local" (#dashboard-traffic-chart) ──
-// Siempre histórico completo (no el filtro de período de Reportes) para mostrar
-// un patrón estable, tipo "horas populares" de Google Maps — sin toggle, sin
-// leyenda, solo el vistazo rápido + un botón para ver el detalle en Reportes.
+// Muestra una sola semana a la vez (por defecto la actual), con flechitas
+// minimalistas para moverse semana a semana — sin el selector Semana/Mes ni
+// el resto de controles de la tarjeta completa de Reportes, para que el
+// widget del Home se mantenga compacto.
+let dashboardTrafficAnchor = null; // "YYYY-MM-DD" — cualquier fecha dentro de la semana mostrada
 function renderDashboardTraffic() {
+  clearTrafficOverlays();
   const container = document.querySelector("#dashboard-traffic-chart");
   if (!container) return;
   const header = `<div class="section-heading"><h2>🚶 Afluencia en el local</h2><button class="ghost-button" data-view-target="reports">Ver detalle</button></div>`;
@@ -3113,29 +3333,52 @@ function renderDashboardTraffic() {
     return;
   }
 
-  const from = "2000-01-01", to = dateStamp();
-  const key = trafficCacheKey(from, to);
+  if (!dashboardTrafficAnchor) dashboardTrafficAnchor = dateStamp();
+  const [weekFrom, weekTo] = weekRangeForDate(dashboardTrafficAnchor);
+  const isCurrentWeek = weekRangeForDate(dateStamp())[0] === weekFrom;
+  const navHtml = `
+    <div class="traffic-mini-nav">
+      <button type="button" class="traffic-mini-nav-btn" data-dash-traffic-nav="-7" aria-label="Semana anterior">‹</button>
+      <span>${fmtWeekShort(weekFrom, weekTo)}</span>
+      <button type="button" class="traffic-mini-nav-btn" data-dash-traffic-nav="7" aria-label="Semana siguiente"${isCurrentWeek?" disabled":""}>›</button>
+    </div>`;
+
+  const key = trafficCacheKey(weekFrom, weekTo);
   const bucket = trafficCacheMap.get(key);
   if (!bucket) {
-    container.innerHTML = `${header}<div class="dash-card-body"><div class="skeleton-card" style="height:88px"></div></div>`;
-    loadTrafficBucket(from, to).then(() => renderDashboardTraffic());
+    container.innerHTML = `${header}<div class="dash-card-body">${navHtml}<div class="skeleton-card" style="height:88px"></div></div>`;
+    wireDashboardTrafficNav();
+    loadTrafficBucket(weekFrom, weekTo).then(() => renderDashboardTraffic());
     return;
   }
 
   const { minHour, maxHour, events } = bucket;
-  if (!events.length) {
-    container.innerHTML = `${header}<div class="dash-card-body">${emptyMessage("Aún no hay suficientes visitas registradas.")}</div>`;
+  const { filtered, grid, ticketGrid, maxCount, peak } = buildTrafficGrid(events, "all", minHour, maxHour);
+  if (!filtered.length) {
+    container.innerHTML = `${header}<div class="dash-card-body">${navHtml}${emptyMessage("Sin visitas esa semana.")}</div>`;
+    wireDashboardTrafficNav();
     return;
   }
 
-  const { grid, ticketGrid, maxCount, peak } = buildTrafficGrid(events, "all", minHour, maxHour);
   container.innerHTML = `
     ${header}
     <div class="dash-card-body">
-      <p style="margin:0 0 10px;font-size:12px;color:var(--fz-primary)">📍 Más concurrido: <strong>${TRAFFIC_DAY_LABELS[peak.day]} ${String(peak.hour).padStart(2,"0")}:00</strong></p>
+      ${navHtml}
+      <p style="margin:0 0 8px;font-size:11px;color:var(--fz-primary)">📍 Más concurrido: <strong>${TRAFFIC_DAY_LABELS[peak.day]} ${String(peak.hour).padStart(2,"0")}:00</strong></p>
       ${trafficGridHtml(grid, ticketGrid, maxCount, minHour, maxHour)}
     </div>`;
-  wireTrafficCellTooltips("#dashboard-traffic-chart");
+  wireDashboardTrafficNav();
+}
+
+function wireDashboardTrafficNav() {
+  document.querySelectorAll("#dashboard-traffic-chart [data-dash-traffic-nav]").forEach(btn => {
+    btn.onclick = () => {
+      const d = new Date(`${dashboardTrafficAnchor}T12:00:00`);
+      d.setDate(d.getDate()+Number(btn.dataset.dashTrafficNav));
+      dashboardTrafficAnchor = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      renderDashboardTraffic();
+    };
+  });
 }
 
 // ── Secciones plegables de Reportes ─────────────────────────────────────────
@@ -5640,6 +5883,7 @@ async function updateRemoteSupply(supplyId, data) {
   const suppId    = await findOrCreateSupplier(data.supplier);
   const productId = data.product_id || null;
   const itemName  = data.item || (productId && state.products.find(p=>p.id===productId)?.name) || "";
+  const ticketId  = data.ticket_id || null;
   const payload   = {
     purchase_date: data.date,
     supplier_id:   suppId,
@@ -5647,12 +5891,13 @@ async function updateRemoteSupply(supplyId, data) {
     quantity:      Number(data.quantity || 0),
     total_amount:  Number(data.total || 0),
     product_id:    productId,
+    ticket_id:     ticketId,
   };
   if (receiptUrl) payload.receipt_url = receiptUrl;
   const { error } = await supabaseClient.from("supply_purchases").update(payload).eq("id", supplyId);
   if (error) throw error;
 
-  // Sync the linked Egreso transaction so its date/concept/amount stay in sync
+  // Sync the linked Egreso transaction so its date/concept/amount/ticket stay in sync
   const supply = state.supplies.find(s => s.id === supplyId);
   if (supply?.transaction_id) {
     const tx = state.transactions.find(t => t.id === supply.transaction_id);
@@ -5660,6 +5905,7 @@ async function updateRemoteSupply(supplyId, data) {
       date: payload.purchase_date, type: "Egreso",
       concept: `Compra: ${itemName}`, category: "Insumos",
       amount: payload.total_amount, paymentMethod: tx?.paymentMethod || "",
+      ticketId,
     });
   }
 }
@@ -5672,14 +5918,19 @@ async function updateRemoteTransaction(txId, data) {
     return;
   }
   const tx = state.transactions.find(t => t.id === txId);
-  const { error } = await supabaseClient.from("transactions").update({
+  const payload = {
     transaction_date: data.date,
     type:             data.type,
     concept:          data.concept,
     category:         data.category,
     amount:           Number(data.amount || 0),
     payment_method:   data.paymentMethod || null,
-  }).eq("id", txId);
+  };
+  // ticketId is only passed by callers that manage the link explicitly (e.g. supply
+  // purchases) — the plain transaction edit form has no such field, so this never
+  // clears an existing link by accident.
+  if (data.ticketId !== undefined) payload.ticket_id = data.ticketId || null;
+  const { error } = await supabaseClient.from("transactions").update(payload).eq("id", txId);
   if (error) throw error;
 
   // Trazabilidad bidireccional: si esta transacción es el ingreso de un ticket
@@ -7096,6 +7347,17 @@ function fieldTemplate(name, label, ftype, opts, wide, defaultValue, optional=fa
       <select id="${name}" name="${name}">
         <option value="">— Sin vincular —</option>
         ${txs.map(t=>`<option value="${t.id}" ${t.id===defaultValue?"selected":""}>${escapeHtml(`${t.date} — ${t.concept} — ${money.format(t.amount)}`)}</option>`).join("")}
+      </select></div>`;
+  }
+  if (ftype==="ticket-select") {
+    const tks = [...branchTickets()]
+      .sort((a,b) => (b.createdAtFull||b.createdAt||"").localeCompare(a.createdAtFull||a.createdAt||""))
+      .slice(0, 150);
+    return `<div class="field ${wide?"is-wide":""}">
+      <label for="${name}">${labelHtml}</label>
+      <select id="${name}" name="${name}">
+        <option value="">— Sin vincular —</option>
+        ${tks.map(t=>`<option value="${t.id}" ${t.id===defaultValue?"selected":""}>${escapeHtml(`${t.tracking} — ${t.client}${t.productName?` — ${t.productName}`:""}`)}</option>`).join("")}
       </select></div>`;
   }
   if (ftype==="hidden") {
@@ -8715,8 +8977,9 @@ async function createRemoteSupply(r) {
     if (fileInput?.files?.length) receiptUrl = await uploadReceiptFile(fileInput.files[0]);
   }
 
+  const ticketId = r.ticket_id || null;
   const suppId = await findOrCreateSupplier(r.supplier);
-  const tx = await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${itemName}`, category:"Insumos", amount:r.total });
+  const tx = await createRemoteTransaction({ date:r.date, type:"Egreso", concept:`Compra: ${itemName}`, category:"Insumos", amount:r.total, ticketId });
   const { error } = await supabaseClient.from("supply_purchases").insert({
     supplier_id:  suppId,
     branch_id:    await branchIdByName(activeBranchId),
@@ -8725,6 +8988,7 @@ async function createRemoteSupply(r) {
     quantity:     r.quantity,
     total_amount: r.total,
     product_id:   productId,
+    ticket_id:    ticketId,
     receipt_url:  receiptUrl,
     created_by:   currentEmployeeId(),
     transaction_id: tx?.id || null,
@@ -11690,6 +11954,20 @@ function viewTicketDetail(ticketId) {
       </div>`
     : "";
 
+  // Insumos comprados vinculados a este ticket — solo trazabilidad interna,
+  // nunca se incluye en impresiones/comprobantes de cara al cliente.
+  const linkedSupplies = (state.supplies||[]).filter(s => s.ticket_id === ticket.id);
+  const linkedSuppliesHtml = linkedSupplies.length
+    ? `<div class="tdv-issue" style="margin-bottom:10px">
+        <p class="muted" style="font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em">Insumos comprados para este ticket (interno)</p>
+        ${linkedSupplies.map(s => `
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0">
+            <span>${escapeHtml(s.item)}${s.quantity>1?` (${s.quantity}×)`:""}</span>
+            <span style="white-space:nowrap;margin-left:8px">${money.format(s.total)}</span>
+          </div>`).join("")}
+      </div>`
+    : "";
+
   // Eliminar instancia previa si existe
   document.querySelector("#tdv-dialog")?.remove();
 
@@ -11730,6 +12008,7 @@ function viewTicketDetail(ticketId) {
         ${ticket.status==="Cancelado" ? row("Motivo de cancelación", ticket.cancelReason) : ""}
       </div>
       ${itemsHtml}
+      ${linkedSuppliesHtml}
       ${unlockPatternDetailHtml(ticket)}
       ${ticket.recibidoAt ? `
       <div class="detail-row" style="margin-bottom:10px;align-items:center">
@@ -11996,6 +12275,7 @@ function viewSupplyDetail(supplyId) {
   const row = (label, val) => val
     ? `<div class="detail-row"><span>${label}</span><strong>${escapeHtml(String(val))}</strong></div>`
     : "";
+  const linkedTicket = supply.ticket_id ? (state.tickets||[]).find(t => t.id === supply.ticket_id) : null;
 
   document.querySelector("#tdv-dialog")?.remove();
 
@@ -12018,6 +12298,7 @@ function viewSupplyDetail(supplyId) {
         ${row("Total",      money.format(supply.total))}
         ${row("Sucursal",   supply.branch)}
       </div>
+      ${linkedTicket ? `<div class="detail-row"><span>Ticket vinculado</span><button type="button" class="mini-button" id="tdv-open-ticket" title="Solo para uso interno — no aparece en comprobantes">🎫 ${escapeHtml(linkedTicket.tracking)}</button></div>` : ""}
       ${supply.receipt_url ? `<div class="detail-row"><span>Comprobante</span><a href="${escapeHtml(supply.receipt_url)}" target="_blank" class="mini-button">📄 Ver</a></div>` : ""}
     </div>
     <menu class="modal-actions" style="padding:16px 22px">
@@ -12033,6 +12314,10 @@ function viewSupplyDetail(supplyId) {
   dlg.querySelector("#tdv-edit").addEventListener("click", () => {
     dlg.close();
     openEditSupply(supplyId);
+  });
+  dlg.querySelector("#tdv-open-ticket")?.addEventListener("click", () => {
+    dlg.close();
+    viewTicketDetail(linkedTicket.id);
   });
   dlg.addEventListener("close", () => dlg.remove(), { once: true });
 
