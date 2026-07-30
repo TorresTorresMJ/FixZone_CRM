@@ -470,12 +470,13 @@ function subscribeRealtimeUpdates() {
         branch: (state.branches || []).find(b => b.id === t.branch_id)?.name || null,
         createdBy: t.created_by || null,
         createdByName: (state.employees || []).find(e => e.id === t.created_by)?.name || "Equipo",
-        createdAt: t.created_at, status: t.status || "pendiente",
+        createdAt: t.created_at, dueDate: t.due_date || "", status: t.status || "pendiente",
         completedBy: t.completed_by || null, completedByName: "", completedAt: t.completed_at || null,
         resolutionNote: t.resolution_note || "",
         viewedBy: Array.isArray(t.viewed_by) ? t.viewed_by : [],
       }, ...(state.teamTasks || [])];
       renderTeamTasksBadge();
+      renderDashboardTasks();
       if (document.getElementById("team-tasks-panel-overlay")) { document.getElementById("team-tasks-panel-overlay").remove(); openTeamTasksPanel(); }
     })
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "team_tasks" }, ({ new: t }) => {
@@ -487,6 +488,7 @@ function subscribeRealtimeUpdates() {
         resolutionNote: t.resolution_note || "", viewedBy: Array.isArray(t.viewed_by) ? t.viewed_by : [],
       };
       renderTeamTasksBadge();
+      renderDashboardTasks();
     })
     .subscribe();
 }
@@ -813,6 +815,7 @@ async function loadSupabaseState() {
         convertedToTicket:t.converted_to_ticket||"",
         waitingPart:!!t.waiting_part,
         waitingPartNote:t.waiting_part_note||"",
+        cancelReason:t.cancel_reason||"",
         timerTargetAt:t.timer_target_at||null,
         dueDate:t.due_date||"",
         deviceId:t.device_id||null,
@@ -931,6 +934,7 @@ async function loadSupabaseState() {
       createdBy:t.created_by||null,
       createdByName:employeeRows.find(e=>e.id===t.created_by)?.full_name||"Equipo",
       createdAt:t.created_at,
+      dueDate:t.due_date||"",
       status:t.status||"pendiente",
       completedBy:t.completed_by||null,
       completedByName:employeeRows.find(e=>e.id===t.completed_by)?.full_name||"",
@@ -1000,6 +1004,8 @@ function restoreLastView() {
 // ──────────────────────────────────────────────────────────────────────────────
 function render() {
   renderMetrics();
+  renderDashboardTasks();
+  renderDashboardTraffic();
   renderClients();
   renderProducts();
   renderTickets();
@@ -1204,8 +1210,8 @@ function initKanbanScrollProxy() {
     }, { passive: true });
   }
 
-  // Posición: a la derecha del sidebar (220px en escritorio, 0 en móvil donde el sidebar es top-bar)
-  const sidebarPx = window.innerWidth > 980 ? 220 : 0;
+  // Posición: a la derecha del sidebar (200px en escritorio, 0 en móvil donde el sidebar es top-bar)
+  const sidebarPx = window.innerWidth > 980 ? 200 : 0;
   strip.style.left = sidebarPx + "px";
   strip.style.right = "0";
 
@@ -1256,8 +1262,14 @@ function renderTickets() {
     if (filterSelect) filterSelect.addEventListener("change", () => { kanbanAssigneeFilter = filterSelect.value; renderTickets(); });
   }
 
-  document.querySelector("#ticket-board").innerHTML = ticketStages.map(status=>{
-    const tickets = sortedKanbanTickets(bySearch(branchTickets()).filter(t=>t.status===status && (!kanbanAssigneeFilter || t.assignedTo===kanbanAssigneeFilter)));
+  // "Cancelado" no tiene columna propia — el pill rojo de estado ya lo distingue,
+  // así que se agrupa dentro de "Entregado" para no perder ancho horizontal del
+  // kanban con una columna casi siempre vacía.
+  const kanbanColumns = ticketStages.filter(s => s !== "Cancelado");
+  document.querySelector("#ticket-board").innerHTML = kanbanColumns.map(status=>{
+    const tickets = sortedKanbanTickets(bySearch(branchTickets()).filter(t=>
+      (t.status===status || (status==="Entregado" && t.status==="Cancelado"))
+      && (!kanbanAssigneeFilter || t.assignedTo===kanbanAssigneeFilter)));
     return `<section class="kanban-column"
       ondragover="event.preventDefault();this.classList.add('drag-over')"
       ondragleave="this.classList.remove('drag-over')"
@@ -1502,6 +1514,7 @@ function ticketCard(ticket, perms, idx = 0) {
     <span class="muted" style="font-size:11px">${escapeHtml(ticket.productName||ticket.device)}</span>
     ${issueHtml}
     ${ticket.waitingPart ? `<div style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:rgba(243,156,18,.15);border:1px solid rgba(243,156,18,.35);color:#f39c12" title="${escapeHtml(ticket.waitingPartNote||"")}">⏳ Esperando pieza${ticket.waitingPartNote?` — ${escapeHtml(ticket.waitingPartNote)}`:""}</div>` : ""}
+    ${ticket.status==="Cancelado"&&ticket.cancelReason==="Irreparable" ? `<div style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:rgba(255,92,92,.15);border:1px solid rgba(255,92,92,.35);color:#ff5c5c">🔧 Irreparable</div>` : ""}
     ${timerHtml}
     ${dueDateHtml}
     ${priceHtml}
@@ -2733,6 +2746,458 @@ function openListDrilldown(title, subtitle, headers, items) {
   dlg.showModal();
 }
 
+// ── Afluencia de clientes (heatmap día × hora) ──────────────────────────────
+// Cuenta visitas físicas a la sucursal: recepción y entrega de equipos.
+// received_at/recibido_sealed_at tienen hora exacta, pero delivered_at solo
+// guarda fecha (sin hora) — así que la única fuente con hora exacta para AMBAS
+// etapas es ticket_events (stage_change/created hacia "Recibido"/"Entregado"),
+// que ya se registra automáticamente en cada cambio de etapa del kanban.
+// Dos consumidores comparten esta misma caché (por eso es un Map, no un solo
+// slot): la tarjeta completa de Reportes (#reports-traffic, sigue el filtro
+// de período Hoy/7 días/Mes/Todo) y el widget compacto del Home
+// (#dashboard-traffic-chart, siempre histórico completo — un slot cada uno).
+let trafficViewMode = "all"; // "all" | "Recibido" | "Entregado" — solo la tarjeta de Reportes
+let trafficCacheMap = new Map();  // `${activeBranchId}|${from}|${to}` -> {minHour,maxHour,events}
+let trafficPending   = new Map(); // misma key -> Promise en curso (evita fetch duplicado)
+// "Semana típica" (default) agrega TODAS las semanas del período seleccionado en un
+// solo patrón — útil para ver el patrón general, pero un mismo casillero (p. ej.
+// "Martes 14:00") puede sumar tickets de varias semanas distintas. "Explorar" deja
+// navegar semana por semana o mes por mes para ver una sola instancia a la vez.
+let trafficBrowseMode        = false;   // false = Semana típica, true = Explorar
+let trafficBrowseGranularity = "week";  // "week" | "month" — solo aplica en modo Explorar
+let trafficBrowseAnchor      = null;    // "YYYY-MM-DD" — cualquier fecha dentro del período mostrado
+let trafficPeriodRange       = { from: null, to: null }; // último [from,to] del filtro de Reportes (para volver a Semana típica)
+const TRAFFIC_DAY_LABELS  = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+const TRAFFIC_MONTH_LABELS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+function weekRangeForDate(dateStr) {
+  const d = new Date(`${dateStr}T12:00:00`); // mediodía evita líos de DST/zona horaria
+  const dow = (d.getDay()+6)%7; // 0=Lunes
+  const monday = new Date(d); monday.setDate(d.getDate()-dow);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+  const fmt = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;
+  return [fmt(monday), fmt(sunday)];
+}
+function monthRangeForDate(dateStr) {
+  const [y,m] = dateStr.slice(0,7).split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return [`${dateStr.slice(0,7)}-01`, `${dateStr.slice(0,7)}-${String(lastDay).padStart(2,"0")}`];
+}
+function fmtDayMonth(dateStr) {
+  const [,m,d] = dateStr.split("-").map(Number);
+  return `${Number(d)} de ${TRAFFIC_MONTH_LABELS[m-1]}`;
+}
+const TRAFFIC_DAY_SHORT  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+
+function trafficCacheKey(from, to) { return `${activeBranchId}|${from}|${to}`; }
+
+async function fetchTrafficEvents(from, to) {
+  if (!supabaseClient) return [];
+  const fromIso = new Date(`${from}T00:00:00`).toISOString();
+  const toIso   = new Date(`${to}T23:59:59.999`).toISOString();
+  const { data, error } = await supabaseClient
+    .from("ticket_events")
+    .select("ticket_id, to_stage, created_at")
+    // "quote_approved" es obligatorio aparte de "stage_change": approveQuoteToTicket()
+    // hace su propio update de stage a mano (no pasa por updateRemoteTicket) y registra
+    // ese evento con su propio event_type — es la vía real por la que la mayoría de los
+    // tickets llegan a "Recibido" en este negocio (cotización aprobada al recibir el
+    // equipo), así que omitirlo dejaba "Recibido" casi vacío.
+    .in("event_type", ["created", "stage_change", "quote_approved"])
+    .in("to_stage", ["Recibido", "Entregado"])
+    .gte("created_at", fromIso)
+    .lte("created_at", toIso)
+    .limit(20000);
+  if (error) { console.warn("No se pudo cargar afluencia de clientes:", error); return []; }
+  return data || [];
+}
+
+function loadTrafficBucket(from, to) {
+  const key = trafficCacheKey(from, to);
+  if (trafficCacheMap.has(key)) return Promise.resolve(trafficCacheMap.get(key));
+  if (trafficPending.has(key)) return trafficPending.get(key);
+  const promise = fetchTrafficEvents(from, to).then(events => {
+    const ticketIds = new Set(branchTickets().map(t => t.id));
+    const inBranch = events.filter(ev => ticketIds.has(ev.ticket_id));
+    // Rango de horas fijo entre los 3 toggles (evita que la cuadrícula cambie de
+    // tamaño al alternar Ambos/Recibido/Entregado). Piso fijo en las 9 — la
+    // sucursal abre 9:30, así que no hay margen hacia abajo (evita una columna
+    // de las 8 que nunca tiene visitas reales y obliga a hacer scroll lateral);
+    // el techo sí conserva 1h de margen sobre la última hora con datos.
+    let minHour = 9, maxHour = 20;
+    if (inBranch.length) {
+      const hours = inBranch.map(ev => new Date(ev.created_at).getHours());
+      minHour = Math.max(9, Math.min(...hours));
+      maxHour = Math.min(23, Math.max(...hours) + 1);
+    }
+    const bucket = { minHour, maxHour, events: inBranch };
+    trafficCacheMap.set(key, bucket);
+    trafficPending.delete(key);
+    return bucket;
+  });
+  trafficPending.set(key, promise);
+  return promise;
+}
+
+// Agrupa eventos (ya del branch correcto) en una cuadrícula día(0=Lunes)×hora
+// y localiza la celda más concurrida. Compartido por la tarjeta de Reportes y
+// el widget del dashboard.
+function buildTrafficGrid(events, viewMode, minHour, maxHour) {
+  const filtered = viewMode === "all" ? events : events.filter(ev => ev.to_stage === viewMode);
+  // Un Set por celda (no un contador plano): si el mismo ticket dispara más de
+  // un evento que cae en la misma celda día×hora (p. ej. una corrección de
+  // etapa el mismo momento, o un ticket que entra y sale de la misma etapa),
+  // debe contar como UNA sola visita ahí — de lo contrario un solo ticket
+  // infla el número de la celda y "más concurrido" deja de ser confiable.
+  const cellTickets = Array.from({length:7}, () => Array.from({length:maxHour-minHour+1}, () => new Set()));
+  for (const ev of filtered) {
+    const d = new Date(ev.created_at);
+    const dayIdx = (d.getDay()+6)%7;
+    const hour = d.getHours();
+    if (hour < minHour || hour > maxHour) continue;
+    cellTickets[dayIdx][hour-minHour].add(ev.ticket_id);
+  }
+  const grid       = cellTickets.map(row => row.map(s => s.size));
+  const ticketGrid = cellTickets.map(row => row.map(s => [...s]));
+  const maxCount = Math.max(1, ...grid.flat());
+  let peak = { day:0, hour:minHour, count:0 };
+  grid.forEach((row,d)=>row.forEach((c,h)=>{ if (c>peak.count) peak = { day:d, hour:h+minHour, count:c }; }));
+  return { filtered, grid, ticketGrid, maxCount, peak };
+}
+
+function trafficAlpha(n, maxCount) {
+  if (!n) return "rgba(255,255,255,.04)";
+  const ratio = n / maxCount;
+  const a = ratio<=.2 ? .14 : ratio<=.4 ? .28 : ratio<=.6 ? .46 : ratio<=.8 ? .68 : .92;
+  return `rgba(var(--fz-primary-rgb),${a})`;
+}
+
+// Cuenta tickets únicos por FECHA calendario (no por día de la semana) — para
+// el calendario mensual del modo Explorar. Mismo criterio de dedup por ticket
+// que buildTrafficGrid, para que un ticket con 2 eventos el mismo día no infle
+// el número del día.
+function buildDailyTrafficCounts(events, viewMode) {
+  const filtered = viewMode === "all" ? events : events.filter(ev => ev.to_stage === viewMode);
+  const dayTickets = {}; // "YYYY-MM-DD" -> Set(ticket_id)
+  for (const ev of filtered) {
+    const d = new Date(ev.created_at);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    (dayTickets[key] ||= new Set()).add(ev.ticket_id);
+  }
+  const counts = {};
+  for (const [date, set] of Object.entries(dayTickets)) counts[date] = set.size;
+  return counts;
+}
+
+// Markup del calendario mensual: fila de encabezado (Lun..Dom) + una celda por
+// día, coloreada con la misma escala que el heatmap semanal. Resalta el día
+// más concurrido del mes con 🏆.
+function trafficCalendarHtml(monthStr, dailyCounts) {
+  const [y,m] = monthStr.split("-").map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const leadingBlanks = (new Date(y, m-1, 1).getDay()+6)%7; // 0=Lunes
+  const maxCount = Math.max(1, ...Object.values(dailyCounts), 0);
+  let busiestDate = null, busiestCount = 0;
+  for (const [date, count] of Object.entries(dailyCounts)) {
+    if (count > busiestCount) { busiestCount = count; busiestDate = date; }
+  }
+
+  const cells = [];
+  for (let i=0;i<leadingBlanks;i++) cells.push(`<div class="traffic-cal-cell traffic-cal-blank"></div>`);
+  for (let day=1; day<=daysInMonth; day++) {
+    const dateStr = `${monthStr}-${String(day).padStart(2,"0")}`;
+    const count = dailyCounts[dateStr] || 0;
+    const isBusiest = dateStr === busiestDate && busiestCount > 0;
+    const label = `${fmtDayMonth(dateStr)} — ${count} ticket${count===1?"":"s"}${isBusiest?" 🏆 día más concurrido del mes":""}`;
+    cells.push(`<div class="traffic-cal-cell${isBusiest?" is-busiest":""}" tabindex="0"
+      style="background:${trafficAlpha(count,maxCount)}" data-traffic-tip="${escapeHtml(label)}" data-cal-date="${dateStr}">
+      <span class="traffic-cal-daynum">${day}</span>${isBusiest?'<span class="traffic-cal-star">🏆</span>':""}
+    </div>`);
+  }
+  while (cells.length % 7 !== 0) cells.push(`<div class="traffic-cal-cell traffic-cal-blank"></div>`);
+
+  const weekdayHeader = TRAFFIC_DAY_SHORT.map(d=>`<div class="traffic-cal-weekday">${d}</div>`).join("");
+  return {
+    busiestDate, busiestCount,
+    html: `<div class="traffic-calendar">
+      <div class="traffic-cal-grid traffic-cal-header">${weekdayHeader}</div>
+      <div class="traffic-cal-grid">${cells.join("")}</div>
+    </div>`,
+  };
+}
+
+// Markup de la cuadrícula (fila de horas + una fila por día) — reutilizado por
+// la tarjeta completa de Reportes y por el widget compacto del dashboard.
+function trafficGridHtml(grid, ticketGrid, maxCount, minHour, maxHour) {
+  const hourLabels = Array.from({length:maxHour-minHour+1}, (_,i)=>minHour+i)
+    .map(h=>`<div class="traffic-hour-label">${String(h).padStart(2,"0")}</div>`).join("");
+  const rows = grid.map((row,d)=>`
+    <div class="traffic-row">
+      <div class="traffic-day-label">${TRAFFIC_DAY_SHORT[d]}</div>
+      ${row.map((count,h)=>{
+        const hour = h+minHour;
+        const label = `${TRAFFIC_DAY_LABELS[d]} ${String(hour).padStart(2,"0")}:00 — ${count} visita${count===1?"":"s"}${count?" (clic para ver tickets)":""}`;
+        const ids = ticketGrid[d][h].join(",");
+        return `<div class="traffic-cell" tabindex="0" style="background:${trafficAlpha(count,maxCount)}" data-traffic-tip="${escapeHtml(label)}" data-ticket-ids="${ids}"></div>`;
+      }).join("")}
+    </div>`).join("");
+  return `
+    <div class="traffic-heatmap">
+      <div class="traffic-row traffic-hours-row">
+        <div class="traffic-day-label"></div>
+        ${hourLabels}
+      </div>
+      ${rows}
+    </div>`;
+}
+
+function wireTrafficCellTooltips(containerSel) {
+  const attach = (cell, { clickable }) => {
+    let tip = null;
+    const show = () => {
+      tip = document.createElement("div");
+      tip.className = "traffic-tooltip-bubble";
+      tip.textContent = cell.dataset.trafficTip;
+      tip.style.cssText = "position:fixed;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:6px 10px;font-size:11px;line-height:1.4;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5)";
+      document.body.appendChild(tip);
+      const rect = cell.getBoundingClientRect();
+      const tipRect = tip.getBoundingClientRect();
+      tip.style.left = `${Math.max(4, rect.left + rect.width/2 - tipRect.width/2)}px`;
+      tip.style.top  = `${rect.top - tipRect.height - 8}px`;
+    };
+    const hide = () => { tip?.remove(); tip = null; };
+    cell.addEventListener("mouseenter", show);
+    cell.addEventListener("mouseleave", hide);
+    cell.addEventListener("focus", show);
+    cell.addEventListener("blur", hide);
+    // Celdas hora×día: clic abre el popover de tickets. Celdas del calendario
+    // mensual: solo tooltip — el clic navega a esa semana (wireCalendarDayClicks).
+    if (clickable) cell.addEventListener("click", () => { hide(); showTrafficCellTickets(cell); });
+  };
+  document.querySelectorAll(`${containerSel} .traffic-cell[data-traffic-tip]`).forEach(cell => attach(cell, {clickable:true}));
+  document.querySelectorAll(`${containerSel} .traffic-cal-cell[data-traffic-tip]`).forEach(cell => attach(cell, {clickable:false}));
+}
+
+// Popover con los tickets exactos detrás de una celda del heatmap — deja
+// verificar/auditar la cuenta en vez de confiar a ciegas en el número.
+let trafficCellPopoverEl = null;
+function closeTrafficCellPopover() {
+  trafficCellPopoverEl?.remove();
+  trafficCellPopoverEl = null;
+  document.removeEventListener("click", onTrafficPopoverOutsideClick, true);
+}
+function onTrafficPopoverOutsideClick(e) {
+  if (trafficCellPopoverEl && !trafficCellPopoverEl.contains(e.target)) closeTrafficCellPopover();
+}
+function showTrafficCellTickets(cell) {
+  closeTrafficCellPopover();
+  const ids = (cell.dataset.ticketIds || "").split(",").filter(Boolean);
+  if (!ids.length) return; // celda vacía, nada que mostrar
+  const uniqueIds = [...new Set(ids)];
+  const tickets = uniqueIds.map(id => state.tickets.find(t => t.id === id)).filter(Boolean);
+
+  const rows = tickets.length ? tickets.map(t => `
+    <button type="button" class="traffic-popover-row" data-open-ticket="${t.id}">
+      <strong>${escapeHtml(t.tracking || "—")}</strong>
+      <span>${escapeHtml(t.client || "Sin cliente")}${t.productName ? " · "+escapeHtml(t.productName) : ""}</span>
+    </button>`).join("")
+    : `<p class="muted" style="margin:6px 10px;font-size:12px">Ticket no disponible (puede haberse eliminado).</p>`;
+
+  const pop = document.createElement("div");
+  pop.className = "traffic-popover";
+  pop.innerHTML = `
+    <div class="traffic-popover-head">
+      <strong>${ids.length} visita${ids.length===1?"":"s"}</strong>
+      <button type="button" class="ghost-button" data-close-pop style="padding:2px 6px;font-size:12px;min-height:0">✕</button>
+    </div>
+    ${rows}`;
+  document.body.appendChild(pop);
+
+  const rect = cell.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+  pop.style.left = `${Math.min(window.innerWidth - popRect.width - 8, Math.max(4, rect.left + rect.width/2 - popRect.width/2))}px`;
+  pop.style.top  = `${Math.min(window.innerHeight - popRect.height - 8, rect.bottom + 8)}px`;
+  trafficCellPopoverEl = pop;
+
+  pop.querySelector("[data-close-pop]").onclick = closeTrafficCellPopover;
+  pop.querySelectorAll("[data-open-ticket]").forEach(btn => {
+    btn.onclick = () => { closeTrafficCellPopover(); viewTicketDetail(btn.dataset.openTicket); };
+  });
+  setTimeout(() => document.addEventListener("click", onTrafficPopoverOutsideClick, true), 0);
+}
+
+// ── Tarjeta completa: Reportes → Afluencia de clientes ──────────────────────
+function renderTrafficHeatmap(from, to) {
+  const el = document.querySelector("#reports-traffic");
+  if (!el) return;
+  if (!supabaseClient) { el.innerHTML = ""; return; }
+
+  const key = trafficCacheKey(from, to);
+  const bucket = trafficCacheMap.get(key);
+  if (!bucket) {
+    el.innerHTML = `<div class="card" style="margin-top:16px"><p class="muted" style="margin:0">Cargando afluencia de clientes…</p></div>`;
+    loadTrafficBucket(from, to).then(() => renderTrafficHeatmap(from, to));
+    return;
+  }
+
+  const { minHour, maxHour, events } = bucket;
+  const { filtered, grid, ticketGrid, maxCount, peak } = buildTrafficGrid(events, trafficViewMode, minHour, maxHour);
+  const toggleHtml = `<div style="display:flex;gap:6px">
+    ${[["all","Ambos"],["Recibido","Recibido"],["Entregado","Entregado"]].map(([v,label])=>
+      `<button class="mini-button${trafficViewMode===v?" is-active":""}" data-traffic-view="${v}">${label}</button>`).join("")}
+  </div>`;
+
+  if (!filtered.length) {
+    el.innerHTML = `
+      <div class="card" style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px">
+          <div>
+            <h3 style="margin:0 0 4px;font-size:14px">Afluencia de clientes</h3>
+            <p class="muted" style="margin:0;font-size:11px">Cuándo llegan tus clientes — recepción y entrega de equipos</p>
+          </div>
+          ${toggleHtml}
+        </div>
+        ${emptyMessage("Sin datos de afluencia en este período.")}
+      </div>`;
+    wireTrafficToggle(from, to);
+    enhanceCollapsibleSection("reports-traffic");
+    return;
+  }
+
+  const viewLabel = {all:"recepción y entrega", Recibido:"recepción de equipos", Entregado:"entrega de equipos"}[trafficViewMode];
+  // Suma de la cuadrícula ya deduplicada por ticket (no filtered.length, que
+  // cuenta eventos crudos) — así el total y "más concurrido" nunca se contradicen.
+  const totalVisits = grid.flat().reduce((a,b)=>a+b, 0);
+
+  el.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:4px">
+        <div>
+          <h3 style="margin:0 0 4px;font-size:14px">Afluencia de clientes</h3>
+          <p class="muted" style="margin:0;font-size:11px">Cuándo llegan tus clientes — ${viewLabel} (${totalVisits} visitas en el período)</p>
+        </div>
+        ${toggleHtml}
+      </div>
+      <p style="margin:4px 0 14px;font-size:12px;color:var(--fz-primary)">
+        📍 Más concurrido: <strong>${TRAFFIC_DAY_LABELS[peak.day]} ${String(peak.hour).padStart(2,"0")}:00</strong> (${peak.count} visitas)
+      </p>
+      ${trafficGridHtml(grid, ticketGrid, maxCount, minHour, maxHour)}
+      <div class="traffic-legend">
+        <span>Menos concurrido</span>
+        ${[0,.14,.28,.46,.68,.92].map(a=>`<span class="traffic-legend-swatch" style="background:${a?`rgba(var(--fz-primary-rgb),${a})`:"rgba(255,255,255,.04)"}"></span>`).join("")}
+        <span>Más concurrido</span>
+      </div>
+    </div>`;
+  wireTrafficToggle(from, to);
+  wireTrafficCellTooltips("#reports-traffic");
+  enhanceCollapsibleSection("reports-traffic");
+}
+
+function wireTrafficToggle(from, to) {
+  document.querySelectorAll("#reports-traffic [data-traffic-view]").forEach(btn=>{
+    btn.onclick = () => { trafficViewMode = btn.dataset.trafficView; renderTrafficHeatmap(from, to); };
+  });
+}
+
+// ── Widget compacto: Home → "🚶 Afluencia en el local" (#dashboard-traffic-chart) ──
+// Siempre histórico completo (no el filtro de período de Reportes) para mostrar
+// un patrón estable, tipo "horas populares" de Google Maps — sin toggle, sin
+// leyenda, solo el vistazo rápido + un botón para ver el detalle en Reportes.
+function renderDashboardTraffic() {
+  const container = document.querySelector("#dashboard-traffic-chart");
+  if (!container) return;
+  const header = `<div class="section-heading"><h2>🚶 Afluencia en el local</h2><button class="ghost-button" data-view-target="reports">Ver detalle</button></div>`;
+
+  if (!supabaseClient) {
+    container.innerHTML = `${header}<div class="dash-card-body">${emptyMessage("Disponible solo en modo conectado.")}</div>`;
+    return;
+  }
+
+  const from = "2000-01-01", to = dateStamp();
+  const key = trafficCacheKey(from, to);
+  const bucket = trafficCacheMap.get(key);
+  if (!bucket) {
+    container.innerHTML = `${header}<div class="dash-card-body"><div class="skeleton-card" style="height:88px"></div></div>`;
+    loadTrafficBucket(from, to).then(() => renderDashboardTraffic());
+    return;
+  }
+
+  const { minHour, maxHour, events } = bucket;
+  if (!events.length) {
+    container.innerHTML = `${header}<div class="dash-card-body">${emptyMessage("Aún no hay suficientes visitas registradas.")}</div>`;
+    return;
+  }
+
+  const { grid, ticketGrid, maxCount, peak } = buildTrafficGrid(events, "all", minHour, maxHour);
+  container.innerHTML = `
+    ${header}
+    <div class="dash-card-body">
+      <p style="margin:0 0 10px;font-size:12px;color:var(--fz-primary)">📍 Más concurrido: <strong>${TRAFFIC_DAY_LABELS[peak.day]} ${String(peak.hour).padStart(2,"0")}:00</strong></p>
+      ${trafficGridHtml(grid, ticketGrid, maxCount, minHour, maxHour)}
+    </div>`;
+  wireTrafficCellTooltips("#dashboard-traffic-chart");
+}
+
+// ── Secciones plegables de Reportes ─────────────────────────────────────────
+// Cada tarjeta de Reportes se re-genera por completo (innerHTML) en cada render,
+// así que el estado plegado/desplegado no puede vivir en el DOM — se guarda por
+// id de sección (#reports-xxx) en localStorage y se reaplica después de cada
+// render. El primer hijo de .card (el <h3>, o la fila flex que lo envuelve) se
+// vuelve el header clicable; el resto del contenido se mueve a .rpt-collapse-body.
+const REPORTS_COLLAPSE_KEY = "fixzone-reports-collapsed-v1";
+function loadReportsCollapsed() {
+  try { return new Set(JSON.parse(localStorage.getItem(REPORTS_COLLAPSE_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+let reportsCollapsedSections = loadReportsCollapsed();
+function saveReportsCollapsed() {
+  localStorage.setItem(REPORTS_COLLAPSE_KEY, JSON.stringify([...reportsCollapsedSections]));
+}
+
+function enhanceCollapsibleSection(wrapId) {
+  const wrap = document.querySelector(`#${wrapId}`);
+  const card = wrap?.querySelector(".card");
+  if (!card) return;
+  const header = card.firstElementChild;
+  if (!header) return;
+  const bodyChildren = Array.from(card.children).slice(1);
+  if (!bodyChildren.length) return;
+  const body = document.createElement("div");
+  body.className = "rpt-collapse-body";
+  bodyChildren.forEach(el => body.appendChild(el));
+  card.appendChild(body);
+  header.classList.add("rpt-collapse-header");
+  if (reportsCollapsedSections.has(wrapId)) card.classList.add("is-collapsed");
+  header.addEventListener("click", (e) => {
+    if (e.target.closest("button, a, input, select, textarea")) return;
+    const collapsed = card.classList.toggle("is-collapsed");
+    if (collapsed) reportsCollapsedSections.add(wrapId); else reportsCollapsedSections.delete(wrapId);
+    saveReportsCollapsed();
+  });
+}
+
+function enhanceReportsCollapsible() {
+  document.querySelectorAll('#reports-view > div[id^="reports-"]').forEach(wrap => {
+    if (wrap.id === "reports-grid") return;
+    enhanceCollapsibleSection(wrap.id);
+  });
+  const collapseBtn = document.querySelector("#reports-collapse-all");
+  const expandBtn   = document.querySelector("#reports-expand-all");
+  if (collapseBtn) collapseBtn.onclick = () => setAllReportsCollapsed(true);
+  if (expandBtn)   expandBtn.onclick   = () => setAllReportsCollapsed(false);
+}
+
+function setAllReportsCollapsed(collapsed) {
+  document.querySelectorAll('#reports-view > div[id^="reports-"]').forEach(wrap => {
+    if (wrap.id === "reports-grid") return;
+    const card = wrap.querySelector(".card");
+    if (!card || !card.querySelector(".rpt-collapse-body")) return;
+    card.classList.toggle("is-collapsed", collapsed);
+    if (collapsed) reportsCollapsedSections.add(wrap.id); else reportsCollapsedSections.delete(wrap.id);
+  });
+  saveReportsCollapsed();
+}
+
 function renderReports() {
   document.querySelectorAll(".rpt-filter").forEach(b =>
     b.classList.toggle("is-active", b.dataset.rpt === reportsPeriod));
@@ -2875,6 +3340,55 @@ function renderReports() {
         <tbody>${stageRows}</tbody>
       </table>
     </div>`;
+
+  // Cancelaciones del período — desglose por motivo + detalle de equipos irreparables
+  {
+    const periodTickets = bTickets.filter(t => t.createdAt >= from && t.createdAt <= to);
+    const cancelled = periodTickets.filter(t => t.status === "Cancelado");
+    const unrepairable = cancelled.filter(t => t.cancelReason === "Irreparable");
+
+    const byReason = {};
+    for (const t of cancelled) byReason[t.cancelReason || "Sin especificar"] = (byReason[t.cancelReason || "Sin especificar"] || 0) + 1;
+    const reasonChips = Object.entries(byReason).sort((a,b) => b[1]-a[1])
+      .map(([reason,n]) => `<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 12px;min-width:90px">
+        <div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:2px;white-space:nowrap">${escapeHtml(reason)}</div>
+        <div style="font-size:16px;font-weight:700">${n}</div>
+      </div>`).join("");
+
+    const urRows = unrepairable.slice(0, 20).map(t => `<tr style="cursor:pointer" data-dd-ur-row="${t.id}">
+        <td style="padding:5px 8px">${escapeHtml(t.createdAt||"")}</td>
+        <td style="padding:5px 8px"><span style="color:var(--fz-secondary)">${escapeHtml(t.tracking||"")}</span></td>
+        <td style="padding:5px 8px">${escapeHtml(t.client||"—")}</td>
+        <td style="padding:5px 8px">${escapeHtml(t.productName||"—")}</td>
+        <td style="padding:5px 8px">${escapeHtml(t.issue||"—")}</td>
+      </tr>`).join("");
+
+    const urEl = document.querySelector("#reports-unrepairable");
+    urEl.innerHTML = cancelled.length ? `
+      <div class="card" style="margin-top:16px;border-left:3px solid #ff5c5c">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0;font-size:14px">✕ Cancelaciones — ${periodLabel}</h3>
+          <span style="font-size:11px;color:rgba(255,255,255,.4)">${cancelled.length} ticket${cancelled.length===1?"":"s"} cancelado${cancelled.length===1?"":"s"}</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${unrepairable.length?"16px":"0"}">${reasonChips}</div>
+        ${unrepairable.length ? `
+        <p style="font-size:11px;color:rgba(255,255,255,.45);margin:0 0 6px;text-transform:uppercase;letter-spacing:.05em">🔧 Equipos no reparables — detalle</p>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Fecha</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Folio</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Cliente</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Equipo</th>
+            <th style="text-align:left;padding:5px 8px;font-size:11px">Falla</th>
+          </tr></thead>
+          <tbody>${urRows}</tbody>
+        </table></div>` : ""}
+      </div>` : "";
+    urEl.querySelectorAll("[data-dd-ur-row]").forEach(tr =>
+      tr.addEventListener("click", () => viewTicketDetail(tr.dataset.ddUrRow)));
+  }
+
+  renderTrafficHeatmap(from, to);
 
   // Device ranking — uses ALL branch tickets (ignores period filter, we want lifetime counts)
   {
@@ -3458,6 +3972,8 @@ function renderReports() {
       });
     }
   }
+
+  enhanceReportsCollapsible();
 }
 
 // ── Users panel ───────────────────────────────────────────────────────────────
@@ -6860,6 +7376,13 @@ recordForm.addEventListener("submit", async e => {
       data.priority      = "Normal";
       data.assignedTo    = data.assignedTo || "";
     } else {
+      // El form de ticket no tiene campo "status" (siempre nace en Recibido) — sin
+      // esto, r.status queda undefined y createRemoteTicket() lo inserta igual porque
+      // la columna stage tiene default 'Recibido' en la DB, pero el evento
+      // logTicketEvent(...,"created",{toStage:r.status}) registraba to_stage: null en
+      // vez de "Recibido" (y recibido_sealed_at nunca se sellaba) — invisible para
+      // cualquier código que lea el stage inicial desde el lado de la app, no de la DB.
+      data.status        = "Recibido";
       data.paidAmount    = round2(data.paidAmount||0);
       const hasItems = data.quoteItems.length > 0;
       const netTotal = hasItems ? data.repairAmount : round2(Math.max(0, data.repairAmount - Number(data.discountAmount||0)));
@@ -7171,7 +7694,7 @@ async function createRemoteTicket(r) {
     unlockPattern:r.unlockType==="patron" ? (r.unlockPattern||[]) : [],
     unlockCode:r.unlockCode||{type:"",pin:"",pattern:[]},
     quoteItems: r.quoteItems||[],
-    waitingPart:false, waitingPartNote:"",
+    waitingPart:false, waitingPartNote:"", cancelReason:null,
     timerTargetAt:null,
     customerId:customer?.id||null,
     howFound:r.howFound||"", howFoundOther:r.howFoundOther||"",
@@ -9039,6 +9562,24 @@ document.querySelectorAll("[data-open-form]").forEach(btn => {
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
 document.querySelector("#quick-pos").addEventListener("click", () => setView("pos"));
 document.querySelector("#notif-bell-btn")?.addEventListener("click", () => openNotifPanel());
+
+// El kanban y el nav horizontal (modo tablet) ocultan su scrollbar nativo — el
+// kanban tiene el proxy de vidrio del fondo, pero ninguno de los dos se puede
+// mover con una rueda de mouse normal (solo trackpad/touch/arrastrando el
+// proxy), así que la rueda vertical se traduce a scroll horizontal cuando el
+// contenido realmente desborda. Si ya es un gesto horizontal de trackpad
+// (deltaX presente) se deja que el navegador lo maneje nativamente.
+function enableWheelHorizontalScroll(el) {
+  if (!el) return;
+  el.addEventListener("wheel", e => {
+    if (el.scrollWidth <= el.clientWidth) return;
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    el.scrollLeft += e.deltaY;
+  }, { passive: false });
+}
+enableWheelHorizontalScroll(document.querySelector("#ticket-board"));
+enableWheelHorizontalScroll(document.querySelector(".nav-list"));
 document.querySelector("#team-tasks-btn")?.addEventListener("click", () => openTeamTasksPanel());
 document.querySelector("#new-quote-btn")?.addEventListener("click", () => {
   openForm("cotizacion");
@@ -9376,6 +9917,17 @@ document.addEventListener("click", async e => {
   }
 });
 
+// Motivos estructurados de cancelación — permiten contar y filtrar en Reportes
+// (ver #reports-unrepairable), en vez de depender de texto libre sin estructura.
+const CANCEL_REASONS = [
+  { value: "Irreparable",              label: "🔧 Irreparable — no se pudo reparar" },
+  { value: "Cliente canceló",          label: "Cliente canceló" },
+  { value: "Precio muy alto",          label: "Precio muy alto / no aceptó cotización" },
+  { value: "Encontró otro servicio",   label: "Encontró otro servicio o taller" },
+  { value: "No recogió el equipo",     label: "No recogió el equipo" },
+  { value: "Otro",                     label: "Otro motivo" },
+];
+
 // Cancela un ticket porque la reparación no se pudo realizar. Si tenía un abono/pago
 // registrado, se resetea a $0 y se devuelve al cliente como un Egreso/Devolución —
 // para que quede reflejado en Movimientos, Finanzas y Balance (nunca queda "perdido").
@@ -9384,58 +9936,103 @@ function cancelTicket(id) {
   if (idx === -1) return;
   const ticket = state.tickets[idx];
   if (ticket.status === "Cancelado") return;
-  const refund = round2(Number(ticket.paidAmount || 0));
-  const msg = refund > 0
-    ? `¿Cancelar el ticket ${ticket.tracking}? Se registrará una devolución de ${money.format(refund)} al cliente como Egreso.`
-    : `¿Cancelar el ticket ${ticket.tracking}? La reparación se marcará como no realizada.`;
-  showConfirmModal(msg, {
-    label: "Cancelar ticket",
-    danger: true,
-    onConfirm: async () => {
-      const reason = (prompt("Motivo de la cancelación (opcional):", "") ?? "").trim();
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-      try {
-        if (dataMode === "remote" && isUUID) {
-          const { error } = await supabaseClient.from("service_tickets").update({
-            stage:          "Cancelado",
-            paid_amount:    0,
-            payment_status: "Pendiente",
-          }).eq("id", id);
-          if (error) throw error;
-
-          if (refund > 0) {
-            await createRemoteTransaction({
-              date:          dateStamp(),
-              type:          "Egreso",
-              concept:       `Devolución cancelación ${ticket.tracking}${reason ? ` — ${reason}` : ""}`,
-              category:      "Devolución",
-              amount:        refund,
-              paymentMethod: ticket.paymentMethod || null,
-              ticketId:      id,
-            });
-          }
-
-          logTicketEvent(id, "cancelled", {
-            fromStage: ticket.status, toStage: "Cancelado",
-            note: `✕ Ticket cancelado${reason ? `: ${reason}` : ""}${refund > 0 ? ` — Reembolso registrado: ${money.format(refund)}` : ""}`,
-          });
-
-          try { await reloadState(); } catch (re) { console.warn("reload:", re); }
-        }
-        // Actualiza el estado local siempre — cubre el modo local y también el modo
-        // remoto si reloadState() falló después de un guardado exitoso (no fatal).
-        const i2 = state.tickets.findIndex(t => t.id === id);
-        if (i2 !== -1) state.tickets[i2] = { ...state.tickets[i2], status: "Cancelado", paidAmount: 0, paymentStatus: "Pendiente" };
-        if (dataMode !== "remote") saveState();
-        render();
-        showToast(`✓ Ticket ${ticket.tracking} cancelado${refund > 0 ? ` — devolución de ${money.format(refund)} registrada` : ""}`);
-      } catch (err) {
-        showErrorToast(`No se pudo cancelar el ticket: ${err.message}`);
-      }
-    }
-  });
+  openCancelTicketDialog(ticket);
 }
 window.cancelTicket = cancelTicket;
+
+// Modal propio (no showConfirmModal + confirm()/prompt() nativos encadenados) para
+// evitar el glitch visual de apilar diálogos nativos sobre un <dialog> que se acaba
+// de cerrar. Captura el motivo como un valor estructurado (CANCEL_REASONS) para que
+// las estadísticas de Reportes sean confiables, más un detalle libre opcional.
+function openCancelTicketDialog(ticket) {
+  const refund = round2(Number(ticket.paidAmount || 0));
+  const INP = "width:100%;padding:9px 10px;border-radius:7px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;font-family:inherit;font-size:13px";
+
+  document.querySelector("#cancel-ticket-dialog")?.remove();
+  const dlg = document.createElement("dialog");
+  dlg.id = "cancel-ticket-dialog";
+  dlg.className = "modal";
+  dlg.style.cssText = "max-width:400px;padding:0;border-radius:16px";
+  dlg.innerHTML = `
+    <div style="padding:24px 22px 20px">
+      <p class="eyebrow" style="margin:0 0 4px">Cancelar ticket</p>
+      <p style="font-size:15px;font-weight:600;margin:0 0 14px">${escapeHtml(ticket.tracking)}${ticket.client?` — ${escapeHtml(ticket.client)}`:""}</p>
+      <p style="font-size:13px;line-height:1.5;margin:0 0 16px;opacity:.8">${
+        refund > 0
+          ? `Se registrará una devolución de ${money.format(refund)} al cliente como Egreso.`
+          : `La reparación se marcará como no realizada.`
+      }</p>
+      <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;opacity:.75" for="ct-reason">Motivo de la cancelación</label>
+      <select id="ct-reason" style="${INP};margin-bottom:14px">
+        <option value="">Selecciona un motivo…</option>
+        ${CANCEL_REASONS.map(r=>`<option value="${escapeHtml(r.value)}">${escapeHtml(r.label)}</option>`).join("")}
+      </select>
+      <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;opacity:.75" for="ct-detail">Detalle adicional (opcional)</label>
+      <textarea id="ct-detail" rows="2" style="${INP};resize:vertical" placeholder="Ej. no encendía tras diagnóstico"></textarea>
+    </div>
+    <menu class="modal-actions" style="padding:16px 22px">
+      <button type="button" class="ghost-button" id="ct-close">Cerrar</button>
+      <button type="button" class="primary-action danger-btn" id="ct-confirm" style="padding:0 20px">Cancelar ticket</button>
+    </menu>`;
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  dlg.addEventListener("close", () => dlg.remove());
+  dlg.querySelector("#ct-close").addEventListener("click", () => dlg.close());
+  dlg.querySelector("#ct-confirm").addEventListener("click", async () => {
+    const cancelReason = dlg.querySelector("#ct-reason").value;
+    if (!cancelReason) { showErrorToast("Selecciona un motivo de cancelación."); return; }
+    const detail = dlg.querySelector("#ct-detail").value.trim();
+    dlg.close();
+    await performCancelTicket(ticket.id, cancelReason, detail);
+  });
+}
+
+async function performCancelTicket(id, cancelReason, detail) {
+  const idx = state.tickets.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  const ticket = state.tickets[idx];
+  const refund = round2(Number(ticket.paidAmount || 0));
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  try {
+    if (dataMode === "remote" && isUUID) {
+      const { error } = await supabaseClient.from("service_tickets").update({
+        stage:          "Cancelado",
+        paid_amount:    0,
+        payment_status: "Pendiente",
+        cancel_reason:  cancelReason,
+      }).eq("id", id);
+      if (error) throw error;
+
+      if (refund > 0) {
+        await createRemoteTransaction({
+          date:          dateStamp(),
+          type:          "Egreso",
+          concept:       `Devolución cancelación ${ticket.tracking}${detail ? ` — ${detail}` : ""}`,
+          category:      "Devolución",
+          amount:        refund,
+          paymentMethod: ticket.paymentMethod || null,
+          ticketId:      id,
+        });
+      }
+
+      logTicketEvent(id, "cancelled", {
+        fromStage: ticket.status, toStage: "Cancelado",
+        note: `✕ Ticket cancelado — ${cancelReason}${detail ? `: ${detail}` : ""}${refund > 0 ? ` — Reembolso registrado: ${money.format(refund)}` : ""}`,
+      });
+
+      try { await reloadState(); } catch (re) { console.warn("reload:", re); }
+    }
+    // Actualiza el estado local siempre — cubre el modo local y también el modo
+    // remoto si reloadState() falló después de un guardado exitoso (no fatal).
+    const i2 = state.tickets.findIndex(t => t.id === id);
+    if (i2 !== -1) state.tickets[i2] = { ...state.tickets[i2], status: "Cancelado", paidAmount: 0, paymentStatus: "Pendiente", cancelReason };
+    if (dataMode !== "remote") saveState();
+    render();
+    showToast(`✓ Ticket ${ticket.tracking} cancelado — ${cancelReason}${refund > 0 ? ` — devolución de ${money.format(refund)} registrada` : ""}`);
+  } catch (err) {
+    showErrorToast(`No se pudo cancelar el ticket: ${err.message}`);
+  }
+}
 
 function handleDeleteTicket(id) {
   showConfirmModal("¿Eliminar este ticket?", {
@@ -10305,23 +10902,24 @@ function openNotifPanel() {
 // como hecha una tarea. viewed_by (no status) controla el badge: una tarea
 // recién resuelta vuelve a avisar a quien no la ha visto, igual que una nueva.
 
-async function addTeamTask(text, category) {
+async function addTeamTask(text, category, dueDate = "") {
   const branchId = await branchIdByName(activeBranchId);
-  const payload = { text, category, branch_id: branchId, created_by: currentEmployeeId() };
+  const payload = { text, category, branch_id: branchId, created_by: currentEmployeeId(), due_date: dueDate || null };
   const { data, error } = await supabaseClient.from("team_tasks").insert(payload).select().single();
   if (error) throw error;
   state.teamTasks = [{
     id:data.id, text:data.text, category:data.category,
     branch:activeBranchId, createdBy:data.created_by,
     createdByName:currentEmployee?.full_name||"Equipo",
-    createdAt:data.created_at, status:data.status,
+    createdAt:data.created_at, dueDate:data.due_date||"", status:data.status,
     completedBy:null, completedByName:"", completedAt:null,
     resolutionNote:"", viewedBy:Array.isArray(data.viewed_by) ? data.viewed_by : [],
   }, ...(state.teamTasks||[])];
   renderTeamTasksBadge();
+  renderDashboardTasks();
 }
 
-async function markTeamTaskDone(taskId) {
+async function markTeamTaskDone(taskId, { reopenPanel = true } = {}) {
   const task = (state.teamTasks||[]).find(t => t.id === taskId);
   if (!task) return;
   const note = prompt("Nota o comentario (opcional):") || "";
@@ -10338,8 +10936,11 @@ async function markTeamTaskDone(taskId) {
   } catch (err) {
     console.warn("No se pudo marcar la tarea como hecha:", err);
   }
-  document.getElementById("team-tasks-panel-overlay")?.remove();
-  openTeamTasksPanel();
+  if (reopenPanel) {
+    document.getElementById("team-tasks-panel-overlay")?.remove();
+    openTeamTasksPanel();
+  }
+  renderDashboardTasks();
 }
 
 async function markAllTeamTasksSeen() {
@@ -10372,7 +10973,7 @@ async function pollTeamTasks() {
       branch:(state.branches||[]).find(b=>b.id===t.branch_id)?.name||null,
       createdBy:t.created_by||null,
       createdByName:(state.employees||[]).find(e=>e.id===t.created_by)?.name||"Equipo",
-      createdAt:t.created_at, status:t.status||"pendiente",
+      createdAt:t.created_at, dueDate:t.due_date||"", status:t.status||"pendiente",
       completedBy:t.completed_by||null,
       completedByName:(state.employees||[]).find(e=>e.id===t.completed_by)?.name||"",
       completedAt:t.completed_at||null,
@@ -10380,6 +10981,7 @@ async function pollTeamTasks() {
       viewedBy:Array.isArray(t.viewed_by) ? t.viewed_by : [],
     }));
     renderTeamTasksBadge();
+    renderDashboardTasks();
   } catch (err) {
     console.warn("No se pudieron actualizar las tareas del equipo:", err);
   }
@@ -10404,6 +11006,7 @@ function openTeamTasksPanel() {
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">${categoryTag(t.category)}</div>
         <p style="margin:0;font-size:13px;color:rgba(255,255,255,.85)">${escapeHtml(t.text)}</p>
         <p style="margin:4px 0 0;font-size:10px;color:rgba(255,255,255,.4)">Creado por ${escapeHtml(t.createdByName)} · ${fmtDate(t.createdAt)}</p>
+        ${teamTaskDueDateBadge(t.dueDate)}
       </div>
     </div>`).join("") : `<p style="padding:24px;text-align:center;color:rgba(255,255,255,.4);font-size:13px">Sin pendientes 🎉</p>`;
 
@@ -10438,6 +11041,8 @@ function openTeamTasksPanel() {
             <option value="Comprar">Comprar</option>
             <option value="Otro" selected>Otro</option>
           </select>
+          <input id="team-task-duedate-input" type="date" title="Fecha límite (opcional)"
+            style="background:rgb(19, 17, 17);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px" />
           <button id="team-task-add-btn" class="primary-action" style="white-space:nowrap;font-size:13px">Agregar</button>
         </div>
       </div>
@@ -10460,10 +11065,11 @@ function openTeamTasksPanel() {
   overlay.querySelector("#team-task-add-btn")?.addEventListener("click", async () => {
     const input = overlay.querySelector("#team-task-text-input");
     const category = overlay.querySelector("#team-task-category-input")?.value || "Otro";
+    const dueDate = overlay.querySelector("#team-task-duedate-input")?.value || "";
     const text = input?.value?.trim();
     if (!text) return;
     try {
-      await addTeamTask(text, category);
+      await addTeamTask(text, category, dueDate);
       overlay.remove();
       openTeamTasksPanel();
       showToast("✓ Tarea agregada");
@@ -10475,6 +11081,77 @@ function openTeamTasksPanel() {
   overlay.querySelector("#team-task-text-input")?.addEventListener("keydown", e => {
     if (e.key === "Enter") overlay.querySelector("#team-task-add-btn")?.click();
   });
+}
+
+// Badge de fecha límite reutilizado por el panel de tareas del equipo y por
+// la tarjeta "Pendientes con fecha límite" del dashboard — mismo criterio de
+// color que ticketCard() (rojo vencido, naranja vence hoy).
+function teamTaskDueDateBadge(dueDate) {
+  if (!dueDate) return "";
+  const today   = dateStamp();
+  const overdue = dueDate < today;
+  const dueToday= dueDate === today;
+  const color = overdue ? "#ff5c5c" : dueToday ? "#f39c12" : "rgba(255,255,255,.55)";
+  const bg    = overdue ? "rgba(255,92,92,.15)" : dueToday ? "rgba(243,156,18,.15)" : "rgba(255,255,255,.06)";
+  const border= overdue ? "rgba(255,92,92,.35)" : dueToday ? "rgba(243,156,18,.35)" : "rgba(255,255,255,.12)";
+  const label = overdue ? "Vencido" : dueToday ? "Vence hoy" : "Fecha límite";
+  return `<div style="margin-top:6px;display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:${bg};border:1px solid ${border};color:${color}">📅 ${label}: ${dueDate}</div>`;
+}
+
+// ── Dashboard: Pendientes con fecha límite ───────────────────────────────────
+// Vista resumida (branchTeamTasks() pendientes con due_date, ordenadas por
+// vencimiento) del mismo checklist de equipo del panel de la campanita, con
+// un formulario rápido para agregar una nueva sin abrir el panel completo.
+function renderDashboardTasks() {
+  const container = document.querySelector("#dashboard-pending-tasks");
+  if (!container) return;
+
+  const tasks = branchTeamTasks()
+    .filter(t => t.status !== "hecha" && t.dueDate)
+    .sort((a,b) => a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 6);
+
+  const rows = tasks.length ? tasks.map(t => `
+    <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.07);align-items:flex-start">
+      <input type="checkbox" onchange="markTeamTaskDone('${t.id}',{reopenPanel:false})" style="margin-top:3px;width:16px;height:16px;cursor:pointer;flex-shrink:0" />
+      <div style="flex:1;min-width:0">
+        <p style="margin:0;font-size:13px;color:rgba(255,255,255,.85)">${escapeHtml(t.text)}</p>
+        ${teamTaskDueDateBadge(t.dueDate)}
+      </div>
+    </div>`).join("") : emptyMessage("Sin pendientes con fecha límite.");
+
+  container.innerHTML = `
+    <div class="section-heading">
+      <h2>📅 Pendientes con fecha límite</h2>
+      <button class="ghost-button" onclick="openTeamTasksPanel()">Ver todas</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-shrink:0">
+      <input id="dash-task-text-input" type="text" placeholder="Nueva tarea…"
+        style="flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px" />
+      <input id="dash-task-duedate-input" type="date" title="Fecha límite"
+        style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px" />
+      <button class="primary-action" style="white-space:nowrap;font-size:13px" onclick="addDashboardTeamTask()">Agregar</button>
+    </div>
+    <div class="dash-card-body">${rows}</div>`;
+
+  container.querySelector("#dash-task-text-input")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") addDashboardTeamTask();
+  });
+}
+
+async function addDashboardTeamTask() {
+  const container = document.querySelector("#dashboard-pending-tasks");
+  const textInput = container?.querySelector("#dash-task-text-input");
+  const dateInput = container?.querySelector("#dash-task-duedate-input");
+  const text = textInput?.value?.trim();
+  if (!text) return;
+  try {
+    await addTeamTask(text, "Otro", dateInput?.value || "");
+    showToast("✓ Tarea agregada");
+  } catch (err) {
+    console.error(err);
+    showErrorToast("No se pudo agregar la tarea");
+  }
 }
 
 async function shareQuoteWhatsApp(ticketId) {
@@ -10833,7 +11510,7 @@ function initNavTooltips() {
     btn.addEventListener("mouseenter", () => {
       tooltip = document.createElement("div");
       tooltip.textContent = tip;
-      tooltip.style.cssText = "position:fixed;left:220px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:8px 12px;font-size:11px;line-height:1.5;max-width:220px;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5)";
+      tooltip.style.cssText = "position:fixed;left:200px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:8px 12px;font-size:11px;line-height:1.5;max-width:220px;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5)";
       const rect = btn.getBoundingClientRect();
       tooltip.style.top = `${rect.top}px`;
       document.body.appendChild(tooltip);
@@ -11050,6 +11727,7 @@ function viewTicketDetail(ticketId) {
         ${balance> 0 ? `<div class="detail-row"><span>Saldo pendiente</span><strong style="color:#ffd18c">${money.format(balance)}</strong></div>` : ""}
         ${row("Estado de pago", ticket.paymentStatus)}
         ${ticket.paymentMethod ? row("Método de pago", ticket.paymentMethod) : ""}
+        ${ticket.status==="Cancelado" ? row("Motivo de cancelación", ticket.cancelReason) : ""}
       </div>
       ${itemsHtml}
       ${unlockPatternDetailHtml(ticket)}
@@ -11064,6 +11742,7 @@ function viewTicketDetail(ticketId) {
         </span>
       </div>` : ""}
       ${ticket.waitingPart ? `<div class="tdv-issue" style="margin-bottom:10px;background:rgba(243,156,18,.1);border-color:rgba(243,156,18,.3)"><p style="margin:0;font-size:13px;line-height:1.5;color:#f39c12">⏳ Esperando pieza${ticket.waitingPartNote?` — ${escapeHtml(ticket.waitingPartNote)}`:""}</p></div>` : ""}
+      ${ticket.status==="Cancelado"&&ticket.cancelReason==="Irreparable" ? `<div class="tdv-issue" style="margin-bottom:10px;background:rgba(255,92,92,.1);border-color:rgba(255,92,92,.3)"><p style="margin:0;font-size:13px;line-height:1.5;color:#ff5c5c">🔧 Equipo irreparable — no se pudo reparar</p></div>` : ""}
       ${ticket.timerTargetAt ? `<div data-timer-badge data-timer-target="${escapeHtml(ticket.timerTargetAt)}" style="margin-bottom:10px;font-size:13px;line-height:1.5;padding:10px 14px;border-radius:8px;background:${timerBadgeData(ticket.timerTargetAt).bg};border:1px solid ${timerBadgeData(ticket.timerTargetAt).border};color:${timerBadgeData(ticket.timerTargetAt).color}">⏱️ ${timerBadgeData(ticket.timerTargetAt).label}</div>` : ""}
       ${ticket.issue ? `<div class="tdv-issue" style="margin-bottom:10px"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Descripción</p><p style="margin:0;font-size:13px;line-height:1.5">${escapeHtml(ticket.issue)}</p></div>` : ""}
       ${ticket.notes ? `<div class="tdv-issue"><p class="muted" style="font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em">Notas internas</p><p style="margin:0;font-size:13px;line-height:1.5;color:var(--fz-gray-light)">${escapeHtml(ticket.notes)}</p></div>` : ""}
@@ -11426,7 +12105,7 @@ document.addEventListener("click", e => {
   }
 }, true);
 
-// Re-posicionar proxy al cambiar tamaño de ventana (sidebar cambia de 220px a 0 en ≤980px)
+// Re-posicionar proxy al cambiar tamaño de ventana (sidebar cambia de 200px a 0 en ≤980px)
 window.addEventListener("resize", () => initKanbanScrollProxy(), { passive: true });
 
 initializeApp();

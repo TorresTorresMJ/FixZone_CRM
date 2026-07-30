@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk 'NR==3151{print; exit}' src/app.js)",
+      "Bash(find 'C:\\\\Users\\\\refac/.claude' -iname *skills* -maxdepth 3 -type d)",
+      "Bash(npx --no-install playwright --version)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\refac\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-refac-Dev-Fixzone-FixZone-CRM\\\\97d79ef0-1a9d-45ee-8d52-fd4b28814999\\\\scratchpad\\\\pw-test\")",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(curl -sf -o /tmp/out.html -w \"HTTP:%{http_code} SIZE:%{size_download}\\\\n\" http://127.0.0.1:8123/index.html)",
+      "Bash(netstat -ano)",
+      "Bash(node -e ' *)",
+      "Bash(node test-collapse.js)",
+      "Bash(node --check index.html)",
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 15384 -Force\")"
+    ]
+  },
+  "enabledPlugins": {
+    "document-skills@anthropic-agent-skills": true
+  }
+}

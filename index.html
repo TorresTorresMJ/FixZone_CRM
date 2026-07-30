@@ -136,19 +136,20 @@
             <span aria-hidden="true">⌕</span>
             <input id="global-search" type="search" placeholder="Buscar cliente, ticket, producto..." />
           </label>
-          <button class="icon-button notif-bell" id="notif-bell-btn" title="Notificaciones" aria-label="Notificaciones"
-            style="position:relative;padding:0;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">
-            <i data-lucide="bell" style="width:18px;height:18px;"></i>
-            <span id="notif-badge"
-              style="display:none;position:absolute;top:2px;right:2px;background:#e53e3e;color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px"></span>
-          </button>
-          <button class="icon-button" id="team-tasks-btn" title="Tareas del equipo" aria-label="Tareas del equipo"
-            style="position:relative;padding:0;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">
-            <i data-lucide="list-checks" style="width:18px;height:18px;"></i>
-            <span id="team-tasks-badge"
-              style="display:none;position:absolute;top:2px;right:2px;background:#e53e3e;color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px"></span>
-          </button>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div class="topbar-icon-cluster">
+            <button class="icon-button notif-bell" id="notif-bell-btn" title="Notificaciones" aria-label="Notificaciones"
+              style="position:relative;padding:0;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">
+              <i data-lucide="bell" style="width:18px;height:18px;"></i>
+              <span id="notif-badge"
+                style="display:none;position:absolute;top:2px;right:2px;background:#e53e3e;color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px"></span>
+            </button>
+            <button class="icon-button" id="team-tasks-btn" title="Tareas del equipo" aria-label="Tareas del equipo"
+              style="position:relative;padding:0;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">
+              <i data-lucide="list-checks" style="width:18px;height:18px;"></i>
+              <span id="team-tasks-badge"
+                style="display:none;position:absolute;top:2px;right:2px;background:#e53e3e;color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px"></span>
+            </button>
+            <span class="topbar-divider" aria-hidden="true"></span>
             <button class="quick-fab quick-fab-pos" id="quick-pos" title="Nueva venta POS"
               aria-label="Nueva venta POS"><i data-lucide="shopping-cart" style="width:16px;height:16px;"></i></button>
             <button class="quick-fab quick-fab-ticket" id="quick-ticket" title="Nuevo ticket de reparación"
@@ -167,7 +168,10 @@
           <div class="skeleton-card"></div>
         </div>
         <div id="stock-alert-banner"></div>
-        <div class="split-layout">
+        <!-- Grid unificado de recuadros — las 4 tarjetas quedan visibles juntas,
+             cada una con scroll interno propio, en vez de apilarse en filas
+             de altura variable que obligan a bajar hasta el final. -->
+        <div class="dashboard-grid">
           <section class="home">
             <div class="section-heading">
               <h2>Tickets activos</h2>
@@ -188,6 +192,24 @@
               <div class="skeleton-card" style="height:48px"></div>
               <div class="skeleton-card" style="height:48px"></div>
               <div class="skeleton-card" style="height:48px"></div>
+            </div>
+          </section>
+          <!-- Pendientes con fecha límite (checklist de equipo) — renderDashboardTasks() -->
+          <section class="home" id="dashboard-pending-tasks">
+            <div class="section-heading">
+              <h2>📅 Pendientes con fecha límite</h2>
+              <button class="ghost-button" onclick="openTeamTasksPanel()">Ver todas</button>
+            </div>
+            <div class="skeleton-card" style="height:88px"></div>
+          </section>
+          <!-- Espacio reservado: gráfica de afluencia de gente en el local
+               (implementación en paralelo). Apuntar el render aquí sin tocar el layout. -->
+          <section class="home" id="dashboard-traffic-chart">
+            <div class="section-heading">
+              <h2>🚶 Afluencia en el local</h2>
+            </div>
+            <div class="dash-card-body">
+              <div class="empty-state"><p class="muted">Gráfica en desarrollo.</p></div>
             </div>
           </section>
         </div>
@@ -366,7 +388,7 @@
       <section class="view" id="reports-view" data-title="Reportes">
         <div class="section-heading">
           <h2>Reportes y analítica</h2>
-          <div style="display:flex;gap:8px;align-items:center" id="reports-date-filter">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end" id="reports-date-filter">
             <button class="mini-button rpt-filter" data-rpt="today">Hoy</button>
             <button class="mini-button rpt-filter" data-rpt="week">7 días</button>
             <button class="mini-button rpt-filter is-active" data-rpt="month">Mes</button>
@@ -374,6 +396,8 @@
             <button class="ghost-button" data-export-sheet="reports" title="Exportar período actual a Excel"
               style="margin-left:8px">📊 Exportar período</button>
             <button class="ghost-button" id="export-data" data-export-sheet="" title="Exportar todo a Excel">📊 Todo</button>
+            <button class="ghost-button" id="reports-collapse-all" title="Plegar todas las secciones" style="margin-left:8px">▾ Plegar todo</button>
+            <button class="ghost-button" id="reports-expand-all" title="Desplegar todas las secciones">▸ Desplegar todo</button>
           </div>
         </div>
         <div class="report-grid" id="reports-grid"></div>
@@ -386,6 +410,8 @@
         <div id="reports-ticket-payment"></div>
         <div id="reports-monthly"></div>
         <div id="reports-tickets"></div>
+        <div id="reports-unrepairable"></div>
+        <div id="reports-traffic"></div>
         <div id="reports-devices"></div>
         <div id="reports-stock"></div>
         <div id="reports-productivity"></div>
@@ -779,7 +805,20 @@
   <script src="./src/supabase-config.js"></script>
   <script src="./src/brand-config.js"></script>
   <script src="./src/app.js"></script>
-  <script>document.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });</script>
+  <script>
+    // lucide.min.js se carga desde un CDN externo (unpkg) con un <script> normal
+    // en <head>, así que en teoría ya está listo para cuando corre DOMContentLoaded.
+    // Pero si esa carga se retrasa (CDN lento, red inestable), window.lucide aún no
+    // existe en ese momento y los íconos (data-lucide="...") se quedan sin convertir
+    // a SVG — invisibles, ya que los botones que los usan (notif-bell, quick-fab,
+    // etc.) no tienen fondo/borde propio. createIcons() es seguro de llamar varias
+    // veces (solo convierte los <i data-lucide> que aún no se transformaron), así
+    // que reintentamos también en window.load, que espera a que ese script externo
+    // termine de descargar sin importar cuánto tarde.
+    function initLucideIcons() { if (window.lucide) lucide.createIcons(); }
+    document.addEventListener('DOMContentLoaded', initLucideIcons);
+    window.addEventListener('load', initLucideIcons);
+  </script>
 </body>
 
 </html>

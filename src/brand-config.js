@@ -69,10 +69,14 @@ window.BRANCH_BRANDS = {
     locationLabel:    "Puebla",
     tagline:          "REFACCIONES AL INSTANTE.",
     crmLabel:         "CRM OPERATIVO",
-    logoSrc:          "./assets/brand/LOGO-REFAXZONE.png",
-    logoFallback:     "./assets/brand/LOGO-FIXZONE.png",
+    // El archivo LOGO-REFAXZONE.png todavía no se ha subido a assets/brand/refaxzone/
+    // (ver README.txt en esa carpeta) — mientras tanto logoFallback muestra el logo
+    // de FixZone para no dejar un ícono roto. logoFallback DEBE apuntar a un archivo
+    // que sí exista; si no, <img onerror> también falla y no queda ningún logo visible.
+    logoSrc:          "./assets/brand/refaxzone/LOGO-REFAXZONE.png",
+    logoFallback:     "./assets/brand/fixzone/LOGO-FIXZONE.png",
     logoMonoSrc:      "./assets/brand/logos-mono/refax-mono.png",
-    logoMonoFallback: "./assets/brand/logos-mono/fixzone-mono.png",
+    logoMonoFallback: "./assets/brand/logos-mono/fixzone-monocromatico.png",
     pageTitle:        "RefaxZone CRM",
     receiptHeader:    "RefaxZone — Puebla",
     brandClass:       "brand-refaxzone",
