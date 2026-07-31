@@ -12,7 +12,12 @@
       "Bash(node -e ' *)",
       "Bash(node test-collapse.js)",
       "Bash(node --check index.html)",
-      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 15384 -Force\")"
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 15384 -Force\")",
+      "Bash(grep -n \"function parseReceiptFields\\\\|formType === \\\\\"supply\\\\\"\\\\|formType === \\\\\"invoice\\\\\"\\\\|return {$\" src/app.js)",
+      "Bash(node -e \"require\\('playwright'\\); console.log\\('playwright OK'\\)\")",
+      "Bash(npm ls *)",
+      "Bash(node -e \"require\\('puppeteer'\\); console.log\\('puppeteer OK'\\)\")",
+      "Bash(curl -sf http://localhost:5055 -o /dev/null -w \"HTTP %{http_code}\\\\n\")"
     ]
   },
   "enabledPlugins": {

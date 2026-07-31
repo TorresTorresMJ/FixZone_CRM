@@ -244,6 +244,14 @@ const formSchemas = {
       ["date","Fecha","date"],["type","Tipo","select",["Ingreso","Egreso"]],
       ["concept","Concepto","text",null,true],["category","Categoria","select",TX_CATEGORIES_ALL],["amount","Monto","number"],
       ["paymentMethod","Método de pago","select",["","Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"],false,true],
+      // Solo se muestran (initTransactionSupplyFields) cuando Tipo=Egreso y Categoria=Insumos —
+      // permiten que "+ Movimiento" cree/mantenga el registro de compra de insumo vinculado
+      // (ver saveRemoteRecord/updateRemoteTransactionOrSupply) en vez de un movimiento suelto.
+      ["supplier","Proveedor","text",null,false,true],
+      ["product_id","","hidden",null,false,true],
+      ["item","Artículo / insumo","supply-item-autocomplete",null,true,true],
+      ["quantity","Cantidad","number",null,false,true],
+      ["ticket_id","Vincular a ticket (uso interno)","ticket-select",null,true,true],
     ],
   },
   employee: {
@@ -840,6 +848,11 @@ async function loadSupabaseState() {
         // Fechas selladas por etapa — se fijan una sola vez al entrar a cada stage, nunca se sobrescriben automáticamente
         quotedAt:  t.quoted_at ? t.quoted_at.slice(0,10) : "",
         recibidoAt:t.recibido_sealed_at ? t.recibido_sealed_at.slice(0,10) : "",
+        // Timestamp completo (con hora) de la última modificación — a diferencia de createdAt/deliveredAt,
+        // que son solo fecha, este trae hora exacta vía el trigger set_updated_at() de la DB en cada UPDATE.
+        // Es lo que usa el kanban para ordenar "más reciente arriba" reflejando el último cambio de etapa,
+        // no la fecha de creación (ver sortedKanbanTickets).
+        updatedAt: t.updated_at || t.received_at || t.created_at || "",
       };
     }),
     supplies: (puRes.data||[]).map(p => ({
@@ -1228,13 +1241,17 @@ function initKanbanScrollProxy() {
 }
 
 const PRIORITY_ORDER = { "Urgente":0, "Alta":1, "Media":2, "Normal":3 };
+// fecha_desc/fecha_asc ordenan por última modificación (updatedAt, con hora exacta vía
+// el trigger set_updated_at() de la DB), no por fecha de creación — así una tarjeta que
+// acaba de cambiar de etapa (ej. a "Entregado") sube al tope de su columna de inmediato,
+// en vez de quedar fija según su antigüedad/número de ticket original.
 function sortedKanbanTickets(tickets) {
   const list = [...tickets];
-  if (kanbanSort === "fecha_asc")   return list.sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
+  if (kanbanSort === "fecha_asc")   return list.sort((a,b) => (a.updatedAt||a.createdAt||"").localeCompare(b.updatedAt||b.createdAt||""));
   if (kanbanSort === "cliente_az")  return list.sort((a,b) => (a.client||"").localeCompare(b.client||""));
   if (kanbanSort === "prioridad")   return list.sort((a,b) => (PRIORITY_ORDER[a.priority]??9) - (PRIORITY_ORDER[b.priority]??9));
   if (kanbanSort === "fecha_limite") return list.sort((a,b) => (a.dueDate||"9999-12-31").localeCompare(b.dueDate||"9999-12-31"));
-  return list.sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||"")); // fecha_desc default
+  return list.sort((a,b) => (b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")); // fecha_desc default
 }
 
 function renderTickets() {
@@ -1294,8 +1311,10 @@ async function handleKanbanDrop(event, newStage) {
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
   const idx = state.tickets.findIndex(t => t.id === ticketId);
   const oldStatus = ticket.status;
-  // Optimistic update
-  if (idx !== -1) state.tickets[idx] = { ...ticket, status: newStage };
+  // Optimistic update — updatedAt se adelanta aquí (no solo tras el UPDATE real) para que
+  // la tarjeta suba al tope de su columna de inmediato; reloadState() la corrige con el
+  // valor real de la DB en cuanto responde.
+  if (idx !== -1) state.tickets[idx] = { ...ticket, status: newStage, updatedAt: new Date().toISOString() };
   render();
   if (dataMode === "remote" && isUUID) {
     setLoading(true, "Guardando…");
@@ -6443,6 +6462,10 @@ function openForm(type, prefill = {}) {
     // Add receipt upload for expense transactions (shown/hidden by type change)
     formFields.innerHTML += `<div id="tx-receipt-wrap" style="display:${prefill.type==="Egreso"?"block":"none"}">${buildReceiptUploadSection()}</div>`;
   }
+  if (type === "transaction") {
+    initTransactionSupplyFields();
+    initSupplyItemAutocomplete();
+  }
   if (type === "cotizacion") {
     formFields.innerHTML += buildQuoteItemsSection(prefill.discountCode || "");
     initQuoteItemsBuilder(prefill.quoteItems || []);
@@ -6467,16 +6490,62 @@ function syncTransactionCategories(type) {
   if (receiptWrap) receiptWrap.style.display = type === "Egreso" ? "block" : "none";
 }
 
+// Compra de insumo (supply_purchases) vinculada a una transacción, si existe.
+function supplyForTransaction(txId) {
+  return (state.supplies||[]).find(s => s.transaction_id === txId);
+}
+
+// Agrupa proveedor/artículo/cantidad/ticket dentro de #tx-supply-wrap y los
+// muestra solo cuando Tipo=Egreso y Categoria=Insumos — así "+ Movimiento"
+// puede crear/mantener el registro de compra de insumo vinculado en vez de
+// dejar un movimiento suelto sin trazabilidad hacia inventario. Llamar justo
+// después de renderizar formSchemas.transaction (nuevo o edición).
+function initTransactionSupplyFields() {
+  const typeSel = formFields.querySelector("#type");
+  const catSel  = formFields.querySelector("#category");
+  if (!typeSel || !catSel) return;
+  let wrap = formFields.querySelector("#tx-supply-wrap");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "tx-supply-wrap";
+    wrap.className = "field is-wide";
+    wrap.style.cssText = "display:none;flex-direction:column;gap:12px;padding:12px;border-radius:10px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03);margin-top:4px";
+    const heading = document.createElement("p");
+    heading.className = "muted";
+    heading.style.cssText = "font-size:11px;margin:0;text-transform:uppercase;letter-spacing:.04em";
+    heading.textContent = "🔗 Detalles del insumo — vincula esta compra al inventario";
+    wrap.appendChild(heading);
+    ["supplier","item","quantity","ticket_id"].forEach(name => {
+      const fieldDiv = formFields.querySelector(`#${name}`)?.closest(".field");
+      if (fieldDiv) wrap.appendChild(fieldDiv);
+    });
+    formFields.appendChild(wrap);
+  }
+  const sync = () => { wrap.style.display = (typeSel.value === "Egreso" && catSel.value === "Insumos") ? "flex" : "none"; };
+  typeSel.addEventListener("change", sync);
+  catSel.addEventListener("change", sync);
+  sync();
+}
+
 function openEditTransaction(txId) {
   const tx = branchTransactions().find(t => t.id === txId);
   if (!tx) return;
+  // Si ya existe una compra de insumo vinculada, los campos de insumo se
+  // prefiltran desde ahí (no viven en `transactions`) para no mostrarlos
+  // vacíos y que un guardado accidental los borre/duplique.
+  const linkedSupply = supplyForTransaction(txId);
+  const prefillTx = linkedSupply
+    ? { ...tx, supplier: linkedSupply.supplier, item: linkedSupply.item, quantity: linkedSupply.quantity, ticket_id: linkedSupply.ticket_id }
+    : tx;
   activeForm      = "transaction";
   editingTicketId = txId;
   modalTitle.textContent = "Editar movimiento";
   document.querySelector("#modal-eyebrow").textContent = "Editar registro";
   formFields.innerHTML = formSchemas["transaction"].fields.map(([name,label,ftype,opts,wide,optional]) =>
-    fieldTemplate(name, label, ftype, opts, wide, tx[name] ?? "", optional)
+    fieldTemplate(name, label, ftype, opts, wide, prefillTx[name] ?? "", optional)
   ).join("");
+  initTransactionSupplyFields();
+  initSupplyItemAutocomplete();
   // Sync categories to match the current type and attach change listener
   setTimeout(() => {
     syncTransactionCategories(tx.type);
@@ -7506,6 +7575,32 @@ recordForm.addEventListener("submit", async e => {
     data.unlockCode = { type: data.unlockType || "", pin: data.unlockPin || "", pattern: data.unlockPattern };
   }
 
+  // Un Egreso categoría "Insumos" siempre debe quedar vinculado a un registro
+  // de compra de insumo — nunca un movimiento suelto sin trazabilidad hacia
+  // inventario (ver saveRemoteRecord/backfillSupplyForTransaction más abajo).
+  if (activeForm === "transaction" && data.type === "Egreso" && data.category === "Insumos" && !(data.item||"").trim()) {
+    const itemField = formFields.querySelector("#item");
+    if (itemField) {
+      itemField.classList.add("is-invalid");
+      const wrap = itemField.closest(".field");
+      if (wrap && !wrap.querySelector(".field-error")) {
+        const err = document.createElement("span");
+        err.className = "field-error";
+        err.textContent = "Requerido para vincular al inventario";
+        wrap.appendChild(err);
+      }
+      itemField.focus();
+      itemField.addEventListener("input", () => {
+        itemField.classList.remove("is-invalid");
+        itemField.closest(".field")?.querySelector(".field-error")?.remove();
+      }, { once: true });
+    }
+    setLoading(false);
+    recordForm.dataset.submitting = "false";
+    if (saveBtn) saveBtn.disabled = false;
+    return;
+  }
+
   // ── EDIT: generic (client, supply, transaction, cotizacion) ──────
   if (editingTicketId && activeForm !== "ticket") {
     try {
@@ -7516,7 +7611,14 @@ recordForm.addEventListener("submit", async e => {
       } else if (activeForm === "supply") {
         await updateRemoteSupply(editingTicketId, data);
       } else if (activeForm === "transaction") {
-        await updateRemoteTransaction(editingTicketId, data);
+        const linkedSupply = supplyForTransaction(editingTicketId);
+        if (linkedSupply) {
+          await updateRemoteSupply(linkedSupply.id, { ...data, total: Number(data.amount||0) });
+        } else if (data.type === "Egreso" && data.category === "Insumos" && (data.item||"").trim()) {
+          await backfillSupplyForTransaction(editingTicketId, data);
+        } else {
+          await updateRemoteTransaction(editingTicketId, data);
+        }
       } else if (activeForm === "invoice") {
         await updateRemoteInvoice(editingTicketId, data);
       } else if (activeForm === "cotizacion") {
@@ -7781,7 +7883,16 @@ async function saveRemoteRecord(type, record) {
   if (type==="product")     return createRemoteProduct(record);
   if (type==="ticket")      return createRemoteTicket(record);
   if (type==="supply")      return createRemoteSupply(record);
-  if (type==="transaction") return createRemoteTransaction(record);
+  if (type==="transaction") {
+    // Un Egreso categoría "Insumos" registrado directo desde Finanzas (con
+    // artículo capturado) crea el registro de compra de insumo + su stock de
+    // catálogo vinculado, igual que Insumos → + Compra — nunca se queda como
+    // un movimiento suelto sin trazabilidad hacia inventario.
+    if (record.type === "Egreso" && record.category === "Insumos" && (record.item||"").trim()) {
+      return createRemoteSupply({ ...record, total: Number(record.amount||0) });
+    }
+    return createRemoteTransaction(record);
+  }
   if (type==="invoice")     return createRemoteInvoice(record);
   throw new Error("Tipo no soportado.");
 }
@@ -8573,12 +8684,19 @@ function openReceiptScanner(formType, txType) {
         amount:       fields.amount       || "",
       });
     } else {
+      // Si la IA ya extrajo artículo/cantidad (mismo campo items[] que usa el
+      // escaneo de Insumos) se prellenan aquí también — evita retipear cuando
+      // el comprobante escaneado resulta ser, de hecho, una compra de insumo.
+      const firstItem = Array.isArray(fields.items) ? fields.items[0] : null;
       openTransactionForm(txType, {
         _fromScan: true,
         date:      fields.date     || dateStamp(),
         concept:   fields.concept  || (fields.supplier ? `Compra: ${fields.supplier}` : ""),
         category:  fields.category || "Insumos",
         amount:    fields.amount   || "",
+        supplier:  fields.supplier || "",
+        item:      firstItem?.description || fields.item || "",
+        quantity:  firstItem?.quantity     || fields.quantity || "",
       });
     }
     // After form opens, inject the captured file into the receipt input
@@ -8992,6 +9110,34 @@ async function createRemoteSupply(r) {
     receipt_url:  receiptUrl,
     created_by:   currentEmployeeId(),
     transaction_id: tx?.id || null,
+  });
+  if (error) throw error;
+}
+
+// Backfill: crea el registro de compra de insumo para una transacción de
+// Egreso/Insumos que ya existía (típicamente registrada directo en Finanzas,
+// antes de este vínculo) — reusa la MISMA transacción, no crea una segunda.
+async function backfillSupplyForTransaction(txId, data) {
+  await updateRemoteTransaction(txId, {
+    date: data.date, type: data.type, concept: data.concept, category: data.category,
+    amount: Number(data.amount || 0), paymentMethod: data.paymentMethod || "",
+    ticketId: data.ticket_id || null,
+  });
+  const productId = data.product_id || null;
+  const itemName  = data.item || (productId && state.products.find(p=>p.id===productId)?.name) || "";
+  if (!itemName) return;
+  const suppId = await findOrCreateSupplier(data.supplier);
+  const { error } = await supabaseClient.from("supply_purchases").insert({
+    supplier_id:  suppId,
+    branch_id:    await branchIdByName(activeBranchId),
+    purchase_date:data.date,
+    item_name:    itemName,
+    quantity:     Number(data.quantity || 0),
+    total_amount: Number(data.amount || 0),
+    product_id:   productId,
+    ticket_id:    data.ticket_id || null,
+    created_by:   currentEmployeeId(),
+    transaction_id: txId,
   });
   if (error) throw error;
 }
