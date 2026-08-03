@@ -854,9 +854,14 @@ async function loadSupabaseState() {
         recibidoAt:t.recibido_sealed_at ? t.recibido_sealed_at.slice(0,10) : "",
         // Timestamp completo (con hora) de la última modificación — a diferencia de createdAt/deliveredAt,
         // que son solo fecha, este trae hora exacta vía el trigger set_updated_at() de la DB en cada UPDATE.
-        // Es lo que usa el kanban para ordenar "más reciente arriba" reflejando el último cambio de etapa,
-        // no la fecha de creación (ver sortedKanbanTickets).
         updatedAt: t.updated_at || t.received_at || t.created_at || "",
+        // Timestamp exacto (con hora) de cuándo el ticket entró a su etapa ACTUAL — se
+        // sobrescribe en cada cambio de stage (a diferencia de recibido_sealed_at/quoted_at/
+        // delivered_at, que se sellan una sola vez). Es lo que usa el kanban para ordenar
+        // "más reciente arriba" por columna (ver sortedKanbanTickets) — updatedAt no sirve
+        // para esto porque también se mueve con cualquier edición ajena a la etapa (abonos,
+        // notas, fotos), lo que desordenaba las columnas.
+        stageChangedAt: t.stage_changed_at || t.updated_at || t.received_at || t.created_at || "",
       };
     }),
     supplies: (puRes.data||[]).map(p => ({
@@ -1245,17 +1250,18 @@ function initKanbanScrollProxy() {
 }
 
 const PRIORITY_ORDER = { "Urgente":0, "Alta":1, "Media":2, "Normal":3 };
-// fecha_desc/fecha_asc ordenan por última modificación (updatedAt, con hora exacta vía
-// el trigger set_updated_at() de la DB), no por fecha de creación — así una tarjeta que
+// fecha_desc/fecha_asc ordenan por stageChangedAt (hora exacta de cuándo el ticket entró
+// a su etapa ACTUAL), no por updatedAt ni por fecha de creación — así una tarjeta que
 // acaba de cambiar de etapa (ej. a "Entregado") sube al tope de su columna de inmediato,
-// en vez de quedar fija según su antigüedad/número de ticket original.
+// y una edición ajena a la etapa (abono, nota, foto) en OTRO ticket ya entregado no lo
+// reordena por encima de este. Ver stageChangedAt en loadSupabaseState().
 function sortedKanbanTickets(tickets) {
   const list = [...tickets];
-  if (kanbanSort === "fecha_asc")   return list.sort((a,b) => (a.updatedAt||a.createdAt||"").localeCompare(b.updatedAt||b.createdAt||""));
+  if (kanbanSort === "fecha_asc")   return list.sort((a,b) => (a.stageChangedAt||a.updatedAt||a.createdAt||"").localeCompare(b.stageChangedAt||b.updatedAt||b.createdAt||""));
   if (kanbanSort === "cliente_az")  return list.sort((a,b) => (a.client||"").localeCompare(b.client||""));
   if (kanbanSort === "prioridad")   return list.sort((a,b) => (PRIORITY_ORDER[a.priority]??9) - (PRIORITY_ORDER[b.priority]??9));
   if (kanbanSort === "fecha_limite") return list.sort((a,b) => (a.dueDate||"9999-12-31").localeCompare(b.dueDate||"9999-12-31"));
-  return list.sort((a,b) => (b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")); // fecha_desc default
+  return list.sort((a,b) => (b.stageChangedAt||b.updatedAt||b.createdAt||"").localeCompare(a.stageChangedAt||a.updatedAt||a.createdAt||"")); // fecha_desc default
 }
 
 function renderTickets() {
@@ -1321,10 +1327,11 @@ async function handleKanbanDrop(event, newStage) {
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
   const idx = state.tickets.findIndex(t => t.id === ticketId);
   const oldStatus = ticket.status;
-  // Optimistic update — updatedAt se adelanta aquí (no solo tras el UPDATE real) para que
-  // la tarjeta suba al tope de su columna de inmediato; reloadState() la corrige con el
-  // valor real de la DB en cuanto responde.
-  if (idx !== -1) state.tickets[idx] = { ...ticket, status: newStage, updatedAt: new Date().toISOString() };
+  // Optimistic update — stageChangedAt/updatedAt se adelantan aquí (no solo tras el UPDATE
+  // real) para que la tarjeta suba al tope de su columna de inmediato; reloadState() la
+  // corrige con el valor real de la DB en cuanto responde.
+  const optimisticNow = new Date().toISOString();
+  if (idx !== -1) state.tickets[idx] = { ...ticket, status: newStage, updatedAt: optimisticNow, stageChangedAt: optimisticNow };
   render();
   if (dataMode === "remote" && isUUID) {
     setLoading(true, "Guardando…");
@@ -1424,6 +1431,7 @@ function approveQuoteToTicket(ticketId) {
         : ticket.serviceType;
 
       const idx = state.tickets.findIndex(t => t.id === ticketId);
+      const approvedNow = new Date().toISOString();
       if (idx !== -1) state.tickets[idx] = {
         ...ticket, status: "Recibido",
         tracking: newTracking,
@@ -1431,6 +1439,7 @@ function approveQuoteToTicket(ticketId) {
         convertedToTicket: newTracking,
         issue: derivedIssue,
         serviceType: derivedServiceType,
+        stageChangedAt: approvedNow,
       };
 
       if (dataMode === "remote" && isUUID) {
@@ -1442,6 +1451,7 @@ function approveQuoteToTicket(ticketId) {
             converted_to_ticket:  newTracking,
             issue_description:    derivedIssue || null,
             service_type:         derivedServiceType || null,
+            stage_changed_at:     approvedNow,
           }).eq("id", ticketId);
           logTicketEvent(ticketId, "quote_approved", {
             fromStage: "Cotizacion", toStage: "Recibido",
@@ -4754,7 +4764,7 @@ async function renderSupportCommentThread(containerEl, task, notifyRecipientId) 
   const rows = (data||[]).map(c => {
     const author = (state.employees||[]).find(e => e.id === c.author_id);
     const isIT = author && itRoles.includes(author.role);
-    const when = (c.created_at||"").slice(0,16).replace("T"," ");
+    const when = fmtLocalDateTime(c.created_at);
     return `<div style="display:flex;gap:10px;align-items:flex-start;font-size:12px;padding:6px 0">
       <div style="width:8px;height:8px;border-radius:50%;background:${isIT?"var(--fz-primary,#2F6FFF)":"rgba(255,255,255,.25)"};margin-top:5px;flex-shrink:0"></div>
       <div>
@@ -5739,7 +5749,7 @@ function fillWATemplate(key, vars) {
 }
 
 function applyDiscount(baseAmount, code, scope = "ticket") {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dateStamp();
   const allCodes = [...(state.discounts || [])];
   const d = allCodes.find(x =>
     x.code.toLowerCase() === (code || "").toLowerCase() &&
@@ -5758,7 +5768,7 @@ function applyDiscount(baseAmount, code, scope = "ticket") {
 
 // Códigos de descuento activos y vigentes (fecha/usos) para un alcance dado (pos|cotizacion|ticket)
 function activeDiscountCodesForScope(scope) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dateStamp();
   return (state.discounts || []).filter(d =>
     d.active &&
     (!d.validFrom  || today >= d.validFrom) &&
@@ -5787,7 +5797,7 @@ function renderDiscountManager() {
   const el = document.querySelector("#discount-manager");
   if (!el) return;
   const discounts = state.discounts || [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dateStamp();
 
   el.innerHTML = `
     <div class="card" style="margin-top:24px">
@@ -6039,14 +6049,31 @@ async function updateRemoteProduct(productId, data) {
   if (error) throw error;
 }
 
-function deleteRemoteProduct(productId) {
+async function deleteRemoteProduct(productId) {
   const product = state.products.find(p => p.id === productId);
   const name = product?.name || "este producto";
-  showConfirmModal(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`, {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId);
+
+  // supply_purchases.product_id and pos_sale_items.product_id are ON DELETE SET NULL —
+  // deleting the product doesn't fail, it just silently severs the 🎫 traceability badge
+  // and the historical link from those rows with no warning. Count them first so the
+  // confirm dialog actually tells the user what they're about to disconnect.
+  let warning = "";
+  if (isUUID) {
+    const [{ count: supplyCount }, { count: saleCount }] = await Promise.all([
+      supabaseClient.from("supply_purchases").select("id", { count: "exact", head: true }).eq("product_id", productId),
+      supabaseClient.from("pos_sale_items").select("id", { count: "exact", head: true }).eq("product_id", productId),
+    ]);
+    const parts = [];
+    if (supplyCount)  parts.push(`${supplyCount} compra(s) de insumo`);
+    if (saleCount)    parts.push(`${saleCount} línea(s) de venta POS`);
+    if (parts.length) warning = ` Este producto está vinculado a ${parts.join(" y ")} — esos registros perderán la referencia al producto (no se borran, pero ya no se podrán rastrear de vuelta a él).`;
+  }
+
+  showConfirmModal(`¿Eliminar "${name}"?${warning} Esta acción no se puede deshacer.`, {
     label: "Eliminar",
     danger: true,
     onConfirm: async () => {
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId);
       if (isUUID) {
         const { error } = await supabaseClient.from("products").delete().eq("id", productId);
         if (error) { showErrorToast(`Error al eliminar: ${error.message}`); return; }
@@ -6068,6 +6095,11 @@ function deleteRemoteSupply(supplyId) {
       if (isUUID) {
         const { error } = await supabaseClient.from("supply_purchases").delete().eq("id", supplyId);
         if (error) { showErrorToast(`Error al eliminar: ${error.message}`); return; }
+        // Same insert-only-trigger gap as the edit path: undo the stock this purchase
+        // added, or deleting a mistaken purchase leaves phantom stock behind forever.
+        if (supply?.product_id && supply?.quantity) {
+          await adjustProductStock(supply.product_id, -Number(supply.quantity));
+        }
         if (supply?.transaction_id) {
           const { error: txError } = await supabaseClient.from("transactions").delete().eq("id", supply.transaction_id);
           if (txError) console.warn("No se pudo eliminar la transacción vinculada:", txError);
@@ -6116,6 +6148,13 @@ async function updateRemoteSupply(supplyId, data) {
     if (idx !== -1) state.supplies[idx] = { ...state.supplies[idx], ...data };
     return;
   }
+  // Capture the pre-edit product/quantity before anything below touches the DB — the
+  // insert-only stock trigger (15_supply_stock_link.sql) never re-fires on UPDATE, so a
+  // corrected quantity or a re-picked product would otherwise leave stock reflecting the
+  // ORIGINAL purchase forever, silently drifting from what this purchase record now says.
+  const oldSupply = state.supplies.find(s => s.id === supplyId);
+  const oldProductId = oldSupply?.product_id || null;
+  const oldQty = Number(oldSupply?.quantity || 0);
   let receiptUrl;
   const fileInput = document.querySelector("#receipt-file-input");
   if (fileInput?.files?.length) receiptUrl = await uploadReceiptFile(fileInput.files[0]);
@@ -6135,6 +6174,11 @@ async function updateRemoteSupply(supplyId, data) {
   if (receiptUrl) payload.receipt_url = receiptUrl;
   const { error } = await supabaseClient.from("supply_purchases").update(payload).eq("id", supplyId);
   if (error) throw error;
+
+  // Reverse the old purchase's stock effect, then apply the new one — same net result as
+  // deleting and re-creating the purchase, without touching the transaction/badge links.
+  if (oldProductId && oldQty) await adjustProductStock(oldProductId, -oldQty);
+  if (productId && payload.quantity) await adjustProductStock(productId, payload.quantity);
 
   // Sync the linked Egreso transaction so its date/concept/amount/ticket stay in sync
   const supply = state.supplies.find(s => s.id === supplyId);
@@ -6946,7 +6990,7 @@ async function loadTicketEvents(ticketId) {
       <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
         ${data.map(ev => {
           const who  = ev.employees?.full_name || "Sistema";
-          const when = (ev.created_at||"").slice(0,16).replace("T"," ");
+          const when = fmtLocalDateTime(ev.created_at);
           const desc = ev.from_stage && ev.to_stage
             ? `<strong>${ev.from_stage}</strong> → <strong>${ev.to_stage}</strong>`
             : ev.note || ev.event_type;
@@ -8246,6 +8290,8 @@ async function createRemoteTicket(r) {
     // siguientes se sellan en updateRemoteTicket y nunca se sobrescriben
     ...(r.status === "Cotizacion" ? { quoted_at: new Date().toISOString() } : {}),
     ...(r.status === "Recibido"   ? { recibido_sealed_at: new Date().toISOString() } : {}),
+    // Entra a su etapa inicial ahora mismo — usado por el orden del kanban (sortedKanbanTickets)
+    stage_changed_at: new Date().toISOString(),
   }).select().single();
   if (error) throw error;
 
@@ -8463,6 +8509,9 @@ async function updateRemoteTicket(ticketId, r) {
     ...(!oldTicket?.quotedAt   && r.status === "Cotizacion" ? { quoted_at: new Date().toISOString() } : {}),
     ...(!oldTicket?.recibidoAt && r.status === "Recibido"   ? { recibido_sealed_at: new Date().toISOString() } : {}),
     ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
+    // A diferencia de las fechas selladas arriba (una sola vez), stage_changed_at se
+    // sobrescribe cada vez que el stage realmente cambia — es lo que ordena el kanban.
+    ...(oldTicket && r.status !== oldTicket.status ? { stage_changed_at: new Date().toISOString() } : {}),
   }).eq("id", ticketId);
   if (error) throw error;
 
@@ -10656,7 +10705,7 @@ function cancelTicket(id) {
   if (idx === -1) return;
   const ticket = state.tickets[idx];
   if (ticket.status === "Cancelado") return;
-  openCancelTicketDialog(ticket);
+  openCancelTicketDialog(ticket).catch(err => showErrorToast(`Error: ${err.message}`));
 }
 window.cancelTicket = cancelTicket;
 
@@ -10664,9 +10713,25 @@ window.cancelTicket = cancelTicket;
 // evitar el glitch visual de apilar diálogos nativos sobre un <dialog> que se acaba
 // de cerrar. Captura el motivo como un valor estructurado (CANCEL_REASONS) para que
 // las estadísticas de Reportes sean confiables, más un detalle libre opcional.
-function openCancelTicketDialog(ticket) {
+async function openCancelTicketDialog(ticket) {
   const refund = round2(Number(ticket.paidAmount || 0));
   const INP = "width:100%;padding:9px 10px;border-radius:7px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;font-family:inherit;font-size:13px";
+
+  // A ticket can have an insumo bought specifically for it (migración 50, "Vincular a
+  // ticket"). If the repair never happened, that insumo may go back to the supplier —
+  // ask here, at cancellation time, rather than leaving it to a separate manual Insumos
+  // edit that's easy to forget (the same bidirectional-sync pattern as the client refund
+  // above: both sides — inventario y finanzas — are corrected in this one action).
+  let linkedSupply = null;
+  if (supabaseClient && dataMode === "remote") {
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticket.id);
+    if (isUUID) {
+      const { data } = await supabaseClient.from("supply_purchases")
+        .select("id, item_name, quantity, total_amount, product_id")
+        .eq("ticket_id", ticket.id).limit(1).maybeSingle();
+      linkedSupply = data || null;
+    }
+  }
 
   document.querySelector("#cancel-ticket-dialog")?.remove();
   const dlg = document.createElement("dialog");
@@ -10689,6 +10754,11 @@ function openCancelTicketDialog(ticket) {
       </select>
       <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;opacity:.75" for="ct-detail">Detalle adicional (opcional)</label>
       <textarea id="ct-detail" rows="2" style="${INP};resize:vertical" placeholder="Ej. no encendía tras diagnóstico"></textarea>
+      ${linkedSupply ? `
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.4;margin:14px 0 0;opacity:.9;cursor:pointer">
+        <input type="checkbox" id="ct-supply-returned" style="margin-top:2px" />
+        <span>Se devolvió al proveedor "${escapeHtml(linkedSupply.item_name)}" (${linkedSupply.quantity} pza) y se reembolsó ${money.format(linkedSupply.total_amount)} — descontar del inventario y registrar el reembolso en Finanzas.</span>
+      </label>` : ""}
     </div>
     <menu class="modal-actions" style="padding:16px 22px">
       <button type="button" class="ghost-button" id="ct-close">Cerrar</button>
@@ -10702,12 +10772,13 @@ function openCancelTicketDialog(ticket) {
     const cancelReason = dlg.querySelector("#ct-reason").value;
     if (!cancelReason) { showErrorToast("Selecciona un motivo de cancelación."); return; }
     const detail = dlg.querySelector("#ct-detail").value.trim();
+    const supplyReturned = linkedSupply && dlg.querySelector("#ct-supply-returned")?.checked ? linkedSupply : null;
     dlg.close();
-    await performCancelTicket(ticket.id, cancelReason, detail);
+    await performCancelTicket(ticket.id, cancelReason, detail, supplyReturned);
   });
 }
 
-async function performCancelTicket(id, cancelReason, detail) {
+async function performCancelTicket(id, cancelReason, detail, returnedSupply) {
   const idx = state.tickets.findIndex(t => t.id === id);
   if (idx === -1) return;
   const ticket = state.tickets[idx];
@@ -10720,6 +10791,7 @@ async function performCancelTicket(id, cancelReason, detail) {
         paid_amount:    0,
         payment_status: "Pendiente",
         cancel_reason:  cancelReason,
+        stage_changed_at: new Date().toISOString(),
       }).eq("id", id);
       if (error) throw error;
 
@@ -10735,9 +10807,30 @@ async function performCancelTicket(id, cancelReason, detail) {
         });
       }
 
+      // Insumo devuelto al proveedor: sale del inventario (ya no está en el local, se
+      // fue de vuelta) y el reembolso entra como Ingreso — ambos lados corregidos en la
+      // misma acción de cancelar, no en una edición manual aparte que es fácil de olvidar.
+      let supplyRefund = 0;
+      if (returnedSupply) {
+        if (returnedSupply.product_id && returnedSupply.quantity) {
+          await adjustProductStock(returnedSupply.product_id, -Number(returnedSupply.quantity));
+        }
+        supplyRefund = round2(Number(returnedSupply.total_amount || 0));
+        if (supplyRefund > 0) {
+          await createRemoteTransaction({
+            date:     dateStamp(),
+            type:     "Ingreso",
+            concept:  `Reembolso de proveedor por devolución de insumo (${returnedSupply.item_name}) — ticket cancelado ${ticket.tracking}`,
+            category: "Devolución",
+            ticketId: id,
+            amount:   supplyRefund,
+          });
+        }
+      }
+
       logTicketEvent(id, "cancelled", {
         fromStage: ticket.status, toStage: "Cancelado",
-        note: `✕ Ticket cancelado — ${cancelReason}${detail ? `: ${detail}` : ""}${refund > 0 ? ` — Reembolso registrado: ${money.format(refund)}` : ""}`,
+        note: `✕ Ticket cancelado — ${cancelReason}${detail ? `: ${detail}` : ""}${refund > 0 ? ` — Reembolso al cliente registrado: ${money.format(refund)}` : ""}${returnedSupply ? ` — Insumo devuelto al proveedor, reembolso de ${money.format(supplyRefund)} registrado` : ""}`,
       });
 
       try { await reloadState(); } catch (re) { console.warn("reload:", re); }
@@ -10748,7 +10841,7 @@ async function performCancelTicket(id, cancelReason, detail) {
     if (i2 !== -1) state.tickets[i2] = { ...state.tickets[i2], status: "Cancelado", paidAmount: 0, paymentStatus: "Pendiente", cancelReason };
     if (dataMode !== "remote") saveState();
     render();
-    showToast(`✓ Ticket ${ticket.tracking} cancelado — ${cancelReason}${refund > 0 ? ` — devolución de ${money.format(refund)} registrada` : ""}`);
+    showToast(`✓ Ticket ${ticket.tracking} cancelado — ${cancelReason}${refund > 0 ? ` — devolución de ${money.format(refund)} registrada` : ""}${returnedSupply ? ` — insumo devuelto` : ""}`);
   } catch (err) {
     showErrorToast(`No se pudo cancelar el ticket: ${err.message}`);
   }
@@ -12163,6 +12256,17 @@ function utcToLocalDate(isoStr) {
   if (!isoStr) return "";
   const d = new Date(isoStr);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+// Convierte un timestamptz UTC ("2026-08-02T23:10:00+00:00") a "YYYY-MM-DD HH:MM"
+// en hora local del navegador. Nunca recortar el string crudo con .slice() — un
+// evento entre 18:00 y 23:59 hora Mexico (UTC-6) ya cruzó medianoche en UTC, así
+// que el recorte muestra la fecha/hora del día siguiente.
+function fmtLocalDateTime(isoStr) {
+  if (!isoStr) return "";
+  const d = new Date(isoStr);
+  const date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const time = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  return `${date} ${time}`;
 }
 function escapeHtml(v)      { return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
 
