@@ -395,6 +395,7 @@
             <button class="mini-button rpt-filter" data-rpt="week">7 días</button>
             <button class="mini-button rpt-filter is-active" data-rpt="month">Mes</button>
             <button class="mini-button rpt-filter" data-rpt="all">Todo</button>
+            <select id="reports-month-select" class="mini-button" style="font-size:12px;padding:6px 10px"></select>
             <button class="ghost-button" data-export-sheet="reports" title="Exportar período actual a Excel"
               style="margin-left:8px">📊 Exportar período</button>
             <button class="ghost-button" id="export-data" data-export-sheet="" title="Exportar todo a Excel">📊 Todo</button>
@@ -410,6 +411,7 @@
         <div id="reports-referral"></div>
         <div id="reports-payment-methods"></div>
         <div id="reports-ticket-payment"></div>
+        <div id="reports-combined-payment"></div>
         <div id="reports-monthly"></div>
         <div id="reports-tickets"></div>
         <div id="reports-unrepairable"></div>
@@ -666,7 +668,9 @@
           <select id="abono-method">
             <option>Efectivo</option>
             <option>Transferencia</option>
-            <option>Tarjeta</option>
+            <option>Link de pago</option>
+            <option>Terminal TC</option>
+            <option>Terminal TD</option>
             <option>Otro</option>
           </select>
         </div>

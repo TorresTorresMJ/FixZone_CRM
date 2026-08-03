@@ -21,6 +21,7 @@ document.addEventListener("wheel", () => {
 const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entregado", "Garantia", "Cancelado"];
 let kanbanSort = "fecha_desc"; // "fecha_desc" | "fecha_asc" | "cliente_az" | "prioridad" | "fecha_limite"
 let kanbanAssigneeFilter = ""; // "" = todos, o nombre del técnico asignado
+let kanbanMonthFilter = ""; // "" = todos, o "YYYY-MM" del mes seleccionado (según t.createdAt)
 const supportStages = ["Pendiente", "En progreso", "Resuelto"];
 const BRANCHES     = ["Puerto Vallarta", "Puebla"];
 const ROLES        = ["it", "admin", "standard", "marketing"];
@@ -28,7 +29,7 @@ const TX_CATEGORIES_INCOME  = ["Servicio","Venta","Anticipo","Garantia","Otro"];
 const TX_CATEGORIES_EXPENSE = ["Inventario","Insumos","Renta","Nomina","Servicios","Herramientas","Operacion","Gasolina","Movilidad","Otro"];
 const TX_CATEGORIES_ALL     = [...new Set([...TX_CATEGORIES_INCOME, ...TX_CATEGORIES_EXPENSE])];
 const PRODUCT_CATEGORIES    = ["Refaccion","Bateria","Pantalla","Accesorio","Microsoldadura","Cable","Cargador","Otro"];
-const POS_PAYMENT_METHODS   = ["Efectivo","Tarjeta","Transferencia","Otro"];
+const POS_PAYMENT_METHODS   = ["Efectivo","Transferencia","Link de pago","Terminal TC","Terminal TD","Otro"];
 const REFERRAL_SOURCES      = ["Instagram","Facebook","Transeúntes","Conocidos de Moni","Otro"];
 const DEVICE_MODELS_KEY = "fixzone-device-models-v1";
 const DEFAULT_DEVICE_MODELS = [
@@ -1272,12 +1273,20 @@ function renderTickets() {
       <option value=""${kanbanAssigneeFilter===""?" selected":""}>Todos los t&#233;cnicos</option>
       ${assignees.map(name=>`<option value="${escapeHtml(name)}"${kanbanAssigneeFilter===name?" selected":""}>${escapeHtml(name)}</option>`).join("")}
     </select>`;
-    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Asignado a:</span>${assigneeSelect}`;
+    const monthNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    const months = [...new Set(branchTickets().map(t=>(t.createdAt||"").slice(0,7)).filter(Boolean))].sort().reverse();
+    const monthSelect = `<select id="kanban-month-filter" class="mini-button" style="font-size:11px;padding:3px 10px">
+      <option value=""${kanbanMonthFilter===""?" selected":""}>Todos los meses</option>
+      ${months.map(ym=>{ const [y,m]=ym.split("-"); const label=`${monthNames[Number(m)-1]} ${y}`; return `<option value="${ym}"${kanbanMonthFilter===ym?" selected":""}>${label}</option>`; }).join("")}
+    </select>`;
+    sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Asignado a:</span>${assigneeSelect}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Mes:</span>${monthSelect}`;
     sortBar.querySelectorAll(".kanban-sort-btn").forEach(btn => {
       btn.addEventListener("click", () => { kanbanSort = btn.dataset.sort; renderTickets(); });
     });
     const filterSelect = sortBar.querySelector("#kanban-assignee-filter");
     if (filterSelect) filterSelect.addEventListener("change", () => { kanbanAssigneeFilter = filterSelect.value; renderTickets(); });
+    const monthFilterSelect = sortBar.querySelector("#kanban-month-filter");
+    if (monthFilterSelect) monthFilterSelect.addEventListener("change", () => { kanbanMonthFilter = monthFilterSelect.value; renderTickets(); });
   }
 
   // "Cancelado" no tiene columna propia — el pill rojo de estado ya lo distingue,
@@ -1287,7 +1296,8 @@ function renderTickets() {
   document.querySelector("#ticket-board").innerHTML = kanbanColumns.map(status=>{
     const tickets = sortedKanbanTickets(bySearch(branchTickets()).filter(t=>
       (t.status===status || (status==="Entregado" && t.status==="Cancelado"))
-      && (!kanbanAssigneeFilter || t.assignedTo===kanbanAssigneeFilter)));
+      && (!kanbanAssigneeFilter || t.assignedTo===kanbanAssigneeFilter)
+      && (!kanbanMonthFilter || (t.createdAt||"").slice(0,7)===kanbanMonthFilter)));
     return `<section class="kanban-column"
       ondragover="event.preventDefault();this.classList.add('drag-over')"
       ondragleave="this.classList.remove('drag-over')"
@@ -2494,7 +2504,12 @@ function renderPosSaleRow(s) {
     <div class="pos-history-sale">
       <div class="pos-history-sale-main">
         <div class="pos-history-sale-info">
-          <div style="font-size:12px">${time} · ${escapeHtml(s.paymentMethod)}${s.clientName ? ` · ${escapeHtml(s.clientName)}` : ""}</div>
+          <div style="font-size:12px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+            <span>${time}</span>
+            <span>·</span>
+            ${posPaymentMethodSelectHtml(s)}
+            ${s.clientName ? `<span>· ${escapeHtml(s.clientName)}</span>` : ""}
+          </div>
           <div class="muted" style="font-size:11px">${itemsSummary}</div>
         </div>
         <div class="pos-history-sale-amount">
@@ -2510,6 +2525,38 @@ function renderPosSaleRow(s) {
       </div>
       ${returnsDetail}
     </div>`;
+}
+
+function posPaymentMethodSelectHtml(s) {
+  const known = POS_PAYMENT_METHODS.includes(s.paymentMethod);
+  return `
+    <select data-pos-payment-select="${s.id}" onchange="updatePosSalePaymentMethod('${s.id}',this.value)"
+      style="font-size:11px;padding:1px 4px;border-radius:4px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:inherit">
+      ${!known && s.paymentMethod ? `<option value="${escapeHtml(s.paymentMethod)}" selected>${escapeHtml(s.paymentMethod)}</option>` : ""}
+      ${POS_PAYMENT_METHODS.map(m => `<option value="${m}"${s.paymentMethod===m?" selected":""}>${m}</option>`).join("")}
+    </select>`;
+}
+
+async function updatePosSalePaymentMethod(saleId, newMethod) {
+  const sale = (state.posSales || []).find(s => s.id === saleId);
+  if (!sale || sale.paymentMethod === newMethod) return;
+  if (dataMode !== "remote") { showErrorToast("Conecta a Supabase para editar el método de pago."); render(); return; }
+  try {
+    await supabaseClient.from("pos_sales").update({ payment_method: newMethod }).eq("id", saleId);
+    if (sale.transactionId) {
+      await supabaseClient.from("transactions").update({ payment_method: newMethod }).eq("id", sale.transactionId);
+    }
+    sale.paymentMethod = newMethod;
+    if (sale.transactionId) {
+      const tx = state.transactions.find(t => t.id === sale.transactionId);
+      if (tx) tx.paymentMethod = newMethod;
+    }
+    render();
+    showToast("✓ Método de pago actualizado");
+  } catch (err) {
+    render();
+    showErrorToast(`No se pudo actualizar el método de pago: ${err.message}`);
+  }
 }
 
 function checkoutPos() {
@@ -2681,13 +2728,15 @@ function renderFinance() {
     </tr>`).join("")||tableEmpty(6);
 }
 
-let reportsPeriod = "month"; // "today" | "week" | "month" | "all"
+let reportsPeriod = "month"; // "today" | "week" | "month" | "all" | "custom"
+let reportsCustomMonth = ""; // "YYYY-MM" cuando reportsPeriod==="custom" (mes específico elegido en #reports-month-select)
 
 function reportDateRange() {
   const today = dateStamp();
   if (reportsPeriod === "today")  return [today, today];
   if (reportsPeriod === "week")   return [localDateMinus(6), today];
   if (reportsPeriod === "month")  return [today.slice(0,7)+"-01", today];
+  if (reportsPeriod === "custom" && reportsCustomMonth) return monthRangeForDate(reportsCustomMonth+"-01");
   return ["2000-01-01", today];
 }
 
@@ -2740,7 +2789,7 @@ function openListDrilldown(title, subtitle, headers, items) {
         <button type="button" class="icon-button" id="dd-close" aria-label="Cerrar" style="font-size:16px">✕</button>
       </div>
       <div style="overflow:auto;max-height:60vh">
-        <table style="width:100%;border-collapse:collapse">
+        <table style="border-collapse:collapse;width:auto;min-width:0">
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)">
             ${headers.map(h => `<th style="text-align:left;padding:6px 10px;font-size:11px;color:rgba(255,255,255,.45);white-space:nowrap">${h}</th>`).join("")}
           </tr></thead>
@@ -3474,7 +3523,27 @@ function renderReports() {
   const finished   = bTickets.filter(t=>["Listo","Entregado"].includes(t.status)).length;
   const invValue   = bProducts.reduce((s,p)=>s+Number(p.price||0)*Number(p.stock||0),0);
   const lowStock   = bProducts.filter(p=>Number(p.stock)<=Number(p.minStock)&&Number(p.minStock)>0);
-  const periodLabel= {today:"Hoy",week:"Últimos 7 días",month:"Este mes",all:"Todo el tiempo"}[reportsPeriod];
+  const monthLongNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const periodLabel= reportsPeriod === "custom" && reportsCustomMonth
+    ? `${monthLongNames[Number(reportsCustomMonth.slice(5,7))-1]} ${reportsCustomMonth.slice(0,4)}`
+    : {today:"Hoy",week:"Últimos 7 días",month:"Este mes",all:"Todo el tiempo"}[reportsPeriod];
+
+  // Selector de mes específico — se repuebla en cada render porque las opciones
+  // dependen de qué meses tienen datos (transacciones o tickets), igual que el
+  // filtro de mes del kanban de Tickets.
+  const monthSelectEl = document.querySelector("#reports-month-select");
+  if (monthSelectEl) {
+    const monthShortNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    const monthsWithData = new Set();
+    for (const t of branchTransactions()) { const ym=(t.date||"").slice(0,7); if (ym) monthsWithData.add(ym); }
+    for (const t of bTickets) { const ym=(t.createdAt||"").slice(0,7); if (ym) monthsWithData.add(ym); }
+    const availableMonths = [...monthsWithData].sort().reverse();
+    monthSelectEl.innerHTML = `<option value="">Mes específico…</option>${availableMonths.map(ym=>{
+      const [y,m] = ym.split("-");
+      const label = `${monthShortNames[Number(m)-1]} ${y}`;
+      return `<option value="${ym}"${reportsPeriod==="custom"&&reportsCustomMonth===ym?" selected":""}>${label}</option>`;
+    }).join("")}`;
+  }
 
   // Summary cards
   document.querySelector("#reports-grid").innerHTML = [
@@ -3851,7 +3920,7 @@ function renderReports() {
       return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
         <td style="padding:5px 8px;font-size:11px;color:rgba(255,255,255,.45)">${s.createdAt}</td>
         <td style="padding:5px 8px;font-size:12px">${escapeHtml(clientName||"—")}</td>
-        <td style="padding:5px 8px;font-size:12px">${escapeHtml(s.paymentMethod||"—")}</td>
+        <td style="padding:5px 8px;font-size:12px">${posPaymentMethodSelectHtml(s)}</td>
         <td style="padding:5px 8px;text-align:right;font-size:11px;color:#ff9f43">${s.discount>0?"-"+money.format(s.discount):""}</td>
         <td style="padding:5px 8px;text-align:right;font-weight:600;color:#2ecc71">${money.format(s.total)}</td>
       </tr>`;
@@ -4139,7 +4208,10 @@ function renderReports() {
                 ],
                 onClick: () => {
                   if (!origin) return openEditTransaction(t.id);
-                  if (origin.type === "ticket")  return openEditTicket(origin.record.id);
+                  // Mismo detalle de solo lectura que se abre al hacer clic en la tarjeta
+                  // del kanban (Tickets/Cotizaciones) — no saltar directo al formulario de
+                  // edición, para que el ticket "se vea igual" venga de donde venga.
+                  if (origin.type === "ticket")  return origin.record.status === "Cotizacion" ? viewQuoteDetail(origin.record.id) : viewTicketDetail(origin.record.id);
                   if (origin.type === "supply")  return openEditSupply(origin.record.id);
                   if (origin.type === "invoice") return openEditInvoice(origin.record.id);
                   return openEditTransaction(t.id); // POS: no hay vista dedicada, se edita la transacción
@@ -4226,9 +4298,113 @@ function renderReports() {
                   escapeHtml(t?.client||"—"),
                   `<span style="color:#2ecc71">${money.format(tx.amount||0)}</span>`,
                 ],
-                onClick: t ? () => openEditTicket(t.id) : undefined,
+                onClick: t ? () => (t.status === "Cotizacion" ? viewQuoteDetail(t.id) : viewTicketDetail(t.id)) : undefined,
               };
             })
+          );
+        });
+      });
+    }
+  }
+
+  // ── Tickets + POS por método de pago (combinado, para el cierre contable de fin de mes) ──
+  {
+    const cpEl = document.querySelector("#reports-combined-payment");
+    if (cpEl) {
+      const ORDER = ["Efectivo","Transferencia","Terminal TC","Terminal TD","Link de pago","Otro"];
+
+      // Mismo filtro que "Tickets por método de pago" — pagos de tickets/cotizaciones
+      const cpTicketTxs = branchTransactions().filter(tx =>
+        tx.type === "Ingreso" &&
+        tx.category === "Servicio" &&
+        tx.paymentMethod &&
+        tx.date >= from && tx.date <= to &&
+        (tx.ticketId || /\[(FZ|COT)\]/.test(tx.concept || ""))
+      );
+      // Mismas ventas que "Ventas POS" del período
+      const cpPosSales = (state.posSales || []).filter(s => {
+        const inBranch = !s.branch || s.branch === activeBranchId;
+        const inPeriod = s.createdAt >= from && s.createdAt <= to;
+        return inBranch && inPeriod;
+      });
+
+      const byMethod = {}; // método -> { amount, count }
+      cpTicketTxs.forEach(tx => {
+        const m = tx.paymentMethod;
+        if (!byMethod[m]) byMethod[m] = { amount:0, count:0 };
+        byMethod[m].amount += Number(tx.amount || 0);
+        byMethod[m].count++;
+      });
+      cpPosSales.forEach(s => {
+        const m = s.paymentMethod || "Otro";
+        if (!byMethod[m]) byMethod[m] = { amount:0, count:0 };
+        byMethod[m].amount += Number(s.total || 0);
+        byMethod[m].count++;
+      });
+
+      const totalAmount = Object.values(byMethod).reduce((s,v)=>s+v.amount, 0);
+      const totalCount  = Object.values(byMethod).reduce((s,v)=>s+v.count, 0);
+      const sorted = Object.entries(byMethod).sort((a,b) => {
+        const oa = ORDER.indexOf(a[0]), ob = ORDER.indexOf(b[0]);
+        return (oa===-1?99:oa) - (ob===-1?99:ob) || b[1].amount - a[1].amount;
+      });
+      const topByCount = sorted.length ? [...sorted].sort((a,b) => b[1].count - a[1].count)[0] : null;
+
+      const cards = sorted.map(([m,v]) => {
+        const pct   = totalAmount > 0 ? Math.round(v.amount/totalAmount*100) : 0;
+        const isTop = !!topByCount && m === topByCount[0];
+        return `<div data-dd-cmethod="${escapeHtml(m)}" style="cursor:pointer;position:relative;flex:1;min-width:130px;background:rgba(255,255,255,.04);border:1px solid ${isTop?"rgba(46,204,113,.5)":"rgba(255,255,255,.1)"};border-radius:8px;padding:10px 12px">
+          ${isTop ? `<div style="position:absolute;top:-8px;right:8px;background:#2ecc71;color:#08331d;font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px">MÁS USADO</div>` : ""}
+          <div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m)}</div>
+          <div style="font-size:16px;font-weight:700;color:#2ecc71">${money.format(v.amount)}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.35);margin-top:2px">${v.count} movimiento${v.count!==1?"s":""} · ${pct}%</div>
+        </div>`;
+      }).join("");
+
+      cpEl.innerHTML = sorted.length ? `
+        <div class="card" style="margin-top:16px;border-left:3px solid #2ecc71">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0;font-size:14px">🧾 Tickets + POS por método de pago — ${periodLabel}</h3>
+            <span style="font-size:11px;color:rgba(255,255,255,.4)">${totalCount} movimiento${totalCount!==1?"s":""} · ${money.format(totalAmount)} total</span>
+          </div>
+          ${topByCount ? `<div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:14px">Método más usado: <strong style="color:#2ecc71">${escapeHtml(topByCount[0])}</strong> — ${topByCount[1].count} de ${totalCount} movimiento${totalCount!==1?"s":""}</div>` : ""}
+          <div style="display:flex;gap:10px;flex-wrap:wrap">${cards}</div>
+        </div>` : "";
+
+      cpEl.querySelectorAll("[data-dd-cmethod]").forEach(el => {
+        el.addEventListener("click", () => {
+          const m = el.dataset.ddCmethod;
+          const ticketRows = cpTicketTxs.filter(tx => tx.paymentMethod === m).map(tx => {
+            const origin = findTransactionOrigin(tx);
+            const t = origin?.type === "ticket" ? origin.record : null;
+            return {
+              date: tx.date || "", label: t?.tracking || tx.concept || "—",
+              client: t?.client || "—", amount: Number(tx.amount || 0),
+              origin: "🎫 Ticket",
+              onClick: t ? () => (t.status === "Cotizacion" ? viewQuoteDetail(t.id) : viewTicketDetail(t.id)) : undefined,
+            };
+          });
+          const posRows = cpPosSales.filter(s => (s.paymentMethod || "Otro") === m).map(s => ({
+            date: s.createdAt || "", label: "Venta POS",
+            client: s.clientName || "—", amount: Number(s.total || 0),
+            origin: "🛒 POS",
+            onClick: s.transactionId ? () => openEditTransaction(s.transactionId) : undefined,
+          }));
+          const rows = [...ticketRows, ...posRows].sort((a,b) => (b.date||"").localeCompare(a.date||""));
+          openListDrilldown(
+            `Tickets + POS por método de pago — ${m}`,
+            `${periodLabel} · ${rows.length} movimiento${rows.length!==1?"s":""} · ${money.format(rows.reduce((s,r)=>s+r.amount,0))}`,
+            ["Fecha","Detalle","Cliente","Monto","Origen"],
+            rows.map(r => ({
+              cells: [
+                escapeHtml(r.date),
+                escapeHtml(r.label),
+                escapeHtml(r.client),
+                `<span style="color:#2ecc71">${money.format(r.amount)}</span>`,
+                r.origin,
+              ],
+              onClick: r.onClick,
+            }))
           );
         });
       });
@@ -10036,7 +10212,17 @@ document.querySelector("#reports-date-filter")?.addEventListener("click", e => {
   const btn = e.target.closest(".rpt-filter");
   if (!btn) return;
   reportsPeriod = btn.dataset.rpt;
+  reportsCustomMonth = "";
   document.querySelectorAll(".rpt-filter").forEach(b => b.classList.toggle("is-active", b===btn));
+  renderReports();
+});
+
+document.querySelector("#reports-date-filter")?.addEventListener("change", e => {
+  const sel = e.target.closest("#reports-month-select");
+  if (!sel || !sel.value) return;
+  reportsPeriod = "custom";
+  reportsCustomMonth = sel.value;
+  document.querySelectorAll(".rpt-filter").forEach(b => b.classList.remove("is-active"));
   renderReports();
 });
 
@@ -10481,14 +10667,49 @@ function handleDeleteClient(id) {
   });
 }
 
+// Deleting a bare transaction row leaves the linked ticket's paid_amount/payment_status
+// stale if the transaction was a ticket payment (abono/anticipo) — e.g. a duplicated
+// abono (double form submit) shows up as two "Servicio" transactions for the same
+// ticket, but the ticket's paid_amount only needs to come down by ONE of them.
+// Mirrors the same bidirectional-sync pattern used elsewhere (cancelTicket, supply
+// purchase edit/delete): the linked ticket is corrected in the same action, not left
+// for a second manual edit.
 function handleDeleteTransaction(id) {
-  showConfirmModal("¿Eliminar este movimiento financiero? Esta acción no se puede deshacer.", {
+  const tx = state.transactions.find(t => t.id === id);
+  const origin = tx ? findTransactionOrigin(tx) : null;
+  const linkedTicket = (origin?.type === "ticket" && tx.type === "Ingreso" && tx.category === "Servicio") ? origin.record : null;
+
+  const message = linkedTicket
+    ? `¿Eliminar este movimiento? También se restará ${money.format(tx.amount||0)} del monto pagado de ${linkedTicket.tracking}. Esta acción no se puede deshacer.`
+    : "¿Eliminar este movimiento financiero? Esta acción no se puede deshacer.";
+
+  showConfirmModal(message, {
     label: "Eliminar",
     danger: true,
     onConfirm: async () => {
       try {
-        if (dataMode==="remote") { const {error}=await supabaseClient.from("transactions").delete().eq("id",id); if(error)throw error; await reloadState(); }
-        else { state.transactions=state.transactions.filter(t=>t.id!==id); saveState(); }
+        const newPaid   = linkedTicket ? round2(Math.max(0, Number(linkedTicket.paidAmount||0) - Number(tx.amount||0))) : null;
+        const total     = linkedTicket ? Number(linkedTicket.repairAmount||0) : null;
+        const newStatus = linkedTicket ? (newPaid <= 0 ? "Pendiente" : newPaid >= total ? "Pagado" : "Abonado") : null;
+
+        if (dataMode==="remote") {
+          const {error}=await supabaseClient.from("transactions").delete().eq("id",id); if(error)throw error;
+          if (linkedTicket) {
+            const { error: tErr } = await supabaseClient.from("service_tickets")
+              .update({ paid_amount: newPaid, payment_status: newStatus }).eq("id", linkedTicket.id);
+            if (tErr) throw tErr;
+            logTicketEvent(linkedTicket.id, "payment", { note: `Corrección: se eliminó un abono duplicado de ${money.format(tx.amount||0)}` });
+          }
+          await reloadState();
+        }
+        else {
+          state.transactions=state.transactions.filter(t=>t.id!==id);
+          if (linkedTicket) {
+            const idx = state.tickets.findIndex(t=>t.id===linkedTicket.id);
+            if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], paidAmount: newPaid, paymentStatus: newStatus };
+          }
+          saveState();
+        }
         render();
       } catch(err) { showErrorToast(`Error: ${err.message}`); }
     }
