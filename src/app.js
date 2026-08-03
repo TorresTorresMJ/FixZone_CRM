@@ -22,6 +22,8 @@ const ticketStages = ["Cotizacion", "Recibido", "En reparacion", "Listo", "Entre
 let kanbanSort = "fecha_desc"; // "fecha_desc" | "fecha_asc" | "cliente_az" | "prioridad" | "fecha_limite"
 let kanbanAssigneeFilter = ""; // "" = todos, o nombre del técnico asignado
 let kanbanMonthFilter = ""; // "" = todos, o "YYYY-MM" del mes seleccionado (según t.createdAt)
+let suppliesMonthFilter = ""; // "" = todos, o "YYYY-MM" (según i.date, Insumos)
+let posHistoryMonthFilter = ""; // "" = todos, o "YYYY-MM" (según s.createdAt, Historial de POS)
 const supportStages = ["Pendiente", "En progreso", "Resuelto"];
 const BRANCHES     = ["Puerto Vallarta", "Puebla"];
 const ROLES        = ["it", "admin", "standard", "marketing"];
@@ -112,6 +114,7 @@ let lastPosSale = null; // sale snapshot shown after checkout for print button
 let editingTaskId   = null;
 let contaduriaStatusFilter = "all"; // "all" | "Pendiente" | "Facturado"
 let contaduriaTypeFilter   = "all"; // "all" | "Emitida" | "Recibida"
+let contaduriaMonthFilter  = "";    // "" = todos, o "YYYY-MM" (según invoice_date)
 let dataMode        = "local";
 let supabaseClient = null;
 let currentSession = null;
@@ -1273,11 +1276,8 @@ function renderTickets() {
       <option value=""${kanbanAssigneeFilter===""?" selected":""}>Todos los t&#233;cnicos</option>
       ${assignees.map(name=>`<option value="${escapeHtml(name)}"${kanbanAssigneeFilter===name?" selected":""}>${escapeHtml(name)}</option>`).join("")}
     </select>`;
-    const monthNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-    const months = [...new Set(branchTickets().map(t=>(t.createdAt||"").slice(0,7)).filter(Boolean))].sort().reverse();
     const monthSelect = `<select id="kanban-month-filter" class="mini-button" style="font-size:11px;padding:3px 10px">
-      <option value=""${kanbanMonthFilter===""?" selected":""}>Todos los meses</option>
-      ${months.map(ym=>{ const [y,m]=ym.split("-"); const label=`${monthNames[Number(m)-1]} ${y}`; return `<option value="${ym}"${kanbanMonthFilter===ym?" selected":""}>${label}</option>`; }).join("")}
+      ${monthFilterOptionsHtml(branchTickets().map(t=>t.createdAt), kanbanMonthFilter)}
     </select>`;
     sortBar.innerHTML = `<span style="font-size:11px;opacity:.5;margin-right:6px">Ordenar:</span>${opts.map(o=>`<button class="mini-button kanban-sort-btn${kanbanSort===o.v?" is-active":""}" data-sort="${o.v}" style="font-size:11px;padding:3px 10px">${o.l}</button>`).join("")}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Asignado a:</span>${assigneeSelect}<span style="font-size:11px;opacity:.5;margin:0 6px 0 12px">Mes:</span>${monthSelect}`;
     sortBar.querySelectorAll(".kanban-sort-btn").forEach(btn => {
@@ -1562,7 +1562,13 @@ function ticketCard(ticket, perms, idx = 0) {
 }
 
 function renderSupplies() {
-  document.querySelector("#supplies-table").innerHTML = bySearch(branchSupplies()).map(i=>{
+  const monthSelectEl = document.querySelector("#supplies-month-select");
+  if (monthSelectEl) monthSelectEl.innerHTML = monthFilterOptionsHtml(branchSupplies().map(i=>i.date), suppliesMonthFilter);
+
+  let rows = bySearch(branchSupplies());
+  if (suppliesMonthFilter) rows = rows.filter(i => (i.date||"").slice(0,7) === suppliesMonthFilter);
+
+  document.querySelector("#supplies-table").innerHTML = rows.map(i=>{
     const linkedTicket = i.ticket_id ? state.tickets.find(t => t.id === i.ticket_id) : null;
     return `
     <tr style="cursor:pointer" onclick="if(!event.target.closest('.supply-actions')&&!event.target.closest('a'))viewSupplyDetail('${i.id}')">
@@ -2458,8 +2464,12 @@ function renderPos() {
 function renderPosHistory() {
   const container = document.querySelector("#pos-history");
   if (!container) return;
-  const sales = (state.posSales || []).filter(s => !s.branch || s.branch === activeBranchId);
-  if (!sales.length) { container.innerHTML = ""; return; }
+  const allSales = (state.posSales || []).filter(s => !s.branch || s.branch === activeBranchId);
+  if (!allSales.length) { container.innerHTML = ""; return; }
+
+  const sales = posHistoryMonthFilter
+    ? allSales.filter(s => (s.createdAt||"").slice(0,7) === posHistoryMonthFilter)
+    : allSales;
 
   const groups = new Map(); // fecha (YYYY-MM-DD) -> ventas[]
   sales.forEach(s => {
@@ -2469,7 +2479,12 @@ function renderPosHistory() {
   const days = [...groups.keys()].sort((a, b) => b.localeCompare(a));
 
   container.innerHTML = `
-    <div class="section-heading" style="margin-bottom:8px"><h2 style="font-size:14px">Ventas recientes</h2></div>
+    <div class="section-heading" style="margin-bottom:8px">
+      <h2 style="font-size:14px">Ventas recientes</h2>
+      <select id="pos-history-month-select" class="mini-button" style="font-size:11px;padding:3px 8px">
+        ${monthFilterOptionsHtml(allSales.map(s=>s.createdAt), posHistoryMonthFilter)}
+      </select>
+    </div>
     <div class="pos-history-days">
       ${days.map(day => {
         const daySales    = groups.get(day);
@@ -2485,8 +2500,13 @@ function renderPosHistory() {
               ${daySales.map(renderPosSaleRow).join("")}
             </div>
           </div>`;
-      }).join("")}
+      }).join("") || emptyMessage("Sin ventas en este mes.")}
     </div>`;
+
+  container.querySelector("#pos-history-month-select")?.addEventListener("change", e => {
+    posHistoryMonthFilter = e.target.value;
+    renderPosHistory();
+  });
 }
 
 function renderPosSaleRow(s) {
@@ -2651,12 +2671,25 @@ function checkoutPos() {
   } }); // end showConfirmModal onConfirm
 }
 
-let financePeriod = "month"; // "today" | "week" | "month" | "all"
+let financePeriod = "month"; // "today" | "week" | "month" | "all" | "custom"
 let financeTypeFilter = "all"; // "all" | "Ingreso" | "Egreso"
+let financeCustomMonth = ""; // "YYYY-MM" cuando financePeriod==="custom"
 
 function localDateMinus(days) {
   const d = new Date(); d.setDate(d.getDate() - days);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+const MONTH_SHORT_NAMES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+// Construye las <option> de un <select> "filtro de mes" a partir de las fechas ("YYYY-MM-DD")
+// presentes en los registros de la vista — mismo patrón reusado en Tickets, Reportes, Finanzas,
+// Contaduría, Insumos y POS para no repetir la lógica de agrupar/ordenar meses en cada uno.
+function monthFilterOptionsHtml(dates, selectedMonth, placeholder = "Todos los meses") {
+  const months = [...new Set(dates.map(d => (d||"").slice(0,7)).filter(Boolean))].sort().reverse();
+  return `<option value="">${placeholder}</option>${months.map(ym => {
+    const [y,m] = ym.split("-");
+    return `<option value="${ym}"${selectedMonth===ym?" selected":""}>${MONTH_SHORT_NAMES[Number(m)-1]} ${y}</option>`;
+  }).join("")}`;
 }
 
 function financeFilteredTxs() {
@@ -2665,6 +2698,10 @@ function financeFilteredTxs() {
   if (financePeriod === "today") all = all.filter(t => t.date === today);
   else if (financePeriod === "week")  all = all.filter(t => t.date >= localDateMinus(6));
   else if (financePeriod === "month") all = all.filter(t => t.date >= today.slice(0,7)+"-01");
+  else if (financePeriod === "custom" && financeCustomMonth) {
+    const [mFrom, mTo] = monthRangeForDate(financeCustomMonth+"-01");
+    all = all.filter(t => t.date >= mFrom && t.date <= mTo);
+  }
   if (financeTypeFilter !== "all") all = all.filter(t => t.type === financeTypeFilter);
   return all;
 }
@@ -2682,6 +2719,15 @@ function renderFinance() {
     b.classList.toggle("is-active", b.dataset.fin === financePeriod));
   document.querySelectorAll(".fin-type-filter").forEach(b =>
     b.classList.toggle("is-active", b.dataset.finType === financeTypeFilter));
+
+  const financeMonthSelectEl = document.querySelector("#finance-month-select");
+  if (financeMonthSelectEl) {
+    financeMonthSelectEl.innerHTML = monthFilterOptionsHtml(
+      branchTransactions().map(t=>t.date),
+      financePeriod==="custom" ? financeCustomMonth : "",
+      "Mes específico…"
+    );
+  }
 
   // Show/hide action buttons based on permission
   const bi = document.querySelector("#btn-new-ingreso");
@@ -3533,16 +3579,8 @@ function renderReports() {
   // filtro de mes del kanban de Tickets.
   const monthSelectEl = document.querySelector("#reports-month-select");
   if (monthSelectEl) {
-    const monthShortNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-    const monthsWithData = new Set();
-    for (const t of branchTransactions()) { const ym=(t.date||"").slice(0,7); if (ym) monthsWithData.add(ym); }
-    for (const t of bTickets) { const ym=(t.createdAt||"").slice(0,7); if (ym) monthsWithData.add(ym); }
-    const availableMonths = [...monthsWithData].sort().reverse();
-    monthSelectEl.innerHTML = `<option value="">Mes específico…</option>${availableMonths.map(ym=>{
-      const [y,m] = ym.split("-");
-      const label = `${monthShortNames[Number(m)-1]} ${y}`;
-      return `<option value="${ym}"${reportsPeriod==="custom"&&reportsCustomMonth===ym?" selected":""}>${label}</option>`;
-    }).join("")}`;
+    const reportDates = [...branchTransactions().map(t=>t.date), ...bTickets.map(t=>t.createdAt)];
+    monthSelectEl.innerHTML = monthFilterOptionsHtml(reportDates, reportsPeriod==="custom" ? reportsCustomMonth : "", "Mes específico…");
   }
 
   // Summary cards
@@ -4838,7 +4876,13 @@ function renderContaduria() {
   let rows = bySearch(branchInvoices());
   if (contaduriaStatusFilter !== "all") rows = rows.filter(i => i.status === contaduriaStatusFilter);
   if (contaduriaTypeFilter   !== "all") rows = rows.filter(i => i.type   === contaduriaTypeFilter);
+  if (contaduriaMonthFilter) rows = rows.filter(i => (i.invoice_date||"").slice(0,7) === contaduriaMonthFilter);
   rows = [...rows].sort((a,b) => (b.invoice_date||"").localeCompare(a.invoice_date||""));
+
+  const contaduriaMonthSelectEl = document.querySelector("#contaduria-month-select");
+  if (contaduriaMonthSelectEl) {
+    contaduriaMonthSelectEl.innerHTML = monthFilterOptionsHtml(branchInvoices().map(i=>i.invoice_date), contaduriaMonthFilter);
+  }
 
   tbody.innerHTML = rows.map(i => {
     const tx = state.transactions.find(t => t.id === i.transaction_id);
@@ -6832,6 +6876,11 @@ async function loadTicketParts(ticketId) {
       description: prod.name, quantity: qty, unit_price: prod.price,
     });
     if (error) { showErrorToast(`Error: ${error.message}`); return; }
+    // Bulk auto-deduction only fires once, on the Entregado transition (updateRemoteTicket).
+    // A part added after that point needs its own stock adjustment here, or inventory
+    // silently keeps the stock this part should have consumed.
+    const ticket = state.tickets.find(t => t.id === ticketId);
+    if (ticket?.status === "Entregado") await adjustProductStock(prod.id, -qty);
     loadTicketParts(ticketId);
   });
 
@@ -6839,9 +6888,26 @@ async function loadTicketParts(ticketId) {
   el.querySelector("#parts-list")?.addEventListener("click", async ev => {
     const btn = ev.target.closest("[data-remove-part]");
     if (!btn) return;
+    const removed = items?.find(it => it.id === btn.dataset.removePart);
     await supabaseClient.from("ticket_items").delete().eq("id", btn.dataset.removePart);
+    const ticket = state.tickets.find(t => t.id === ticketId);
+    if (ticket?.status === "Entregado" && removed?.product_id) {
+      await adjustProductStock(removed.product_id, Number(removed.quantity));
+    }
     loadTicketParts(ticketId);
   });
+}
+
+// Applies `delta` to a product's stock (negative to consume, positive to restore),
+// clamped at 0, and keeps the in-memory state.products in sync — same clamping rule
+// used by the bulk Entregado deduction in updateRemoteTicket().
+async function adjustProductStock(productId, delta) {
+  const prod = state.products.find(p => p.id === productId);
+  if (!prod) return;
+  const newStock = Math.max(0, Number(prod.stock) + Number(delta));
+  await supabaseClient.from("products").update({ stock: newStock }).eq("id", productId);
+  const pidx = state.products.findIndex(p => p.id === productId);
+  if (pidx !== -1) state.products[pidx] = { ...state.products[pidx], stock: newStock };
 }
 
 async function logTicketEvent(ticketId, eventType, opts = {}) {
@@ -9884,6 +9950,11 @@ document.querySelector("#cancel-movimiento")?.addEventListener("click",       ()
 
 document.querySelector("#movimiento-form")?.addEventListener("submit", async e => {
   e.preventDefault();
+  const form = e.target;
+  // Mismo guard que #abono-form: sin esto, un doble-click duplicaría el
+  // movimiento de inventario Y el ajuste de stock (que aquí no pasa por un
+  // trigger atómico de la DB, sino por un cálculo en el cliente — ver newStock).
+  if (form.dataset.submitting === "true") return;
   const sel      = document.querySelector("#mov-product");
   const movType  = document.querySelector("#mov-type").value;
   const qty      = Number(document.querySelector("#mov-qty").value || 0);
@@ -9891,6 +9962,10 @@ document.querySelector("#movimiento-form")?.addEventListener("submit", async e =
   const prodId   = sel.value;
   const prod     = state.products.find(p => p.id === prodId);
   if (!prod || qty <= 0) return;
+
+  form.dataset.submitting = "true";
+  const submitBtn = form.querySelector("button[type=submit]");
+  if (submitBtn) submitBtn.disabled = true;
 
   const delta    = movType === "entrada" ? qty : -qty;
   const newStock = Math.max(0, Number(prod.stock) + delta);
@@ -9916,6 +9991,9 @@ document.querySelector("#movimiento-form")?.addEventListener("submit", async e =
     showToast(`✓ ${movType.charAt(0).toUpperCase()+movType.slice(1)} de ${qty} unidades registrada — nuevo stock: ${newStock}`);
   } catch(err) {
     showErrorToast(`Error: ${err.message}`);
+  } finally {
+    form.dataset.submitting = "false";
+    if (submitBtn) submitBtn.disabled = false;
   }
 });
 
@@ -9948,11 +10026,20 @@ document.querySelector("#cancel-abono")?.addEventListener("click",       () => a
 
 document.querySelector("#abono-form")?.addEventListener("submit", async e => {
   e.preventDefault();
+  const form = e.target;
+  // Sin este guard, un doble-click (o un reintento de red) dispara dos veces este
+  // handler y crea dos transacciones de Ingreso idénticas aunque paid_amount solo
+  // suba una vez — mismo patrón de protección que recordForm (ver más arriba).
+  if (form.dataset.submitting === "true") return;
   const ticket = state.tickets.find(t => t.id === abonoTicketId);
   if (!ticket) return;
   const amount    = Number(document.querySelector("#abono-amount").value || 0);
   const method    = document.querySelector("#abono-method").value;
   if (amount <= 0) return;
+
+  form.dataset.submitting = "true";
+  const submitBtn = form.querySelector("button[type=submit]");
+  if (submitBtn) submitBtn.disabled = true;
 
   const total     = Number(ticket.repairAmount || 0);
   const newPaid   = round2(Number(ticket.paidAmount || 0) + amount);
@@ -10008,6 +10095,9 @@ document.querySelector("#abono-form")?.addEventListener("submit", async e => {
     }
   } catch(err) {
     showErrorToast(`No se pudo registrar el abono: ${err.message}`);
+  } finally {
+    form.dataset.submitting = "false";
+    if (submitBtn) submitBtn.disabled = false;
   }
 });
 
@@ -10072,6 +10162,10 @@ document.querySelector("#cancel-pos-return")?.addEventListener("click",       ()
 
 document.querySelector("#pos-return-form")?.addEventListener("submit", async e => {
   e.preventDefault();
+  const form = e.target;
+  // Mismo guard que #abono-form/#movimiento-form: sin esto, un doble-click
+  // duplicaría el reembolso, el Egreso vinculado Y la restauración de stock.
+  if (form.dataset.submitting === "true") return;
   const sale = (state.posSales || []).find(s => s.id === posReturnSaleId);
   if (!sale) return;
   if (dataMode !== "remote") { showErrorToast("Conecta a Supabase para registrar devoluciones."); return; }
@@ -10087,6 +10181,10 @@ document.querySelector("#pos-return-form")?.addEventListener("submit", async e =
     }
   });
   if (!selected.length) { showErrorToast("Selecciona al menos un producto a devolver."); return; }
+
+  form.dataset.submitting = "true";
+  const submitBtn = form.querySelector("button[type=submit]");
+  if (submitBtn) submitBtn.disabled = true;
 
   const total = selected.reduce((s, i) => s + i.qty * i.unitPrice, 0);
   setLoading(true, "Procesando devolución…");
@@ -10130,6 +10228,8 @@ document.querySelector("#pos-return-form")?.addEventListener("submit", async e =
     showErrorToast(`Error al registrar devolución: ${err.message}`);
   } finally {
     setLoading(false);
+    form.dataset.submitting = "false";
+    if (submitBtn) submitBtn.disabled = false;
   }
 });
 
@@ -10229,9 +10329,33 @@ document.querySelector("#reports-date-filter")?.addEventListener("change", e => 
 // Finance period filter — rendered dynamically so use delegated event on #finance-view parent
 document.querySelector("#finance-view")?.addEventListener("click", e => {
   const periodBtn = e.target.closest(".fin-filter");
-  if (periodBtn) { financePeriod = periodBtn.dataset.fin; renderFinance(); return; }
+  if (periodBtn) { financePeriod = periodBtn.dataset.fin; financeCustomMonth = ""; renderFinance(); return; }
   const typeBtn = e.target.closest(".fin-type-filter");
   if (typeBtn) { financeTypeFilter = typeBtn.dataset.finType; renderFinance(); return; }
+});
+
+document.querySelector("#finance-view")?.addEventListener("change", e => {
+  const sel = e.target.closest("#finance-month-select");
+  if (!sel || !sel.value) return;
+  financePeriod = "custom";
+  financeCustomMonth = sel.value;
+  renderFinance();
+});
+
+// Contaduría month filter
+document.querySelector("#contaduria-filters")?.addEventListener("change", e => {
+  const sel = e.target.closest("#contaduria-month-select");
+  if (!sel) return;
+  contaduriaMonthFilter = sel.value;
+  renderContaduria();
+});
+
+// Insumos month filter
+document.querySelector("#supplies-view")?.addEventListener("change", e => {
+  const sel = e.target.closest("#supplies-month-select");
+  if (!sel) return;
+  suppliesMonthFilter = sel.value;
+  renderSupplies();
 });
 
 document.querySelectorAll("[data-export-sheet]").forEach(btn => {
@@ -10638,7 +10762,20 @@ function handleDeleteTicket(id) {
       try {
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
         if (dataMode==="remote" && isUUID) {
-          const {error: txError} = await supabaseClient.from("transactions").delete().eq("ticket_id", id);
+          // An Insumos purchase (migration 50) can be linked to this ticket via ticket_id,
+          // and its expense transaction is ALSO linked here via ticket_id — deleting the
+          // ticket must not delete that expense out from under a purchase that still exists.
+          // Unlink the purchase (it survives, just loses the "vinculado a este ticket"
+          // reference) and protect its transaction from the bulk delete below.
+          const { data: linkedSupplies } = await supabaseClient
+            .from("supply_purchases").select("id, transaction_id").eq("ticket_id", id);
+          const protectedTxIds = (linkedSupplies || []).map(s => s.transaction_id).filter(Boolean);
+          if (linkedSupplies?.length) {
+            await supabaseClient.from("supply_purchases").update({ ticket_id: null }).eq("ticket_id", id);
+          }
+          let txQuery = supabaseClient.from("transactions").delete().eq("ticket_id", id);
+          if (protectedTxIds.length) txQuery = txQuery.not("id", "in", `(${protectedTxIds.join(",")})`);
+          const {error: txError} = await txQuery;
           if (txError) throw txError;
           const {error} = await supabaseClient.from("service_tickets").delete().eq("id", id);
           if (error) throw error;
