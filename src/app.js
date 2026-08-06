@@ -6606,16 +6606,36 @@ function updateTicketItemsHidden() {
   formFields._recalcTicketAmount?.();
 }
 
+// Al pasar de "Monto reparación" plano a desglose de partidas, la primera partida
+// agregada no debe borrar lo que ya estaba capturado a mano — debe conservarlo como
+// la primera línea, para que la nueva partida se sume como adicional (ej. "Cambio de
+// pantalla $1150" + "Puerto de carga $200" = $1350), no lo reemplace.
+// Única excepción: si el servicio ya capturado era "Diagnóstico", ese monto se absorbe
+// en la reparación real en vez de sumarse aparte (el diagnóstico no se cobra por separado
+// si el cliente sigue con el servicio) — en ese caso la partida nueva sí sobreescribe.
+function seedTicketItemsFromFlatAmount() {
+  if (ticketItemsDraft.length > 0) return;
+  const repairInput = formFields.querySelector("#repairAmount");
+  const currentAmount = Number(repairInput?.value || 0);
+  if (currentAmount <= 0) return;
+  const svcSelect = formFields.querySelector("select[data-price-trigger]");
+  const svcName = svcSelect?.value || "";
+  if (svcName === "Diagnóstico") return;
+  ticketItemsDraft.push({ type: "Servicio", description: svcName || "Servicio", qty: 1, unitPrice: currentAmount });
+}
+
 function initTicketItemsBuilder(existingItems = []) {
   ticketItemsDraft = existingItems.map(i => ({ ...i }));
   renderTicketItemsDraft();
 
   document.querySelector("#ti-add-service")?.addEventListener("click", () => {
+    seedTicketItemsFromFlatAmount();
     ticketItemsDraft.push({ type: "Servicio", description: "", qty: 1, unitPrice: 0 });
     renderTicketItemsDraft();
     document.querySelectorAll(".ti-desc")[ticketItemsDraft.length - 1]?.focus();
   });
   document.querySelector("#ti-add-product")?.addEventListener("click", () => {
+    seedTicketItemsFromFlatAmount();
     ticketItemsDraft.push({ type: "Producto", description: "", qty: 1, unitPrice: 0 });
     renderTicketItemsDraft();
     document.querySelectorAll(".ti-desc")[ticketItemsDraft.length - 1]?.focus();
@@ -7840,6 +7860,21 @@ function validateFormFields(formEl) {
   return true;
 }
 
+// Enter en un <input>/<select> dentro del formulario dispara un submit implícito del
+// navegador — el handler de abajo hace e.preventDefault() para evitar la navegación de
+// página, pero eso NO evita el guardado real: el submit sigue ejecutándose con lo que
+// haya en pantalla en ese instante. En el desglose de partidas esto es peligroso: Enter
+// mientras se termina de escribir un precio (ej. "1" antes de terminar de teclear "150")
+// guarda el ticket a medio editar, y como ya quedó persistido en Supabase, un "Cancelar"
+// después ya no puede revertirlo (closeModal() no deshace nada, solo cierra el diálogo).
+// Bloquea el submit-por-Enter en inputs/selects — solo el clic explícito en "Guardar" debe
+// enviar el formulario.
+recordForm.addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT")) {
+    e.preventDefault();
+  }
+});
+
 recordForm.addEventListener("submit", async e => {
   e.preventDefault();
   if (!validateFormFields(recordForm)) { setLoading(false); return; }
@@ -7982,25 +8017,57 @@ recordForm.addEventListener("submit", async e => {
     // (pagado == neto) se quedara marcado "Abonado" para siempre.
     const netTotal = hasItems ? data.repairAmount : round2(Math.max(0, data.repairAmount - Number(data.discountAmount||0)));
     data.paymentStatus = data.paidAmount<=0 ? "Pendiente" : (data.paidAmount>=netTotal && netTotal>0 ? "Pagado" : "Abonado");
-    try {
-      const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTicketId);
-      if (dataMode==="remote" && isRealUUID) {
-        await updateRemoteTicket(editingTicketId, data);
-        // Patch local state immediately so device fields aren't blanked before reloadState resolves
-        const idx = state.tickets.findIndex(t => t.id === editingTicketId);
-        if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], ...data };
-        await reloadState();
-      } else {
-        const idx = state.tickets.findIndex(t => t.id === editingTicketId);
-        if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], ...data };
-        if (dataMode !== "remote") saveState();
+    const doSaveTicket = async () => {
+      recordForm.dataset.submitting = "true";
+      if (saveBtn) saveBtn.disabled = true;
+      setLoading(true, "Guardando…");
+      try {
+        const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingTicketId);
+        if (dataMode==="remote" && isRealUUID) {
+          await updateRemoteTicket(editingTicketId, data);
+          // Patch local state immediately so device fields aren't blanked before reloadState resolves
+          const idx = state.tickets.findIndex(t => t.id === editingTicketId);
+          if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], ...data };
+          await reloadState();
+        } else {
+          const idx = state.tickets.findIndex(t => t.id === editingTicketId);
+          if (idx !== -1) state.tickets[idx] = { ...state.tickets[idx], ...data };
+          if (dataMode !== "remote") saveState();
+        }
+        render();
+        await closeModal();
+      } catch(err) {
+        console.error(err);
+        showErrorToast(`No se pudo guardar: ${err.message}`);
+      } finally {
+        setLoading(false);
+        recordForm.dataset.submitting = "false";
+        if (saveBtn) saveBtn.disabled = false;
       }
-      render();
-      await closeModal();
-    } catch(err) {
-      console.error(err);
-      showErrorToast(`No se pudo guardar: ${err.message}`);
+    };
+    // Salvaguarda: si el monto neto se desploma de forma drástica respecto al que ya
+    // tenía el ticket (ej. de $1150 a $1 por un Enter accidental a medio escribir un
+    // precio en el desglose de partidas — ver el bloqueo de submit-por-Enter arriba),
+    // pide confirmación explícita antes de guardar. Sin esto, un guardado accidental
+    // sobreescribe el monto real de forma silenciosa y ya no hay forma de recuperarlo
+    // desde la UI — "Cancelar" solo cierra el modal, no revierte lo ya persistido.
+    const priorTicket = state.tickets.find(t => t.id === editingTicketId);
+    const priorNet = priorTicket
+      ? (priorTicket.quoteItems?.length
+          ? Number(priorTicket.repairAmount||0)
+          : round2(Math.max(0, Number(priorTicket.repairAmount||0) - Number(priorTicket.discountAmount||0))))
+      : 0;
+    if (priorTicket && priorNet > 0 && netTotal < priorNet * 0.2) {
+      setLoading(false);
+      recordForm.dataset.submitting = "false";
+      if (saveBtn) saveBtn.disabled = false;
+      showConfirmModal(
+        `El monto de reparación bajó de ${money.format(priorNet)} a ${money.format(netTotal)}. ¿Seguro que quieres guardarlo así?`,
+        { label: "Guardar de todas formas", danger: true, onConfirm: () => { doSaveTicket(); } }
+      );
+      return;
     }
+    await doSaveTicket();
     return;
   }
 
@@ -8484,6 +8551,11 @@ async function updateRemoteTicket(ticketId, r) {
   const disc = (!r.quoteItems?.length && r.discountCode)
     ? applyDiscount(Number(r.repairAmount||0), r.discountCode, "ticket")
     : { amount: Number(r.discountAmount||0), pct: Number(r.discountPct||0) };
+  // r._prevStatus permite override del estado previo cuando state.tickets ya fue
+  // actualizado de forma optimista antes de llamar a esta función (drag & drop kanban) —
+  // sin esto, oldTicket.status ya es igual a r.status y stage_changed_at nunca se escribe
+  // para tickets movidos por drag & drop (solo se actualizaba si además se editaba el ticket).
+  const prevStatusForUpdate = r._prevStatus ?? oldTicket?.status;
   const { error } = await supabaseClient.from("service_tickets").update({
     customer_name:        r.client,
     product_name:         r.productName,
@@ -8511,7 +8583,7 @@ async function updateRemoteTicket(ticketId, r) {
     ...(r.quoteItems !== undefined ? { quote_items: r.quoteItems.length ? r.quoteItems : null } : {}),
     // A diferencia de las fechas selladas arriba (una sola vez), stage_changed_at se
     // sobrescribe cada vez que el stage realmente cambia — es lo que ordena el kanban.
-    ...(oldTicket && r.status !== oldTicket.status ? { stage_changed_at: new Date().toISOString() } : {}),
+    ...(prevStatusForUpdate && r.status !== prevStatusForUpdate ? { stage_changed_at: new Date().toISOString() } : {}),
   }).eq("id", ticketId);
   if (error) throw error;
 
@@ -8546,10 +8618,8 @@ async function updateRemoteTicket(ticketId, r) {
     });
   }
 
-  // Log stage change event
-  // r._prevStatus permite override del estado previo cuando state.tickets ya fue
-  // actualizado de forma optimista antes de llamar a esta función (drag & drop kanban)
-  const prevStatus  = r._prevStatus ?? oldTicket?.status;
+  // Log stage change event (mismo prevStatusForUpdate usado arriba para stage_changed_at)
+  const prevStatus  = prevStatusForUpdate;
   const stageChanged = prevStatus && r.status && prevStatus !== r.status;
   if (stageChanged) {
     logTicketEvent(ticketId, "stage_change", { fromStage: prevStatus, toStage: r.status });
@@ -8569,6 +8639,23 @@ async function updateRemoteTicket(ticketId, r) {
   if (newPaid > oldPaid) {
     logTicketEvent(ticketId, "payment", {
       note: `Pago registrado: ${money.format(newPaid - oldPaid)}${r.paymentMethod ? ` (${r.paymentMethod})` : ""}`,
+    });
+  }
+
+  // Log: monto de reparación y/o desglose de partidas cambiaron — deja registro explícito
+  // de cada partida vigente (no solo el total) para que agregar/quitar un servicio quede
+  // trazable en el historial, igual que un cambio de etapa o de técnico asignado.
+  const oldAmountForLog = round2(Number(oldTicket?.repairAmount || 0));
+  const newAmountForLog = round2(Number(r.repairAmount || 0));
+  const oldItemsJson = JSON.stringify(oldTicket?.quoteItems || []);
+  const newItemsJson = JSON.stringify(r.quoteItems || []);
+  if (oldAmountForLog !== newAmountForLog || oldItemsJson !== newItemsJson) {
+    const itemsList = (r.quoteItems || [])
+      .map(i => `${i.description || i.type}${i.qty > 1 ? ` ×${i.qty}` : ""} ${money.format(i.unitPrice || 0)}`)
+      .join(", ");
+    logTicketEvent(ticketId, "amount_change", {
+      note: `Monto actualizado: ${money.format(oldAmountForLog)} → ${money.format(newAmountForLog)}`
+        + (itemsList ? ` — Partidas: ${itemsList}` : ""),
     });
   }
 
