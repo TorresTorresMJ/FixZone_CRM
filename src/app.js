@@ -1371,6 +1371,21 @@ function branchTickets()       { return state.tickets.filter(t => !t.branch || t
 function branchProducts()      { return state.products.filter(p => !p.branch || p.branch === activeBranchId); }
 function branchClients()       { return state.clients.filter(c => !c.branch || c.branch === activeBranchId); }
 function branchSupplies()      { return state.supplies.filter(s => !s.branch || s.branch === activeBranchId); }
+
+// Nombres de proveedor más usados en compras de insumo DE ESTA sucursal — usado
+// como accesos rápidos en el Cotizador (ver renderCotizador()/buildTicketCotizadorWidget()).
+// Antes eran dos nombres fijos en el código ("Macrocell", "Staff") que en realidad
+// son proveedores reales de Puerto Vallarta — aparecían igual en la pestaña de
+// Puebla, que no trabaja con ellos. Al derivarlos de las compras ya filtradas por
+// sucursal (branchSupplies(), RLS-segmentado desde la migración 55) el acceso
+// rápido queda correcto para cada sucursal sin necesidad de configurarlo a mano.
+function topSupplierQuickPicks(limit = 2) {
+  const counts = {};
+  branchSupplies().forEach(s => {
+    if (s.supplier && s.supplier !== "Sin proveedor") counts[s.supplier] = (counts[s.supplier]||0) + 1;
+  });
+  return Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, limit).map(([name]) => name);
+}
 function branchTransactions()  { return state.transactions.filter(t => !t.branch || t.branch === activeBranchId); }
 function branchInvoices()      { return (state.invoices||[]).filter(i => !i.branch || i.branch === activeBranchId); }
 function branchBrandAssets()   { return (state.brandAssets||[]).filter(a => !a.branch || a.branch === activeBranchId); }
@@ -2055,12 +2070,9 @@ function renderCotizador() {
           <div>
             <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.45);margin-bottom:6px">Proveedor</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button type="button" class="cot-prov-btn" data-prov="Macrocell"
-                style="padding:5px 14px;border-radius:6px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px">Macrocell</button>
-              <button type="button" class="cot-prov-btn" data-prov="Staff"
-                style="padding:5px 14px;border-radius:6px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px">Staff</button>
-              <button type="button" class="cot-prov-btn" data-prov="Otro"
-                style="padding:5px 14px;border-radius:6px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px">Otro</button>
+              ${[...topSupplierQuickPicks(2), "Otro"].map(name => `
+              <button type="button" class="cot-prov-btn" data-prov="${escapeHtml(name)}"
+                style="padding:5px 14px;border-radius:6px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px">${escapeHtml(name)}</button>`).join("")}
             </div>
           </div>
         </div>
@@ -7884,9 +7896,8 @@ function initTicketCotizadorWidget() {
             appearance:textfield;-moz-appearance:textfield;box-sizing:border-box"/>
         </div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;padding-bottom:2px">
-          <button type="button" class="tc-prov mini-button" data-prov="Macrocell" style="font-size:11px;padding:4px 10px">Macrocell</button>
-          <button type="button" class="tc-prov mini-button" data-prov="Staff"     style="font-size:11px;padding:4px 10px">Staff</button>
-          <button type="button" class="tc-prov mini-button" data-prov="Otro"      style="font-size:11px;padding:4px 10px">Otro</button>
+          ${[...topSupplierQuickPicks(2), "Otro"].map(name => `
+          <button type="button" class="tc-prov mini-button" data-prov="${escapeHtml(name)}" style="font-size:11px;padding:4px 10px">${escapeHtml(name)}</button>`).join("")}
         </div>
       </div>
       <div id="tc-result" style="display:none;margin-top:10px;padding:10px 12px;border-radius:7px;
