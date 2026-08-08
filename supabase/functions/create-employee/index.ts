@@ -38,18 +38,31 @@ Deno.serve(async (req) => {
 
     const { data: callerEmp } = await adminClient
       .from("employees")
-      .select("role, status")
+      .select("role, status, branch_id, all_branches_access")
       .eq("auth_user_id", caller.id)
       .single();
 
     if (!callerEmp || callerEmp.status !== "active") throw new Error("Empleado no activo");
     if (!["it", "admin", "owner"].includes(callerEmp.role)) throw new Error("Sin permisos");
 
+    // Segmentación por sucursal (ver supabase/53_branch_segmentation.sql): esta
+    // función usa la service-role key, así que RLS no la protege — sin este
+    // chequeo, un admin de una sucursal podría crear/editar empleados de la
+    // otra pasando por alto por completo el aislamiento de datos.
+    const callerCanAccessAllBranches = !!callerEmp.all_branches_access;
+    function assertBranchAllowed(targetBranchId: string | null | undefined) {
+      if (callerCanAccessAllBranches) return;
+      if (!targetBranchId || targetBranchId !== callerEmp!.branch_id) {
+        throw new Error("Sin permisos para gestionar empleados de otra sucursal");
+      }
+    }
+
     const { action, payload } = await req.json();
 
     if (action === "create") {
       const { full_name, username, role, branch_id, default_branch_id, phone } = payload;
       if (!full_name || !username) throw new Error("Nombre y usuario son requeridos");
+      assertBranchAllowed(branch_id);
 
       const authEmail = toAuthEmail(username);
 
@@ -90,6 +103,11 @@ Deno.serve(async (req) => {
       const { employee_id, full_name, username, role, status, branch_id, default_branch_id, phone } = payload;
       if (!employee_id) throw new Error("employee_id requerido");
 
+      const { data: targetEmp } = await adminClient
+        .from("employees").select("branch_id").eq("id", employee_id).single();
+      assertBranchAllowed(targetEmp?.branch_id);
+      if (branch_id !== undefined) assertBranchAllowed(branch_id); // no reasignar fuera de la propia sucursal
+
       if (username) {
         const { data: emp } = await adminClient
           .from("employees").select("auth_user_id, username").eq("id", employee_id).single();
@@ -121,7 +139,8 @@ Deno.serve(async (req) => {
       if (!employee_id) throw new Error("employee_id requerido");
 
       const { data: emp } = await adminClient
-        .from("employees").select("auth_user_id").eq("id", employee_id).single();
+        .from("employees").select("auth_user_id, branch_id").eq("id", employee_id).single();
+      assertBranchAllowed(emp?.branch_id);
 
       await adminClient.from("employees").update({ status: "terminated" }).eq("id", employee_id);
 
@@ -136,7 +155,8 @@ Deno.serve(async (req) => {
       if (!employee_id) throw new Error("employee_id requerido");
 
       const { data: emp } = await adminClient
-        .from("employees").select("auth_user_id").eq("id", employee_id).single();
+        .from("employees").select("auth_user_id, branch_id").eq("id", employee_id).single();
+      assertBranchAllowed(emp?.branch_id);
       if (!emp?.auth_user_id) throw new Error("Usuario sin cuenta Auth");
 
       await adminClient.auth.admin.updateUserById(emp.auth_user_id, { password: DEFAULT_PASSWORD });

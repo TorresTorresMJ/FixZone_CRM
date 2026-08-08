@@ -450,6 +450,7 @@ async function afterLogin(authUser) {
         .find(b => b.id === currentEmployee.default_branch_id);
       if (branch) activeBranchId = branch.name;
     }
+    updateBranchTabsVisibility();
     render();
     renderNotifBadge();
     renderTeamTasksBadge();
@@ -896,6 +897,16 @@ async function handleLogin(e) {
 // ── Change password screen ────────────────────────────────────────────────────
 function showChangePasswordScreen() {
   document.querySelector(".app-shell").style.display = "none";
+  // #login-screen y #change-password-screen no usan position:fixed (ver app.css)
+  // — son <div> normales en el flujo del documento, cada uno min-height:100vh.
+  // Sin ocultar el login aquí (a diferencia de showApp(), que sí lo hace), un
+  // login con force_password_change quedaba con AMBAS pantallas montadas: el
+  // login (con el botón "Verificando..." nunca reseteado, porque afterLogin()
+  // sí terminó bien y nunca volvió a tocar ese botón) llenando el primer
+  // viewport, y el cambio de contraseña real invisible más abajo — se veía
+  // idéntico a un freeze permanente y solo un refresh completo lo destrababa.
+  const loginEl = document.querySelector("#login-screen");
+  if (loginEl) loginEl.style.display = "none";
   let el = document.querySelector("#change-password-screen");
   if (!el) {
     el = document.createElement("div");
@@ -6048,9 +6059,18 @@ function fillWATemplate(key, vars) {
     .replace(/{link}/g,     vars.link||"");
 }
 
+// Códigos de descuento con branchId null aplican a ambas sucursales (código
+// compartido); uno con branchId propio solo debe encontrarse/aplicarse desde
+// esa sucursal — sin este filtro un código creado para Puebla podía teclearse
+// y aplicarse igual en Vallarta (y viceversa), un cruce de datos de sucursal.
+function branchDiscounts() {
+  const bid = lookups.branchesByName.get(activeBranchId)?.id || null;
+  return (state.discounts || []).filter(d => !d.branchId || d.branchId === bid);
+}
+
 function applyDiscount(baseAmount, code, scope = "ticket") {
   const today = dateStamp();
-  const allCodes = [...(state.discounts || [])];
+  const allCodes = [...branchDiscounts()];
   const d = allCodes.find(x =>
     x.code.toLowerCase() === (code || "").toLowerCase() &&
     x.active &&
@@ -6069,7 +6089,7 @@ function applyDiscount(baseAmount, code, scope = "ticket") {
 // Códigos de descuento activos y vigentes (fecha/usos) para un alcance dado (pos|cotizacion|ticket)
 function activeDiscountCodesForScope(scope) {
   const today = dateStamp();
-  return (state.discounts || []).filter(d =>
+  return branchDiscounts().filter(d =>
     d.active &&
     (!d.validFrom  || today >= d.validFrom) &&
     (!d.validUntil || today <= d.validUntil) &&
@@ -7023,6 +7043,25 @@ function openForm(type, prefill = {}) {
   if (type==="ticket"||type==="product"||type==="cotizacion") {
     const sel = formFields.querySelector("#branch");
     if (sel) sel.value = activeBranchId;
+  }
+  // Un empleado sin all_branches_access nunca puede dar de alta a otro fuera de
+  // su propia sucursal — el backend (create-employee Edge Function) ya lo
+  // rechaza, pero fijar/deshabilitar el select evita el intento fallido y dejar
+  // ver el nombre de la otra sucursal en el dropdown.
+  if (type==="employee" && !currentEmployee?.all_branches_access) {
+    const sel = formFields.querySelector("#branch_id");
+    const myBranchName = (state.branches||[]).find(b => b.id === currentEmployee?.branch_id)?.name;
+    // No se usa `disabled`: un <select disabled> no manda su valor en el
+    // FormData del submit, así que el POST llegaría con branch_id vacío.
+    // En vez de eso, queda editable pero cualquier intento de cambiarlo se
+    // revierte de inmediato — el valor enviado siempre es el propio.
+    if (sel && myBranchName) {
+      sel.value = myBranchName;
+      sel.style.opacity = "0.6";
+      sel.style.pointerEvents = "none";
+      sel.title = "Solo puedes dar de alta empleados en tu propia sucursal";
+      sel.addEventListener("change", () => { sel.value = myBranchName; });
+    }
   }
   // FIX: show photo info note when creating a ticket (photos available after first save)
   if (type === "ticket") {
@@ -11378,7 +11417,25 @@ document.addEventListener("input", e => {
 // ──────────────────────────────────────────────────────────────────────────────
 // BRANCH TABS
 // ──────────────────────────────────────────────────────────────────────────────
+// Segmentación real por sucursal (ver supabase/53_branch_segmentation.sql): un
+// empleado normal está fijo en su sucursal asignada (employees.branch_id) tanto
+// en la UI como en RLS. Solo employees.all_branches_access = true (hoy, solo
+// Monica) puede cambiar de pestaña — el candado de RLS es la barrera real
+// (cualquier intento de leer/escribir la otra sucursal falla ahí sin importar
+// qué haga el frontend), pero ocultar el switcher evita el falso indicio de
+// "veo Puebla" cuando en realidad la consulta simplemente vino vacía.
+function canSwitchBranch() {
+  return !!currentEmployee?.all_branches_access;
+}
+function updateBranchTabsVisibility() {
+  const tabs = document.querySelector(".branch-tabs");
+  if (!tabs) return;
+  tabs.style.display = canSwitchBranch() ? "" : "none";
+}
+window.updateBranchTabsVisibility = updateBranchTabsVisibility;
+
 function setActiveBranch(name) {
+  if (!canSwitchBranch()) return; // empleado fijo en su sucursal — ver nota arriba
   activeBranchId = name;
   document.querySelectorAll(".branch-tab").forEach(btn => {
     btn.classList.toggle("is-active", btn.textContent.trim()===name);
