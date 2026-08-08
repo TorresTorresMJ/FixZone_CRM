@@ -88,12 +88,12 @@ const ROLE_LABELS  = { it: "Admin", owner: "Admin", admin: "Admin", standard: "E
 // ── Role permission map ───────────────────────────────────────────────────────
 const PERMISSIONS = {
   // Frontend roles
-  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","contaduria","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","contaduria","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   standard:  { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   marketing: { tabs: ["dashboard","cotizaciones","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
   // DB roles (map to equivalent frontend permission sets)
-  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","contaduria","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
+  owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   sales:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
   technician: { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
@@ -412,9 +412,23 @@ async function reloadState() {
   }
 }
 
+// Evita que un login exitoso se quede "trabado" en Verificando... para siempre
+// si la conexión se cuelga a medio camino (ni resuelve ni rechaza) durante
+// resolveCurrentEmployee()/reloadState() dentro de afterLogin() — sin esto, el
+// timeout de 20s en handleLogin() solo cubre attemptSupabaseLogin() (se cancela
+// justo antes de llamar a afterLogin), así que un cuelgue posterior no lo
+// disparaba y la única salida era refrescar la página manualmente.
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+}
+
 async function afterLogin(authUser) {
   try {
-    await resolveCurrentEmployee(authUser);
+    await withTimeout(resolveCurrentEmployee(authUser), 15000,
+      "Tiempo de espera agotado verificando tu cuenta. Verifica tu conexión e intenta de nuevo.");
     if (currentEmployee?.force_password_change) {
       showChangePasswordScreen();
       return;
@@ -429,7 +443,8 @@ async function afterLogin(authUser) {
     // (nada más lo repinta), aunque los datos sí sean remotos — un falso indicio de modo
     // local que no refleja el estado real.
     dataMode = "remote";
-    await reloadState();
+    await withTimeout(reloadState(), 25000,
+      "Tiempo de espera agotado cargando tus datos. Verifica tu conexión e intenta de nuevo.");
     if (currentEmployee?.default_branch_id) {
       const branch = [...lookups.branchesByName.values()]
         .find(b => b.id === currentEmployee.default_branch_id);
@@ -999,11 +1014,18 @@ function applyRolePermissions() {
 function currentPerms() {
   const role = currentEmployee?.role || "standard";
   const perms = PERMISSIONS[role] || PERMISSIONS.standard;
-  // Excepción individual: empleados con can_access_contaduria=true ven Contaduría sin importar su rol
-  if (currentEmployee?.can_access_contaduria && !perms.tabs.includes("contaduria")) {
-    return { ...perms, tabs: [...perms.tabs, "contaduria"] };
-  }
-  return perms;
+  // Contaduría es exclusiva de empleados con can_access_contaduria=true (Kevin y Monica por
+  // defecto) — nunca por rol. `perms.tabs` puede traer "contaduria" arrastrada desde un override
+  // guardado en localStorage por el editor "Permisos por Rol" (fixzone-role-permissions-v1),
+  // de antes de que se quitara de los defaults de rol — así que siempre se filtra explícitamente
+  // en vez de solo agregarla condicionalmente, sin importar qué traiga perms.tabs.
+  const hasFlag = !!currentEmployee?.can_access_contaduria;
+  const tabs = perms.tabs.includes("contaduria") === hasFlag
+    ? perms.tabs
+    : hasFlag
+      ? [...perms.tabs, "contaduria"]
+      : perms.tabs.filter(t => t !== "contaduria");
+  return tabs === perms.tabs ? perms : { ...perms, tabs };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -4775,7 +4797,6 @@ function renderUsers() {
   const canManageUsers = currentPerms().canManageUsers;
   container.innerHTML = state.employees.map(e=>{
     const master = isMasterUser(e);
-    const hasFixedContaduria = ["admin","it","owner"].includes(e.role);
     return `
     <tr>
       <td><strong>${escapeHtml(e.name||e.full_name)}</strong>${master?` <span class="role-badge" style="background:rgba(255,193,7,.15);color:#ffc107">Master</span>`:""}</td>
@@ -4788,7 +4809,7 @@ function renderUsers() {
           <button class="mini-button" data-edit-employee="${e.id}">Editar</button>
           <button class="mini-button" data-reset-pw="${e.id}">Reset PW</button>
           ${master ? "" : `<button class="mini-button danger-btn" data-delete-employee="${e.id}">Dar de baja</button>`}
-          ${canManageUsers && !hasFixedContaduria ? `<button class="mini-button" data-toggle-contaduria="${e.id}">${e.can_access_contaduria?"✓ Contaduría":"+ Contaduría"}</button>` : ""}
+          ${canManageUsers ? `<button class="mini-button" data-toggle-contaduria="${e.id}">${e.can_access_contaduria?"✓ Contaduría":"+ Contaduría"}</button>` : ""}
         </div>
       </td>
     </tr>`;}).join("")||tableEmpty(6);
