@@ -9863,11 +9863,18 @@ async function backfillSupplyForTransaction(txId, data) {
   if (error) throw error;
 }
 
+// Proveedores están segmentados por sucursal (migración 55) — Puebla y
+// Vallarta no comparten proveedores reales. El lookup/alta por nombre se
+// resuelve dentro de la sucursal activa (para un empleado sin
+// all_branches_access es siempre la única que tiene) en vez de por nombre
+// global; si no, dos "Telcel" distintos de cada sucursal se hubieran fundido
+// en un solo registro de proveedor compartido.
 async function findOrCreateSupplier(name) {
   const n = name||"Sin proveedor";
-  const { data:ex } = await supabaseClient.from("suppliers").select("id").eq("name",n).maybeSingle();
+  const branchId = await branchIdByName(activeBranchId);
+  const { data:ex } = await supabaseClient.from("suppliers").select("id").eq("name",n).eq("branch_id",branchId).maybeSingle();
   if (ex?.id) return ex.id;
-  const { data:s, error } = await supabaseClient.from("suppliers").insert({ name:n }).select("id").single();
+  const { data:s, error } = await supabaseClient.from("suppliers").insert({ name:n, branch_id:branchId }).select("id").single();
   if (error) throw error;
   return s.id;
 }
