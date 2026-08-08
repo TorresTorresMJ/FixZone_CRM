@@ -353,20 +353,22 @@ Marketing quick-links and automation tools are stored in `localStorage` (not Sup
 
 ### WhatsApp templates
 
-Templates stored in Supabase `app_settings` (migration 41, key `wa_templates`, jsonb value) — shared across all users/devices instead of per-browser `localStorage`. Default keys:
+Templates stored in Supabase `app_settings` (migration 41, jsonb value, key namespaced per branch since migration 56 — `wa_templates:<Sucursal>`, see below) instead of per-browser `localStorage`. Default keys:
 - `cotizacion` — empty by default (falls back to auto-formatted message with line items)
 - `listo`, `abono`, `pagado`, `garantia` — status-based message templates
 
-Available variables: `{cliente}`, `{equipo}`, `{sucursal}`, `{folio}`, `{monto}`, `{saldo}`, `{total}`, `{items}`. `fillWATemplate()` handles substitution and reads synchronously from `state.settings.wa_templates` (loaded at startup by `loadSupabaseState()`). Templates are editable in the Automatización tab — `renderWATemplates()` autosaves on input (debounced 500ms) via `saveWATemplates()` → `saveAppSetting("wa_templates", …)`, which upserts to `app_settings` and updates `state.settings` immediately so the in-memory read stays in sync. Each template has a 📋 **Copiar** button to copy the raw text (with variables) to clipboard.
+Available variables: `{cliente}`, `{equipo}`, `{sucursal}`, `{folio}`, `{monto}`, `{saldo}`, `{total}`, `{items}`. `fillWATemplate()` handles substitution and reads synchronously via `getWATemplates()`, which resolves `state.settings[waTemplatesSettingsKey()]` (the active branch's key). Templates are editable in the Automatización tab — `renderWATemplates()` autosaves on input (debounced 500ms) via `saveWATemplates()` → `saveAppSetting(waTemplatesSettingsKey(), …)`, which upserts to `app_settings` and updates `state.settings` immediately so the in-memory read stays in sync. Each template has a 📋 **Copiar** button to copy the raw text (with variables) to clipboard.
 
 **`app_settings` is a generic key/value store** (migration 41) meant to absorb the rest of the `localStorage`-only config over time. Migrated so far: `wa_templates`, `quick_messages`. Still pending: marketing links, `fixzone-pricing-config`, etc. — one section per sprint, same pattern: read from `state.settings[key]` with defaults merged in, write via `saveAppSetting(key, value)`.
 
+**`wa_templates` and `quick_messages` are namespaced by branch as of migration 56** — the key itself carries the branch: `wa_templates:Puerto Vallarta`, `quick_messages:Puebla`, etc. (`waTemplatesSettingsKey()`/`quickMessagesSettingsKey()` build the key from `activeBranchId`). Before this, both were a single shared key — editing or deleting a quick message in one branch changed it for the other too, and a Vallarta-specific message ("Transferencia", their bank account) showed up (with no delete option reachable without also deleting it for Vallarta) in Puebla's list, which is what triggered the fix. Data migration copied the old shared content into both branches as a starting point, minus "Transferencia" from Puebla's copy (Monica's call — it's Vallarta's bank account, not Puebla's), then deleted the old flat keys. **RLS**: `app_settings` had no branch restriction at all before migration 56 (any active employee could read/write any key via the API, key namespacing was UI-only) — the new restrictive policy parses the key's `:<BranchName>` suffix (`split_part(key, ':', 2)`) and requires it to match the caller's own branch (or `all_branches_access`); a key with no `:` suffix stays open to any active employee, for genuinely shared config that might be added later. **When adding a new branch-specific `app_settings` key, follow the same `key:BranchName` convention** — anything else needs its own carve-out in the RLS policy.
+
 ### Mensajes rápidos
 
-Repertorio de mensajes de atención al cliente, copiables con un clic. Stored in Supabase `app_settings` (migration 41, key `quick_messages`) instead of `localStorage` — shared across all users/devices. Default messages: saludo inicial, horarios, tiempo de reparación, garantía, equipo listo, despedida, no tenemos el modelo.
+Repertorio de mensajes de atención al cliente, copiables con un clic. Stored in Supabase `app_settings` (migration 41, key namespaced per branch since migration 56 — `quick_messages:<Sucursal>`) instead of `localStorage`. Default messages: saludo inicial, horarios, tiempo de reparación, garantía, equipo listo, despedida, no tenemos el modelo — none of them name a brand, on purpose (see the branch-namespacing note under "WhatsApp templates" above for why).
 
-- `loadQuickMessages()` — reads synchronously from `state.settings.quick_messages`, falling back to `DEFAULT_QUICK_MESSAGES` if empty/missing
-- `saveQuickMessages(msgs)` — async, persists via `saveAppSetting("quick_messages", msgs)`
+- `loadQuickMessages()` — reads synchronously from `state.settings[quickMessagesSettingsKey()]` (the active branch's key), falling back to `DEFAULT_QUICK_MESSAGES` if empty/missing
+- `saveQuickMessages(msgs)` — async, persists via `saveAppSetting(quickMessagesSettingsKey(), msgs)`
 - `renderQuickMessages()` — renders the section in `#quick-messages-manager` (Automatización tab). View mode shows cards with 📋 Copiar; edit mode allows add/delete/rename/reorder + Restaurar defaults (save/restore buttons are now async with error toasts on failure).
 
 ### Tabla de Precios (vista Precios)
@@ -463,6 +465,7 @@ SQL files in `supabase/` are applied manually in the Supabase SQL Editor:
 53. `53_branch_segmentation.sql` — adds `employees.all_branches_access`; assigns `employees.branch_id` per employee; adds `private.can_read_branch()`/`private.can_write_branch()` and a `restrictive` branch-isolation policy per branch-scoped table (see "Multi-branch data isolation" above) — real RLS-enforced separation between Puerto Vallarta and Puebla, not just the frontend filter
 54. `54_notifications_write_isolation.sql` — upgrades `notifications`' restrictive policy from `SELECT`-only to full read+write, now that every `addNotif()` call site reliably stamps a real `branch_id`
 55. `55_suppliers_branch.sql` — adds `branch_id` to `suppliers` and the matching `restrictive` branch-isolation policy — Puebla and Vallarta don't share suppliers, this had been left out of migration 53 by mistake
+56. `56_settings_branch_namespacing.sql` — adds a `restrictive` policy to `app_settings` scoping any `key:BranchName`-suffixed row to that branch (data migration for `wa_templates`/`quick_messages` splitting into per-branch keys was done ad hoc via SQL, not a migration file — see "Marketing & Automation" section)
 53. `53_contaduria_kevin_monica_only.sql` — removes the blanket `admin`/`it`/`owner` grant from `private.is_admin_it_or_kevin()`, leaving `can_access_contaduria` as the sole gate; backfills the flag to `true` only for Kevin Mijangos and Monica Torres
 
 Files 04–06 (intermediate fixes) are superseded by 07–11 and do not need to be re-applied.

@@ -5835,8 +5835,8 @@ function renderWATemplates() {
   el.innerHTML = `
     <div class="card" style="margin-top:16px">
       <div style="margin-bottom:16px">
-        <h3 style="margin:0 0 4px;font-size:14px">Plantillas de WhatsApp — tickets</h3>
-        <small class="muted">Se envían automáticamente al cambiar estado del ticket. Variables: <code>${HINTS}</code></small>
+        <h3 style="margin:0 0 4px;font-size:14px">Plantillas de WhatsApp — tickets <span style="font-weight:400;color:var(--fz-primary)">· ${escapeHtml(activeBranchId)}</span></h3>
+        <small class="muted">Se envían automáticamente al cambiar estado del ticket. Independientes por sucursal — esto solo afecta ${escapeHtml(activeBranchId)}. Variables: <code>${HINTS}</code></small>
       </div>
       ${Object.keys(LABELS).map(k=>`
         <div style="margin-bottom:14px">
@@ -5912,11 +5912,15 @@ const DEFAULT_QUICK_MESSAGES = [
   { name: "No tenemos el modelo",  text: "Lo sentimos, por el momento no contamos con refacciones para ese modelo. Podemos conseguirla bajo pedido, ¿te interesa que te cotizemos?" },
 ];
 
+// Mismo namespacing por sucursal que wa_templates (ver waTemplatesSettingsKey
+// arriba) — antes un mensaje agregado/borrado en una sucursal se veía y se
+// borraba igual en la otra, porque era una sola lista compartida.
+function quickMessagesSettingsKey() { return `quick_messages:${activeBranchId}`; }
 function loadQuickMessages() {
-  const saved = state.settings?.quick_messages;
+  const saved = state.settings?.[quickMessagesSettingsKey()];
   return Array.isArray(saved) && saved.length ? saved : [...DEFAULT_QUICK_MESSAGES];
 }
-async function saveQuickMessages(msgs) { await saveAppSetting("quick_messages", msgs); }
+async function saveQuickMessages(msgs) { await saveAppSetting(quickMessagesSettingsKey(), msgs); }
 
 function renderQuickMessages() {
   const el = document.querySelector("#quick-messages-manager");
@@ -5936,8 +5940,8 @@ function renderQuickMessages() {
         <div class="card" style="margin-top:16px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
             <div>
-              <h3 style="margin:0 0 3px;font-size:14px">Mensajes rápidos</h3>
-              <small class="muted">Copia y pega directamente en tus conversaciones de WhatsApp</small>
+              <h3 style="margin:0 0 3px;font-size:14px">Mensajes rápidos <span style="font-weight:400;color:var(--fz-primary)">· ${escapeHtml(activeBranchId)}</span></h3>
+              <small class="muted">Copia y pega directamente en tus conversaciones de WhatsApp — independientes por sucursal</small>
             </div>
             <button class="ghost-button" id="qm-edit-btn" style="font-size:12px">✎ Editar</button>
           </div>
@@ -5969,7 +5973,7 @@ function renderQuickMessages() {
       container.innerHTML = `
         <div class="card" style="margin-top:16px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <h3 style="margin:0;font-size:14px">Editar mensajes rápidos</h3>
+            <h3 style="margin:0;font-size:14px">Editar mensajes rápidos <span style="font-weight:400;color:var(--fz-primary)">· ${escapeHtml(activeBranchId)}</span></h3>
             <div style="display:flex;gap:8px">
               <button class="ghost-button" id="qm-cancel-btn" style="font-size:12px">Cancelar</button>
               <button class="ghost-button" id="qm-restore-btn" style="font-size:12px">Restaurar</button>
@@ -6056,10 +6060,18 @@ const DEFAULT_WA_TEMPLATES = {
   cotizacion: "Hola {cliente} 👋, esta es la cotización del equipo *{equipo}* para el servicio de {servicio}.\n\n💰 Total: {total}\n\n📱 Ver detalle: {link}",
 };
 
+// Plantillas de WhatsApp por sucursal (migración de datos 2026-08-08 — antes
+// era una sola key `wa_templates` compartida entre Puebla y Vallarta). La key
+// en app_settings queda namespaced por sucursal (`wa_templates:<sucursal>`) —
+// no requirió cambios de esquema, app_settings ya es un key/value genérico.
+// Se resuelve por activeBranchId (la pestaña donde se está trabajando), igual
+// que topSupplierQuickPicks()/currentNotifBranchId() — para quien no tiene
+// all_branches_access es siempre su única sucursal.
+function waTemplatesSettingsKey() { return `wa_templates:${activeBranchId}`; }
 function getWATemplates() {
-  return { ...DEFAULT_WA_TEMPLATES, ...(state.settings?.wa_templates || {}) };
+  return { ...DEFAULT_WA_TEMPLATES, ...(state.settings?.[waTemplatesSettingsKey()] || {}) };
 }
-async function saveWATemplates(t) { await saveAppSetting("wa_templates", t); }
+async function saveWATemplates(t) { await saveAppSetting(waTemplatesSettingsKey(), t); }
 function fillWATemplate(key, vars) {
   const tpl = getWATemplates()[key] || DEFAULT_WA_TEMPLATES[key] || "";
   return tpl
