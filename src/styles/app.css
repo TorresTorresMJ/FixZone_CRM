@@ -217,7 +217,7 @@ select { color-scheme: dark; }
   font-weight: 600;
 }
 .pin-key:hover { background: rgba(255,255,255,0.12); }
-.pin-key-del { font-size: 15px; }
+.pin-key-del { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
 
 /* ── App shell ───────────────────────────────────────────────────────────── */
 .app-shell {

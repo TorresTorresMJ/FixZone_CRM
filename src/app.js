@@ -697,7 +697,7 @@ function openPinLoginScreen() {
           ${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" class="pin-key" data-digit="${n}">${n}</button>`).join("")}
           <span></span>
           <button type="button" class="pin-key" data-digit="0">0</button>
-          <button type="button" class="pin-key pin-key-del" data-del="1">⌫</button>
+          <button type="button" class="pin-key pin-key-del" data-del="1">Borrar</button>
         </div>
         ${msg ? `<p id="pin-login-error" class="login-error">${escapeHtml(msg)}</p>` : ""}
         <button type="button" id="pin-back-link" class="link-button">Usar usuario y contraseña</button>
@@ -757,7 +757,7 @@ function openRecoveryOffer(prefillUsername = "") {
   const dlg = ensureRecoveryDialog();
   dlg.innerHTML = `
     <div class="recovery-card">
-      <p class="recovery-question">¿Reseteamos tu contraseña, pequeño ser olvidadizo? 🥺</p>
+      <p class="recovery-question">¿Reseteamos tu contraseña, pequeño ser olvidadizo?</p>
       <div class="field">
         <label>Usuario</label>
         <input id="rec-username" type="text" value="${escapeHtml(prefillUsername)}" placeholder="Miway01" autocomplete="username" />
@@ -795,14 +795,14 @@ function openPinOffer(username) {
   const render = (msg = "") => {
     dlg.innerHTML = `
       <div class="recovery-card">
-        <p class="recovery-success">✓ Tu contraseña quedó como la default del equipo. Al iniciar sesión te va a pedir cambiarla.</p>
+        <p class="recovery-success">Tu contraseña quedó como la default del equipo. Al iniciar sesión te va a pedir cambiarla.</p>
         <p class="recovery-question">¿Quieres agregar un PIN adicional a tu contraseña, para entrar con uno u otro?</p>
         <div class="pin-dots">${Array.from({ length: maxLen }).map((_, i) => `<span class="pin-dot ${i < pin.length ? "is-filled" : ""}"></span>`).join("")}</div>
         <div class="pin-keypad">
           ${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" class="pin-key" data-digit="${n}">${n}</button>`).join("")}
           <span></span>
           <button type="button" class="pin-key" data-digit="0">0</button>
-          <button type="button" class="pin-key pin-key-del" data-del="1">⌫</button>
+          <button type="button" class="pin-key pin-key-del" data-del="1">Borrar</button>
         </div>
         ${msg ? `<p class="login-error">${escapeHtml(msg)}</p>` : ""}
         <div class="recovery-actions">
@@ -821,7 +821,7 @@ function openPinOffer(username) {
       backToLoginWith(username);
     });
     dlg.querySelector('[data-pin="yes"]').addEventListener("click", async () => {
-      if (pin.length < 4) { render("Pues ponlo, preciosa 😏"); return; }
+      if (pin.length < 4) { render("Pues ponlo, preciosa."); return; }
       const btn = dlg.querySelector('[data-pin="yes"]');
       btn.textContent = "Guardando..."; btn.disabled = true;
       try {
