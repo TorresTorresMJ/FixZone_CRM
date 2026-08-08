@@ -5118,7 +5118,7 @@ async function renderSupportCommentThread(containerEl, task, notifyRecipientId) 
       if (notifyRecipientId && notifyRecipientId !== currentEmployeeId()) {
         addNotif({
           type: "support", text: `${firstName(currentEmployee?.full_name)} respondió en "${task.title}"`,
-          ticketId: null, recipientId: notifyRecipientId,
+          ticketId: null, recipientId: notifyRecipientId, branchId: currentNotifBranchId(),
         }).catch(err => console.warn("No se pudo notificar:", err));
       }
       input.value = "";
@@ -8783,7 +8783,7 @@ async function createRemoteTicket(r) {
     addNotif({
       type: "ticket_assigned",
       text: `Te asignaron el ticket ${data.tracking_number} — ${r.client}`,
-      ticketId: data.id, recipientId: assignedE.id,
+      ticketId: data.id, recipientId: assignedE.id, branchId,
     }).catch(err => console.warn("No se pudo notificar asignación:", err));
   }
 
@@ -8895,6 +8895,10 @@ async function updateRemoteTicket(ticketId, r) {
   // sin esto, oldTicket.status ya es igual a r.status y stage_changed_at nunca se escribe
   // para tickets movidos por drag & drop (solo se actualizaba si además se editaba el ticket).
   const prevStatusForUpdate = r._prevStatus ?? oldTicket?.status;
+  // Se resuelve una sola vez y se reusa abajo en los avisos de asignación/cambio de
+  // etapa — así quedan etiquetados con la sucursal real del ticket (ver
+  // supabase/53_branch_segmentation.sql) en vez de con branch_id: null.
+  const ticketBranchId = await branchIdByName(r.branch||activeBranchId);
   const { error } = await supabaseClient.from("service_tickets").update({
     customer_name:        r.client,
     product_name:         r.productName,
@@ -8905,7 +8909,7 @@ async function updateRemoteTicket(ticketId, r) {
     payment_status:       r.paymentStatus,
     paid_amount:          Number(r.paidAmount||0),
     payment_method:       r.paymentMethod||null,
-    branch_id:            await branchIdByName(r.branch||activeBranchId),
+    branch_id:            ticketBranchId,
     assigned_employee_id: assignedE?.id||null,
     notes:                r.notes||null,
     discount_code:        r.discountCode||null,
@@ -9004,7 +9008,7 @@ async function updateRemoteTicket(ticketId, r) {
     addNotif({
       type: "ticket_assigned",
       text: `Te asignaron el ticket ${oldTicket?.tracking || ""} — ${r.client}`,
-      ticketId, recipientId: assignedE.id,
+      ticketId, recipientId: assignedE.id, branchId: ticketBranchId,
     }).catch(err => console.warn("No se pudo notificar asignación:", err));
   }
 
@@ -9020,7 +9024,7 @@ async function updateRemoteTicket(ticketId, r) {
     addNotif({
       type: "ticket_stage",
       text: `El ticket ${oldTicket?.tracking || ""} cambió a "${r.status}"`,
-      ticketId, recipientId: assignedE.id,
+      ticketId, recipientId: assignedE.id, branchId: ticketBranchId,
     }).catch(err => console.warn("No se pudo notificar cambio de etapa:", err));
   }
 
@@ -12067,6 +12071,16 @@ function firstName(fullName) {
   return (fullName || "Equipo").trim().split(/\s+/)[0];
 }
 
+// Sucursal a etiquetar en un aviso creado desde la sesión actual, cuando no hay
+// una más precisa a la mano (ej. la del ticket) — usa la pestaña activa (que
+// para un empleado sin all_branches_access siempre es su única sucursal) con
+// employees.branch_id como respaldo. Nunca null salvo que ninguno de los dos
+// esté resuelto, para que el INSERT de notifications (branch isolation
+// RESTRICTIVE, ver supabase/53_branch_segmentation.sql) no lo rechace.
+function currentNotifBranchId() {
+  return lookups.branchesByName.get(activeBranchId)?.id || currentEmployee?.branch_id || null;
+}
+
 async function addNotif({ type = "broadcast", text, ticketId = null, branchId = null, recipientId = null }) {
   const payload = {
     type, text,
@@ -12144,25 +12158,43 @@ function openNotifPanel() {
     const ticketRef = ticket ? `<span style="font-size:10px;color:var(--fz-primary,#085ACB);margin-left:6px">${escapeHtml(ticket.tracking)}</span>` : "";
     const typeIcon = n.type === "broadcast" ? "📢" : n.ticketId ? "🎫" : "💬";
     const ts = n.createdAt ? new Date(n.createdAt).toLocaleString("es-MX",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
+    // La etiqueta de sucursal solo aporta cuando se puede ver más de una — para
+    // el resto de los empleados (sin all_branches_access) todo lo que llega es
+    // siempre de su propia sucursal, así que mostrarla sería ruido.
+    const branchTag = (currentEmployee?.all_branches_access && n.branch)
+      ? `<span style="font-size:10px;color:rgba(255,255,255,.4);border:1px solid rgba(255,255,255,.15);border-radius:4px;padding:1px 5px">${escapeHtml(n.branch)}</span>`
+      : "";
     return `<div style="padding:12px;border-bottom:1px solid rgba(255,255,255,.07)">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
         <span>${typeIcon}</span>
         <strong style="font-size:12px">${escapeHtml(n.authorName)}</strong>
         ${ticketRef}
+        ${branchTag}
         <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,.35)">${ts}</span>
       </div>
       <p style="margin:0;font-size:13px;color:rgba(255,255,255,.8)">${escapeHtml(n.text)}</p>
     </div>`;
   }).join("") : `<p style="padding:24px;text-align:center;color:rgba(255,255,255,.4);font-size:13px">Sin notificaciones</p>`;
 
+  // El aviso queda etiquetado con la sucursal de la pestaña activa (para quien
+  // no tiene all_branches_access, es siempre la única que tiene — ver
+  // supabase/53_branch_segmentation.sql) y solo llega a esa sucursal. Monica
+  // (única con all_branches_access) puede además marcar "ambas sucursales"
+  // para mandarlo dos veces, una por sucursal, en vez de tener que cambiar de
+  // pestaña y repetir el envío a mano.
+  const bothBranchesOption = currentEmployee?.all_branches_access ? `
+      <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:rgba(255,255,255,.6);cursor:pointer">
+        <input id="notif-broadcast-both" type="checkbox" /> Enviar a ambas sucursales (no solo ${escapeHtml(activeBranchId)})
+      </label>` : "";
   const broadcastForm = isAdmin ? `
     <div style="border-top:1px solid rgba(255,255,255,.1);padding:14px">
-      <p style="margin:0 0 8px;font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px">📢 Aviso al equipo</p>
+      <p style="margin:0 0 8px;font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px">📢 Aviso al equipo — ${escapeHtml(activeBranchId)}</p>
       <div style="display:flex;gap:8px">
         <input id="notif-broadcast-input" type="text" placeholder="Escribe un aviso para todos…"
           style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 10px;color:inherit;font-size:13px" />
         <button id="notif-broadcast-send" class="primary-action" style="white-space:nowrap;font-size:13px">Enviar</button>
       </div>
+      ${bothBranchesOption}
     </div>` : "";
 
   const overlay = document.createElement("div");
@@ -12185,12 +12217,21 @@ function openNotifPanel() {
   overlay.querySelector("#notif-broadcast-send")?.addEventListener("click", async () => {
     const input = overlay.querySelector("#notif-broadcast-input");
     const text  = input?.value?.trim();
+    const both  = !!overlay.querySelector("#notif-broadcast-both")?.checked;
     if (!text) return;
     try {
-      await addNotif({ type: "broadcast", text });
+      if (both) {
+        // Uno por sucursal (nunca branch_id: null) — un empleado sin
+        // all_branches_access solo puede insertar con su propia sucursal, así
+        // que "ambas" solo tiene sentido para quien sí la tiene (checkbox ya
+        // oculto para el resto).
+        await Promise.all((state.branches||[]).map(b => addNotif({ type: "broadcast", text, branchId: b.id })));
+      } else {
+        await addNotif({ type: "broadcast", text, branchId: currentNotifBranchId() });
+      }
       overlay.remove();
       openNotifPanel();
-      showToast("✓ Aviso enviado al equipo");
+      showToast(`✓ Aviso enviado ${both ? "a ambas sucursales" : `a ${activeBranchId}`}`);
     } catch (err) {
       console.error(err);
       showErrorToast("No se pudo enviar el aviso");
