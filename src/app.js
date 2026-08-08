@@ -533,6 +533,101 @@ async function resolveCurrentEmployee(authUser) {
 }
 
 // ── Login screen ──────────────────────────────────────────────────────────────
+// ── "¿Eres X?" — ayuda a encontrar el usuario correcto ──────────────────────
+// Corre ANTES de autenticarse (credenciales inválidas), así que no puede
+// consultar `employees` (RLS requiere sesión) — el directorio vive aquí mismo,
+// hardcodeado. Solo nombre + usuario, nada sensible (equivalente a lo que ya
+// es público al ser un login por username). Editar esta lista a mano cuando
+// cambie la plantilla/equipo; no hay UI de administración para esto.
+const USERNAME_ALIASES = [
+  { username: "carlos", fullName: "Carlos Mijangos", aliases: ["charlie", "carlos mijangos"] },
+  { username: "daniel", fullName: "Daniel Mijangos", aliases: ["dani", "daniel mijangos"] },
+  { username: "diego",  fullName: "Diego Mijangos",  aliases: ["diego mijangos", "Diego"] },
+  { username: "gigi",   fullName: "Gigi Vargas",     aliases: ["gigi vargas", "Gigi"] },
+  { username: "kevin",  fullName: "Kevin Mijangos",  aliases: ["kevin mijangos", "Kevin"] },
+  { username: "mar",    fullName: "Mar",             aliases: [] },
+  { username: "monica", fullName: "Monica Torres",   aliases: ["moni", "monica torres", "Monica", "Moni"] },
+];
+
+function normalizeUsernameGuess(s) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "") // quita acentos
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+// Devuelve candidatos cuyo usuario real es distinto del texto tecleado —
+// incluye el propio primer nombre de cada quien además de los apodos dados,
+// para que escribir el nombre real (con espacios/acentos/mayúsculas distintas
+// al username) también dispare la pregunta.
+function findUsernameCandidates(typed) {
+  const norm = normalizeUsernameGuess(typed);
+  if (!norm) return [];
+  return USERNAME_ALIASES.filter((entry) => {
+    if (entry.username === norm) return false;
+    const names = [entry.username, entry.fullName, ...entry.aliases].map(normalizeUsernameGuess);
+    return names.includes(norm);
+  });
+}
+
+// Overlay de confirmación tipo login-card, independiente del sistema de
+// #record-modal (ese es un <dialog> reservado a los formularios de registros).
+function askAreYouThisUser(fullName) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "username-guess-overlay";
+    overlay.innerHTML = `
+      <div class="login-card username-guess-card">
+        <p class="username-guess-question">¿Olvidaste tu usuario, preciosa? ¿Eres <strong>${escapeHtml(fullName)}</strong>?</p>
+        <div class="username-guess-actions">
+          <button type="button" class="ghost-button" data-guess="no">No</button>
+          <button type="button" class="primary-action" data-guess="yes">Sí</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-guess]");
+      if (!btn) return;
+      overlay.remove();
+      resolve(btn.dataset.guess === "yes");
+    });
+  });
+}
+
+async function attemptSupabaseLogin(username, password) {
+  const authEmail = `${username}@fixzone.internal`;
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
+    email:    authEmail,
+    password: password,
+  });
+  if (error) return { ok: false };
+  return { ok: true, user: data.user, session: data.session };
+}
+
+// Pregunta candidato por candidato ("¿Eres X?"); en cuanto confirman, reintenta
+// el login con ESE usuario y la misma contraseña ya escrita. Si dicen "No" a
+// todos, o la contraseña no aplica para el candidato confirmado, vuelve al
+// login normal con el error genérico (nunca revela si el usuario existe).
+async function tryUsernameAliasFlow(candidates, password) {
+  for (const candidate of candidates) {
+    const isThem = await askAreYouThisUser(candidate.fullName);
+    if (!isThem) continue;
+    const result = await attemptSupabaseLogin(candidate.username, password);
+    if (result.ok) {
+      currentSession = result.session;
+      await afterLogin(result.user);
+      setTimeout(() => showToast(`Tu usuario es "${candidate.username}", bye chica `), 400);
+    } else {
+      showLoginScreen("Usuario o contraseña incorrectos.");
+      openRecoveryOffer(candidate.username);
+    }
+    return;
+  }
+  showLoginScreen("Usuario o contraseña incorrectos.");
+}
+
 function showLoginScreen(errorMsg = "") {
   document.querySelector(".app-shell").style.display = "none";
   const brand = window.getBranchBrand(activeBranchId);
@@ -564,11 +659,190 @@ function showLoginScreen(errorMsg = "") {
         </div>
         ${errorMsg ? `<p class="login-error">${escapeHtml(errorMsg)}</p>` : ""}
         <button class="primary-action login-btn" type="submit">Iniciar sesión</button>
+        <button type="button" id="use-pin-link" class="link-button">Usar PIN en vez de contraseña</button>
       </form>
+      <button type="button" id="forgot-pw-link" class="link-button forgot-pw-link">¿Olvidaste tu contraseña?</button>
       <p class="login-footer">${brand.tagline} · Solo empleados</p>
     </div>
   `;
   document.querySelector("#login-form").addEventListener("submit", handleLogin);
+  document.querySelector("#forgot-pw-link").addEventListener("click", () => {
+    openRecoveryOffer(document.querySelector("#login-username").value.trim().toLowerCase());
+  });
+  document.querySelector("#use-pin-link").addEventListener("click", () => openPinLoginScreen());
+}
+
+// ── Login con PIN (credencial alterna, ver openPinOffer/callSelfServiceAuth) ───
+function openPinLoginScreen() {
+  const loginEl = document.querySelector("#login-screen");
+  const username = document.querySelector("#login-username")?.value.trim().toLowerCase() || "";
+  let pin = "";
+  const maxLen = 6;
+  const draw = (msg = "") => {
+    const brand = window.getBranchBrand(activeBranchId);
+    loginEl.innerHTML = `
+      <div class="login-card">
+        <div class="login-brand">
+          <img src="${brand.logoSrc}" alt="${brand.displayName}"
+            onerror="this.src='${brand.logoFallback || brand.logoSrc}';this.onerror=null" />
+          <h1>${brand.displayName}</h1>
+          <p>Entrar con PIN</p>
+        </div>
+        <div class="field">
+          <label>Usuario</label>
+          <input id="pin-login-username" type="text" value="${escapeHtml(username)}" placeholder="Miway01" autocomplete="username" />
+        </div>
+        <div class="pin-dots">${Array.from({ length: maxLen }).map((_, i) => `<span class="pin-dot ${i < pin.length ? "is-filled" : ""}"></span>`).join("")}</div>
+        <div class="pin-keypad">
+          ${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" class="pin-key" data-digit="${n}">${n}</button>`).join("")}
+          <span></span>
+          <button type="button" class="pin-key" data-digit="0">0</button>
+          <button type="button" class="pin-key pin-key-del" data-del="1">⌫</button>
+        </div>
+        ${msg ? `<p id="pin-login-error" class="login-error">${escapeHtml(msg)}</p>` : ""}
+        <button type="button" id="pin-back-link" class="link-button">Usar usuario y contraseña</button>
+      </div>
+    `;
+    loginEl.querySelectorAll("[data-digit]").forEach(b => b.addEventListener("click", () => {
+      if (pin.length < maxLen) pin += b.dataset.digit;
+      draw();
+      if (pin.length >= 4) submitPin();
+    }));
+    loginEl.querySelector("[data-del]")?.addEventListener("click", () => { pin = pin.slice(0, -1); draw(); });
+    loginEl.querySelector("#pin-login-username").addEventListener("input", (e) => { username = e.target.value.trim().toLowerCase(); });
+    loginEl.querySelector("#pin-back-link").addEventListener("click", () => showLoginScreen());
+  };
+  const submitPin = async () => {
+    if (!username) { draw("Escribe tu usuario primero."); return; }
+    try {
+      const { email, token } = await callSelfServiceAuth("login_with_pin", { username, pin });
+      const { data, error } = await supabaseClient.auth.verifyOtp({ email, token, type: "magiclink" });
+      if (error) throw error;
+      currentSession = data.session;
+      await afterLogin(data.user);
+    } catch (err) {
+      pin = "";
+      draw(err.message || "PIN incorrecto.");
+    }
+  };
+  draw();
+}
+
+// ── Recuperación de contraseña self-service (sin depender de un admin) ─────────
+// Diseño deliberado: no pide ninguna verificación de identidad más allá del
+// usuario — cualquier empleado puede resetear su propia cuenta a la contraseña
+// default del equipo sin esperar a que un admin entre a Usuarios. Ver
+// supabase/functions/self-service-auth y CLAUDE.md.
+async function callSelfServiceAuth(action, payload) {
+  const { data, error } = await supabaseClient.functions.invoke("self-service-auth", {
+    body: { action, payload },
+  });
+  if (error) throw new Error(error.message || "Error de red al llamar función");
+  if (!data?.success) throw new Error(data?.error || "Error en la función");
+  return data;
+}
+
+function ensureRecoveryDialog() {
+  let dlg = document.querySelector("#pw-recovery-dialog");
+  if (!dlg) {
+    dlg = document.createElement("dialog");
+    dlg.id = "pw-recovery-dialog";
+    dlg.className = "recovery-dialog";
+    document.body.appendChild(dlg);
+  }
+  return dlg;
+}
+
+function openRecoveryOffer(prefillUsername = "") {
+  const dlg = ensureRecoveryDialog();
+  dlg.innerHTML = `
+    <div class="recovery-card">
+      <p class="recovery-question">¿Reseteamos tu contraseña, pequeño ser olvidadizo? 🥺</p>
+      <div class="field">
+        <label>Usuario</label>
+        <input id="rec-username" type="text" value="${escapeHtml(prefillUsername)}" placeholder="Miway01" autocomplete="username" />
+      </div>
+      <p id="rec-error" class="login-error" style="display:none"></p>
+      <div class="recovery-actions">
+        <button type="button" class="ghost-button" data-rec="no">No, gracias</button>
+        <button type="button" class="primary-action" data-rec="yes">Sí, por favor</button>
+      </div>
+    </div>
+  `;
+  dlg.querySelector('[data-rec="no"]').addEventListener("click", () => dlg.close());
+  dlg.querySelector('[data-rec="yes"]').addEventListener("click", async (e) => {
+    const username = dlg.querySelector("#rec-username").value.trim().toLowerCase();
+    const errEl = dlg.querySelector("#rec-error");
+    errEl.style.display = "none";
+    if (!username) { errEl.textContent = "Escribe tu usuario primero."; errEl.style.display = "block"; return; }
+    const btn = e.currentTarget;
+    btn.textContent = "Reseteando..."; btn.disabled = true;
+    try {
+      await callSelfServiceAuth("reset_by_username", { username });
+      openPinOffer(username);
+    } catch (err) {
+      errEl.textContent = err.message; errEl.style.display = "block";
+      btn.textContent = "Sí, por favor"; btn.disabled = false;
+    }
+  });
+  if (!dlg.open) dlg.showModal();
+}
+
+function openPinOffer(username) {
+  const dlg = ensureRecoveryDialog();
+  let pin = "";
+  const maxLen = 6;
+  const render = (msg = "") => {
+    dlg.innerHTML = `
+      <div class="recovery-card">
+        <p class="recovery-success">✓ Tu contraseña quedó como la default del equipo. Al iniciar sesión te va a pedir cambiarla.</p>
+        <p class="recovery-question">¿Quieres agregar un PIN adicional a tu contraseña, para entrar con uno u otro?</p>
+        <div class="pin-dots">${Array.from({ length: maxLen }).map((_, i) => `<span class="pin-dot ${i < pin.length ? "is-filled" : ""}"></span>`).join("")}</div>
+        <div class="pin-keypad">
+          ${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" class="pin-key" data-digit="${n}">${n}</button>`).join("")}
+          <span></span>
+          <button type="button" class="pin-key" data-digit="0">0</button>
+          <button type="button" class="pin-key pin-key-del" data-del="1">⌫</button>
+        </div>
+        ${msg ? `<p class="login-error">${escapeHtml(msg)}</p>` : ""}
+        <div class="recovery-actions">
+          <button type="button" class="ghost-button" data-pin="no">No</button>
+          <button type="button" class="primary-action" data-pin="yes">Sí, guardar</button>
+        </div>
+      </div>
+    `;
+    dlg.querySelectorAll("[data-digit]").forEach(b => b.addEventListener("click", () => {
+      if (pin.length < maxLen) pin += b.dataset.digit;
+      render();
+    }));
+    dlg.querySelector("[data-del]")?.addEventListener("click", () => { pin = pin.slice(0, -1); render(); });
+    dlg.querySelector('[data-pin="no"]').addEventListener("click", () => {
+      dlg.close();
+      backToLoginWith(username);
+    });
+    dlg.querySelector('[data-pin="yes"]').addEventListener("click", async () => {
+      if (pin.length < 4) { render("Pues ponlo, preciosa 😏"); return; }
+      const btn = dlg.querySelector('[data-pin="yes"]');
+      btn.textContent = "Guardando..."; btn.disabled = true;
+      try {
+        await callSelfServiceAuth("set_pin", { username, pin });
+        dlg.close();
+        backToLoginWith(username);
+      } catch (err) {
+        render(err.message);
+      }
+    });
+  };
+  render();
+  if (!dlg.open) dlg.showModal();
+}
+
+function backToLoginWith(username) {
+  showLoginScreen();
+  const u = document.querySelector("#login-username");
+  if (u) u.value = username;
+  document.querySelector("#login-password")?.focus();
+  showToast("Tu contraseña quedó en la default del equipo — escríbela para entrar y te va a pedir cambiarla.");
 }
 
 async function handleLogin(e) {
@@ -584,18 +858,23 @@ async function handleLogin(e) {
     showLoginScreen("Tiempo de espera agotado. Verifica tu conexión e intenta de nuevo.");
   }, 20000);
   try {
-    const authEmail = `${username}@fixzone.internal`;
-    const { data, error } = await supabaseClient.auth.signInWithPassword({
-      email:    authEmail,
-      password: password,
-    });
-    if (error) throw new Error("Usuario o contraseña incorrectos.");
-    currentSession = data.session;
-    await afterLogin(data.user);
+    const result = await attemptSupabaseLogin(username, password);
     clearTimeout(loginTimeout);
+    if (!result.ok) throw new Error("bad-credentials");
+    currentSession = result.session;
+    await afterLogin(result.user);
   } catch(err) {
     clearTimeout(loginTimeout);
-    showLoginScreen(err.message || "Credenciales incorrectas.");
+    resetBtn();
+    // Antes de mostrar el error genérico, ver si el usuario tecleado se
+    // parece a uno real (apodo, nombre completo, typo) y preguntar "¿Eres X?".
+    const candidates = findUsernameCandidates(username);
+    if (candidates.length) {
+      await tryUsernameAliasFlow(candidates, password);
+    } else {
+      showLoginScreen("Usuario o contraseña incorrectos.");
+      openRecoveryOffer(username);
+    }
   }
 }
 

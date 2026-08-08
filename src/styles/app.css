@@ -105,6 +105,120 @@ select { color-scheme: dark; }
   letter-spacing: 1px;
 }
 
+/* ── "¿Eres X?" username-guess overlay ──────────────────────────────────── */
+.username-guess-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.6);
+}
+
+.username-guess-card {
+  width: min(360px, calc(100vw - 32px));
+  padding: 32px 28px 28px;
+  text-align: center;
+}
+
+.username-guess-question {
+  margin: 0 0 24px;
+  font-size: 17px;
+}
+
+.username-guess-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.username-guess-actions button { flex: 1; }
+
+/* ── Recuperación de contraseña self-service (link + PIN) ───────────────────
+   Ver supabase/functions/self-service-auth y CLAUDE.md, sección "Recuperación
+   de contraseña". */
+.link-button {
+  display: block;
+  width: 100%;
+  margin: 12px 0 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--fz-gray-light);
+  font-size: 12px;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.link-button:hover { color: var(--fz-white); }
+
+.forgot-pw-link { margin-top: 20px; }
+
+.recovery-dialog {
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+}
+.recovery-dialog::backdrop { background: rgba(0,0,0,0.6); }
+
+.recovery-card {
+  width: min(380px, calc(100vw - 32px));
+  padding: 32px 28px 28px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  background: rgba(16,18,23,0.98);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(var(--fz-primary-rgb),0.12);
+  text-align: center;
+  color: var(--fz-white);
+}
+
+.recovery-question { margin: 0 0 18px; font-size: 16px; }
+.recovery-success   { margin: 0 0 12px; font-size: 13px; color: #8de08d; }
+
+.recovery-actions { display: flex; gap: 12px; margin-top: 20px; }
+.recovery-actions button { flex: 1; }
+
+/* Teclado numérico tipo pantalla de bloqueo, reutilizado por openPinOffer()
+   (después del reset) y openPinLoginScreen() (login diario con PIN). */
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 18px 0;
+}
+.pin-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.35);
+  background: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.pin-dot.is-filled {
+  background: var(--fz-primary);
+  border-color: var(--fz-primary);
+}
+
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  max-width: 240px;
+  margin: 0 auto;
+}
+.pin-key {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: var(--fz-white);
+  font-size: 20px;
+  font-weight: 600;
+}
+.pin-key:hover { background: rgba(255,255,255,0.12); }
+.pin-key-del { font-size: 15px; }
+
 /* ── App shell ───────────────────────────────────────────────────────────── */
 .app-shell {
   display: grid;

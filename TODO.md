@@ -1,6 +1,6 @@
 # FixZone CRM ToDo
 
-_Última actualización: 2026-06-23_ (sesión 9)
+_Última actualización: 2026-08-04_ (sesión 10 — revisión general tras 6 semanas enfocadas en fixes descubiertos en uso real; ver Fase 18 y sección "Qué priorizar ahora" al final)
 
 ## Fase 1: Definir operacion interna
 
@@ -80,11 +80,17 @@ _Última actualización: 2026-06-23_ (sesión 9)
 - [x] Crear reporte de utilidad estimada (ingresos − egresos por período, margen %, desglose por categoría).
 - [x] Reporte de equipos más frecuentes — top 20 por sucursal con tickets, cerrados e ingresos (historial completo).
 - [x] Exportar reportes a Excel — botón "Exportar período" filtra por período activo; "Todo" exporta todas las hojas.
-- [ ] Ver y descargar reportes de períodos anteriores o rangos personalizados.
+- [x] Filtro de reportes por mes específico — además de Hoy/7 días/Mes actual/Todo, se puede elegir un mes concreto del historial.
+- [ ] Descargar/exportar un rango de fechas personalizado (no solo mes calendario) — sigue pendiente, el filtro por mes cubrió parte del caso de uso original.
 - [x] Considerar gastos de movilidad / gasolina — categorías "Gasolina" y "Movilidad" agregadas a egresos.
-- Integracion de metricas y assurance de traceabilidad bidireccional entre cotizaciones <> clientes <> tickets <> cotizaciones - Prioridad media
+- [x] Integracion de metricas y assurance de traceabilidad bidireccional entre cotizaciones <> clientes <> tickets <> cotizaciones — auditoría dedicada, ver [Fase 18](#fase-18-auditoría-de-trazabilidad-y-datos).
 - [x] Registrar método de pago interno — efectivo, transferencia, link de pago, terminal TC, terminal TD. Campo en form de transacción manual + abono guarda método como campo separado en DB (`payment_method`). Se muestra en tabla Finanzas bajo el concepto.
 - [x] Métricas de método de pago — sección "💳 Ingresos por método de pago" en Reportes, filtrada por período y sucursal, con tarjeta por canal y % del total.
+- [x] Unificar vocabulario de `payment_method` en todos los flujos — abono y POS usaban `"Tarjeta"` genérico en vez de `Terminal TC`/`Terminal TD`, causaba que el campo apareciera vacío al reabrir el registro. **No retroactivo**: registros viejos con `"Tarjeta"` siguen sin poder distinguirse entre TC/TD.
+- [x] Drilldown clickeable en Reportes — tarjetas de cotizaciones, canales de adquisición ("¿Cómo nos conocieron?") y métodos de pago abren el registro/ticket de origen editable en vez de ser solo lectura.
+- [x] Redondeo de aritmética monetaria (`round2()`) en abonos/descuentos — evita que sumas de punto flotante (`0.1+0.2`) dejen centavos basura visibles en inputs sin formatear.
+- [x] Reporte de cancelaciones/equipos no reparables — `#reports-unrepairable`, período-filtrado, desglose por motivo estructurado (Irreparable, Cliente canceló, Precio muy alto, etc.).
+- [x] Reporte de afluencia de clientes — heatmap día×hora (recepción/entrega) en Reportes (`#reports-traffic`, con modo Semana típica/Explorar) y widget compacto en Home (`#dashboard-traffic-chart`).
 
 ## Fase 7: Marketing
 
@@ -99,6 +105,7 @@ _Última actualización: 2026-06-23_ (sesión 9)
 - [x] Botón 📋 Copiar en cada plantilla de WhatsApp vinculada a tickets.
 - [x] Repertorio de mensajes rápidos — saludo, horarios, tiempo de reparación, garantía, equipo listo, despedida, etc. Editable, con botón copiar en cada uno.
 - [x] Campo "¿Cómo nos conocieron?" en alta/edición de cliente (Instagram, Facebook, Transeúntes, Conocidos de Moni, Otro: especificar) + métrica en Reportes (`#reports-referral`) con desglose de clientes nuevos por canal del período.
+- [x] Google Ads — `gtag`/conversion tracking (ID G-X4QFLJNES2) y script "gracias" para la página pública, requerido para medir campañas de Google Ads.
 
 ## Fase 8: Deploy interno
 
@@ -156,6 +163,17 @@ _Última actualización: 2026-06-23_ (sesión 9)
 - [x] Escaneo de comprobantes acepta también PDF/imagen subida (no solo cámara) y tiene fallback a OCR local (Tesseract.js) si la IA de Anthropic no está disponible.
 - [x] Escaneo de comprobantes con varios artículos (Insumos) — la IA detecta todas las líneas del ticket; si hay más de una, se muestra una pantalla de revisión donde se puede editar/eliminar cada línea antes de guardar como insumos separados ("Guardar todos").
 - [x] POS checkout fallaba para empleados con rol `it` (RLS) — `supabase/28_it_role_pos_tables.sql` agrega las políticas "it can manage *" faltantes en `pos_sales`/`pos_sale_items`.
+- [x] Teléfono/canal de referencia se perdían en silencio si el INSERT del cliente fallaba (típicamente RLS) — el ticket se guardaba igual, sin aviso de error. Corregido: ahora se lanza error explícito y se detiene el guardado (`createRemoteTicket`/`updateRemoteTicket`). **Nota:** el caso real que originó este fix ([FZ] 0094, 21/07) no fue recuperable — el dato nunca llegó a persistirse en ningún lado.
+- [x] Ticket se guardaba aunque fallara el registro del equipo (`customer_devices`) — quedaba un ticket "huérfano" sin producto/IMEI. Ahora se hace rollback del INSERT de ticket si falla ese segundo paso.
+- [x] Doble-submit generaba registros duplicados también en abono, movimiento manual (Finanzas) y devolución POS — no solo en el guardado general de formularios; mismo patrón de bloqueo (`dataset.submitting` + botón deshabilitado) extendido a esos tres flujos.
+- [x] Descuentos con total incorrecto y límites de uso de código no aplicados en algunos flujos — corregido junto con el redondeo de aritmética monetaria.
+- [x] Orden del kanban por columna usaba `updatedAt` (se recalculaba con cualquier edición, no solo cambio de etapa) — un ticket ya entregado subía al tope de "Entregado" solo por corregir una nota. Ahora usa `stage_changed_at` (migration 51), que solo se actualiza cuando cambia la etapa.
+- [x] "Cancelar ticket" — nueva etapa terminal `Cancelado` con motivo estructurado (Irreparable, Cliente canceló, Precio muy alto, Encontró otro servicio, No recogió el equipo, Otro), reembolso automático al cliente si había abono, y opción de reembolso/devolución del insumo vinculado al proveedor con ajuste de stock.
+- [x] Código de desbloqueo del equipo (NIP o patrón 3×3) capturable en ticket/cotización, con animación de reproducción en el detalle — nunca se muestra en impresiones/recibos de cara al cliente.
+- [x] Vincular una compra de insumo (Egresos) al ticket para el que se compró — traceabilidad interna, badge 🎫 en Insumos y sección dedicada en el detalle del ticket.
+- [x] Registrar un Egreso de Insumos directo desde Finanzas (antes solo se podía desde la sección Insumos) — mismo flujo de inventario/traceabilidad, con backfill retroactivo si se edita un Egreso viejo y se le agrega el artículo.
+- [x] Devoluciones de venta POS — selecciona artículos/cantidades a devolver, restaura stock automáticamente y registra el reembolso como Egreso en Finanzas.
+- [x] Notificaciones (campanita) y checklist de equipo en tiempo real vía Supabase Realtime — antes dependían solo del polling de 90s.
 
 ## Fase 11: Cotizaciones
 
@@ -247,10 +265,39 @@ _Pendiente implementar — auditoría de código hecha en sesión 2026-06-06_
 
 _Salido del análisis FODA hecho en sesión 2026-06-23 — orden = prioridad por impacto/urgencia_
 
-- [ ] **[P0] Configurar respaldos automáticos de Supabase** — activar PITR o backups diarios desde el dashboard del proyecto `zwmffnrkrrowmchluyyy`. Es la debilidad de mayor impacto: cualquier otro error (migración mal aplicada, RLS roto, borrado accidental) se vuelve irreversible sin esto.
-- [x] **[P0] Reemplazar la regla de Contaduría hardcodeada por nombre** — `employees.can_access_contaduria` (boolean, migration 40), `currentPerms()` y `private.is_admin_it_or_kevin()` leen el flag; toggle "+ Contaduría" en la tabla de Usuarios para admin/it. **Pendiente: aplicar `40_contaduria_access_flag.sql` en el SQL Editor de Supabase.**
+- [ ] **[P0] Configurar respaldos automáticos de Supabase** — activar PITR o backups diarios desde el dashboard del proyecto `zwmffnrkrrowmchluyyy`. Es la debilidad de mayor impacto: cualquier otro error (migración mal aplicada, RLS roto, borrado accidental) se vuelve irreversible sin esto. **Sigue sin hacerse desde que se detectó (sesión 2026-06-23) — 6+ semanas abierto y ya van 51 migraciones aplicadas en producción sin red de seguridad. Candidato #1 para esta sesión.**
+- [x] **[P0] Reemplazar la regla de Contaduría hardcodeada por nombre** — `employees.can_access_contaduria` (boolean, migration 40), `currentPerms()` y `private.is_admin_it_or_kevin()` leen el flag; toggle "+ Contaduría" en la tabla de Usuarios para admin/it. Confirmado aplicado y en uso.
 - [ ] **[P1] Probar migraciones en un proyecto Supabase secundario antes de aplicarlas en producción** — clonar el esquema actual a un segundo proyecto gratuito como staging mínimo.
 - [~] **[P1] Migrar config de `localStorage` a Supabase** — tabla genérica `app_settings` (key/value jsonb, migration 41) creada y aplicada. **Hecho:** plantillas de WhatsApp (`wa_templates`), mensajes rápidos (`quick_messages`). **Pendiente:** links de marketing, `fixzone-pricing-config` — mismo patrón (`state.settings[key]` + `saveAppSetting(key, value)`), una sección por sprint.
-- [ ] **[P1] Registrar qué migraciones ya corrieron** — tabla `schema_migrations` (o script de verificación) contra el listado en `supabase/`, para no depender de memoria/documentación al diagnosticar "funciona en mi compu pero no en producción".
-- [ ] **[P2] Empezar a modularizar `src/app.js`** (~10,000 líneas) — extraer con `<script type="module">` (sin build step) los bloques más aislados primero: POS, descuentos, finanzas. Dejar tickets/kanban para el final.
-- [ ] **[P2] Agregar tests unitarios a las funciones puras críticas** — `calcPrecio()`, `applyDiscount()`, cálculos de reportes — sin tocar el resto del código ni introducir un framework de build.
+- [ ] **[P1] Registrar qué migraciones ya corrieron** — tabla `schema_migrations` (o script de verificación) contra el listado en `supabase/`, para no depender de memoria/documentación al diagnosticar "funciona en mi compu pero no en producción". **Ya mordió dos veces en la práctica** (migration 45 `unlock_pattern` y el patrón general documentado en CLAUDE.md: código que se despliega y funciona local pero la migración nunca se corrió en Supabase) — subir prioridad, ya no es solo teórico.
+- [ ] **[P2] Empezar a modularizar `src/app.js`** (ya ~13,000 líneas, subió desde ~10,000 hace 6 semanas) — extraer con `<script type="module">` (sin build step) los bloques más aislados primero: POS, descuentos, finanzas. Dejar tickets/kanban para el final.
+- [~] **[P2] Cobertura de pruebas** — no hay tests unitarios de funciones puras (`calcPrecio()`, `applyDiscount()`, cálculos de reportes) todavía, pero sí se agregó `tests/e2e/test_traceability_fixes.py` (Playwright, contra Supabase real) para las 4 bugs de trazabilidad encontradas en la auditoría de agosto — ver [Fase 18](#fase-18-auditoría-de-trazabilidad-y-datos). Es cobertura de integración, no unitaria; el pendiente original sigue abierto.
+
+---
+
+## Fase 18: Auditoría de trazabilidad y datos
+
+_Sesión 2026-07/08 — auditoría dedicada a bugs de sincronización entre registros vinculados (regla general adoptada desde entonces: un cambio en un registro vinculado debe reflejarse en ambos lados, siempre)._
+
+- [x] Auditoría de trazabilidad bidireccional — 4 bugs de sincronización encontrados y corregidos (registro no reflejado en ambos extremos de un vínculo: ticket↔transacción, insumo↔stock, etc.), más la feature de reembolso de insumo al cancelar ticket. Cubiertos por `tests/e2e/test_traceability_fixes.py`.
+- [x] Auditoría de integridad de datos — scripts en `supabase/audits/` (`data_integrity_audit.sql`, `diag_paid_amount_mismatch.sql`, `diag_device_created_after_ticket.sql`, `diag_ticket_0092_timestamps.sql`, `financial_dates_reconciliation.sql`). Baseline limpio confirmado.
+- [x] Bug de doble-submit en abono sospechado como causa de montos duplicados — confirmado y corregido (`a8fe0bc`, ver Fase 10).
+- [ ] **5 tickets con discrepancia real de monto ($) detectados en la auditoría de datos siguen pendientes de que Mónica los revise uno por uno** — no son atribuibles a un bug conocido; requieren criterio de negocio (¿cobro real vs. registrado, corrección manual, etc.?) antes de decidir si se corrigen en DB.
+- [x] Bug de guardado silencioso del teléfono/canal de referencia — encontrado al investigar [FZ] 0094 (Tara Mcmrtry, teléfono no recuperable), causa raíz confirmada como el mismo patrón que motivó esta fase (ver Fase 10).
+- [ ] **Conectar Claude Code a Supabase vía MCP** (server oficial, PAT con scope al proyecto, lectura+escritura) — configurado el 2026-08-04, pendiente de una sesión nueva para que las herramientas queden disponibles y se pueda usar para las próximas auditorías/consultas de logs sin ida y vuelta por SQL manual.
+
+---
+
+## Qué priorizar ahora (sesión 2026-08-04)
+
+De todo lo pendiente en el documento, esto es lo que más vale la pena atacar primero, en orden:
+
+1. **[P0] Respaldos automáticos de Supabase** (Fase 17) — es el único pendiente que puede convertir cualquier otro error en irreversible. Lleva 6+ semanas abierto sin acción; con 51 migraciones ya aplicadas en producción, el riesgo acumulado solo sube. Es literalmente configurar un toggle en el dashboard — bajo esfuerzo, altísimo impacto.
+2. **[Fase 18] Revisar los 5 tickets con discrepancia de monto pendientes** — es la única tarea de la auditoría de datos que depende de tu criterio de negocio y no de código; sigue sin resolverse desde que se detectó.
+3. **[P1] Tabla/registro de qué migraciones ya corrieron** (Fase 17) — ya causó al menos dos incidentes reales de "funciona en mi compu pero no en producción" (migration 45, y el patrón general documentado en CLAUDE.md). Barato de construir, evita depurar el mismo tipo de bug una y otra vez.
+4. **Terminar de conectar el MCP de Supabase** — quedó configurado pero no verificado en una sesión nueva; una vez funcione, hace más rápidas las próximas auditorías y consultas de datos/logs sin depender de SQL manual copiado y pegado.
+5. **[P1] Migrar el resto de `localStorage` a `app_settings`** (links de marketing, `fixzone-pricing-config`) — ya existe el patrón funcionando para plantillas de WhatsApp y mensajes rápidos; es repetir la misma receta, no diseño nuevo.
+
+**Pendientes que siguen vigentes pero son menor prioridad ahora:** exportar inventario a Excel, registrar proveedores, reglas de margen configurables sobre insumos, staging de Supabase, modularizar `app.js`, tests unitarios, integración WhatsApp Business API (bloqueada por decisión de negocio, no técnica).
+
+**Nada se identificó como obsoleto para eliminar del todo** — los pendientes sin marcar siguen siendo válidos; varios simplemente avanzaron parcialmente (ver anotaciones `[~]`) sin cerrarse del todo.

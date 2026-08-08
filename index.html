@@ -292,6 +292,7 @@
         <div class="section-heading">
           <h2>Compras de insumos</h2>
           <div class="action-row">
+            <select id="supplies-month-select" class="mini-button" style="font-size:12px;padding:6px 10px"></select>
             <button class="ghost-button" data-export-sheet="supplies">Excel</button>
             <button class="primary-action" data-open-form="supply">+ Compra</button>
           </div>
@@ -354,6 +355,7 @@
               <button class="mini-button fin-filter" data-fin="today">Hoy</button>
               <button class="mini-button fin-filter" data-fin="week">7 días</button>
               <button class="mini-button fin-filter" data-fin="all">Todo</button>
+              <select id="finance-month-select" class="mini-button" style="font-size:12px;padding:6px 10px"></select>
             </div>
             <div id="finance-type-bar" style="display:flex;gap:6px">
               <button class="mini-button fin-type-filter is-active" data-fin-type="all">Todos</button>
@@ -468,6 +470,8 @@
           <button class="mini-button cta-type is-active" data-cta-type="all">Emitidas y recibidas</button>
           <button class="mini-button cta-type" data-cta-type="Emitida">Emitidas</button>
           <button class="mini-button cta-type" data-cta-type="Recibida">Recibidas (gastos)</button>
+          <span style="width:1px;background:rgba(255,255,255,.1);margin:0 4px"></span>
+          <select id="contaduria-month-select" class="mini-button" style="font-size:12px;padding:6px 10px"></select>
         </div>
         <div class="table-wrap">
           <table>
