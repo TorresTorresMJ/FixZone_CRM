@@ -5310,6 +5310,7 @@ function renderDiseno() {
   renderQuickMessages();
   renderDiscountManager();
   renderWATemplates();
+  renderPrintTextsEditor();
   renderBrandEditor();
   renderBrandAssetLibrary();
 }
@@ -5897,6 +5898,89 @@ function renderWATemplates() {
   });
 }
 
+// Textos de impresión (recibo/ticket) y de la imagen digital de cotización —
+// ver DEFAULT_PRINT_TEXTS más arriba. Mismo patrón de autosave debounced que
+// renderWATemplates(); los campos "de lista" (términos, garantía) se editan
+// como texto de varias líneas, una línea por punto — se separan/juntan con
+// \n al leer/guardar, sin necesidad de una UI de agregar/quitar renglones.
+function renderPrintTextsEditor() {
+  const el = document.querySelector("#print-texts-manager");
+  if (!el) return;
+  if (el.contains(document.activeElement) && ["TEXTAREA","INPUT"].includes(document.activeElement.tagName)) return;
+
+  const pt = getPrintTexts();
+  const LIST_FIELDS = {
+    terminosRecepcion: "Términos y condiciones — recibo de recepción (un punto por línea)",
+    garantia:          "Términos de garantía — recibo de pago/garantía, ticket y ticket digital (un punto por línea)",
+    garantiaRefacciones: "Garantía en refacciones — recibo POS (un punto por línea)",
+  };
+  const TEXT_FIELDS = {
+    vigenciaCotizacion: "Vigencia de la cotización — pie de la imagen digital de cotización",
+    graciasRecibo:      "Agradecimiento — recibos de ticket (recepción/pago/garantía)",
+    graciasPOS:         "Agradecimiento — recibo de Punto de Venta",
+  };
+
+  el.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <div style="margin-bottom:16px">
+        <h3 style="margin:0 0 4px;font-size:14px">Textos de impresión y ticket digital <span style="font-weight:400;color:var(--fz-primary)">· ${escapeHtml(activeBranchId)}</span></h3>
+        <small class="muted">Términos, garantía y agradecimientos que aparecen en los recibos impresos, el PDF/imagen de ticket que se comparte por WhatsApp, y la imagen de cotización. Independientes por sucursal — esto solo afecta ${escapeHtml(activeBranchId)}. Variable disponible: <code>{marca}</code></small>
+      </div>
+      ${Object.keys(LIST_FIELDS).map(k => `
+        <div style="margin-bottom:14px">
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px">${LIST_FIELDS[k]}</label>
+          <textarea id="pt-${k}" rows="${Math.max(2, (pt[k]||[]).length)}" style="width:100%;resize:vertical;font-size:12px;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;font-family:inherit">${escapeHtml((pt[k]||[]).join("\n"))}</textarea>
+        </div>`).join("")}
+      ${Object.keys(TEXT_FIELDS).map(k => `
+        <div style="margin-bottom:14px">
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px">${TEXT_FIELDS[k]}</label>
+          <input id="pt-${k}" type="text" value="${escapeHtml(pt[k]||"")}" style="width:100%;font-size:12px;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:inherit;font-family:inherit" />
+        </div>`).join("")}
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">
+        <span id="pt-autosave-status" class="muted" style="font-size:11px"></span>
+        <button class="ghost-button" id="pt-reset-btn">Restaurar predeterminados</button>
+      </div>
+    </div>`;
+
+  const statusEl = el.querySelector("#pt-autosave-status");
+  const allKeys = [...Object.keys(LIST_FIELDS), ...Object.keys(TEXT_FIELDS)];
+
+  const doSave = async () => {
+    const out = {};
+    Object.keys(LIST_FIELDS).forEach(k => {
+      out[k] = (el.querySelector(`#pt-${k}`)?.value || "")
+        .split("\n").map(s => s.trim()).filter(Boolean);
+    });
+    Object.keys(TEXT_FIELDS).forEach(k => { out[k] = el.querySelector(`#pt-${k}`)?.value || ""; });
+    try {
+      await savePrintTexts(out);
+      if (statusEl) { statusEl.textContent = "✓ Guardado"; setTimeout(() => { statusEl.textContent = ""; }, 2000); }
+    } catch(err) {
+      console.error(err);
+      showErrorToast(`No se pudo guardar: ${err.message}`);
+    }
+  };
+
+  let saveDebounce;
+  allKeys.forEach(k => {
+    el.querySelector(`#pt-${k}`)?.addEventListener("input", () => {
+      clearTimeout(saveDebounce);
+      saveDebounce = setTimeout(doSave, 500);
+    });
+  });
+
+  el.querySelector("#pt-reset-btn")?.addEventListener("click", async () => {
+    try {
+      await savePrintTexts({ ...DEFAULT_PRINT_TEXTS });
+      renderPrintTextsEditor();
+      showToast("✓ Textos restaurados");
+    } catch(err) {
+      console.error(err);
+      showErrorToast(`No se pudo restaurar: ${err.message}`);
+    }
+  });
+}
+
 // ── Mensajes rápidos (repertorio copiable) ────────────────────────────────────
 const DEFAULT_QUICK_MESSAGES = [
   // Sin nombre de marca fijo a propósito — quick_messages es un solo set
@@ -6072,6 +6156,61 @@ function getWATemplates() {
   return { ...DEFAULT_WA_TEMPLATES, ...(state.settings?.[waTemplatesSettingsKey()] || {}) };
 }
 async function saveWATemplates(t) { await saveAppSetting(waTemplatesSettingsKey(), t); }
+
+// ── Textos de impresión (recibo/ticket) y de la imagen digital de cotización ──
+// Antes vivían escritos a mano dentro de printRecibo()/printTicket()/
+// printPosRecibo()/buildCotizacionCanvas() — términos y condiciones, texto de
+// garantía, garantía de refacciones, vigencia de la cotización, agradecimiento
+// final. Cualquier ajuste (ej. Puebla necesita su propia política de garantía,
+// o solo corregir una fecha) requería pedírselo a un desarrollador y editar
+// código. Mismo patrón que wa_templates/quick_messages: una key de
+// app_settings namespaced por sucursal (`print_texts:<Sucursal>`), editable
+// desde Automatización, sin tocar código para ajustes futuros.
+const DEFAULT_PRINT_TEXTS = {
+  // Un bloque de garantía único, reusado en los 3 lugares que antes tenían
+  // cada uno su propia redacción ligeramente distinta (printRecibo tipo
+  // "pago", tipo "garantia", y printTicket) — un solo texto que editar en vez
+  // de tres versiones casi iguales que se podían desincronizar entre sí.
+  garantia: [
+    "30 días de garantía en mano de obra desde la fecha de entrega.",
+    "No aplica por daños físicos, humedad, mal uso o intervención de terceros.",
+    "Solo cubre la falla reparada.",
+    "Conserve este documento para hacer válida la garantía.",
+  ],
+  terminosRecepcion: [
+    "El tiempo de reparación es estimado y sujeto a disponibilidad de refacciones.",
+    "{marca} no se hace responsable por pérdida de información, datos o archivos del equipo.",
+    "Equipos no reclamados después de 30 días naturales podrán ser dados de baja sin responsabilidad para el taller.",
+    "El presupuesto puede variar si se detectan fallas adicionales durante el diagnóstico.",
+    "Al firmar este recibo, el cliente acepta los términos y autoriza la revisión del equipo.",
+  ],
+  garantiaRefacciones: [
+    "Garantía en refacciones: 3 días naturales para cambio.",
+    "No aplica en daños por mal uso o instalación inadecuada.",
+  ],
+  vigenciaCotizacion: "Vigencia 15 días · Los precios pueden variar según diagnóstico definitivo.",
+  graciasRecibo: "Gracias por confiar en {marca}",
+  graciasPOS:    "Gracias por su compra",
+};
+
+function printTextsSettingsKey(branchName) { return `print_texts:${branchName || activeBranchId}`; }
+// branchName: opcional — los recibos deben usar la sucursal DEL TICKET (puede
+// no coincidir con la pestaña activa, ej. Monica viendo Puebla pero
+// imprimiendo algo vinculado a Vallarta), igual que ya hace window.getBranchBrand()
+// en estas mismas funciones de impresión. El editor en Automatización, en
+// cambio, siempre lee/escribe la pestaña activa — es donde se está parado.
+function getPrintTexts(branchName) {
+  return { ...DEFAULT_PRINT_TEXTS, ...(state.settings?.[printTextsSettingsKey(branchName)] || {}) };
+}
+async function savePrintTexts(texts) { await saveAppSetting(printTextsSettingsKey(), texts); }
+// {marca} es la única variable soportada aquí (a diferencia de fillWATemplate,
+// no hay folio/cliente/monto en un bloque de términos genérico) — usa el
+// nombre de marca de la sucursal correspondiente, no necesariamente la activa.
+function fillPrintVars(text, brand) { return (text||"").replace(/{marca}/g, brand?.displayName||""); }
+function printBulletsHtml(lines, brand, cls = "rct-policy") {
+  return (lines||[]).map(l => `<p class="${cls}">• ${escapeHtml(fillPrintVars(l, brand))}</p>`).join("");
+}
+
 function fillWATemplate(key, vars) {
   const tpl = getWATemplates()[key] || DEFAULT_WA_TEMPLATES[key] || "";
   return tpl
@@ -11527,6 +11666,7 @@ function printRecibo(ticket, type) {
   const paid      = Number(ticket.paidAmount || 0);
   const pending   = Math.max(0, total - paid);
   const brand     = window.getBranchBrand(ticket.branch || activeBranchId);
+  const pt        = getPrintTexts(ticket.branch || activeBranchId);
   const D         = "────────────────────────────────────────";
   const now       = new Date();
   const timeStr   = now.toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", hour12:false });
@@ -11563,11 +11703,7 @@ function printRecibo(ticket, type) {
       <p class="rct-row"><strong>SALDO PENDIENTE:</strong> <span>${money.format(pending)}</span></p>
       <p class="rct-dash">${D}</p>
       <p class="rct-label" style="font-size:7pt;text-transform:uppercase;letter-spacing:.04em">Términos y condiciones</p>
-      <p class="rct-policy">• El tiempo de reparación es estimado y sujeto a disponibilidad de refacciones.</p>
-      <p class="rct-policy">• ${escapeHtml(brand.displayName)} no se hace responsable por pérdida de información, datos o archivos del equipo.</p>
-      <p class="rct-policy">• Equipos no reclamados después de 30 días naturales podrán ser dados de baja sin responsabilidad para el taller.</p>
-      <p class="rct-policy">• El presupuesto puede variar si se detectan fallas adicionales durante el diagnóstico.</p>
-      <p class="rct-policy">• Al firmar este recibo, el cliente acepta los términos y autoriza la revisión del equipo.</p>
+      ${printBulletsHtml(pt.terminosRecepcion, brand)}
       <p class="rct-dash">${D}</p>
       <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE CLIENTE — RECIBIDO CONFORME</p></div>`;
   } else if (type === "pago") {
@@ -11587,9 +11723,7 @@ function printRecibo(ticket, type) {
       </div>
       <p class="rct-dash">${D}</p>
       <p class="rct-label">GARANTÍA:</p>
-      <p class="rct-policy">• 30 días en mano de obra desde la fecha de entrega.</p>
-      <p class="rct-policy">• No aplica por daños físicos, humedad, mal uso o intervención de terceros.</p>
-      <p class="rct-policy">• Solo cubre la falla reparada. Conserve este documento.</p>`;
+      ${printBulletsHtml(pt.garantia, brand)}`;
   } else { // garantia
     const warrantyDate = ticket.warrantyUntil || (() => {
       const d = new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10);
@@ -11603,10 +11737,7 @@ function printRecibo(ticket, type) {
       <p class="rct-value rct-title">${warrantyDate}</p>
       <p class="rct-dash">${D}</p>
       <p class="rct-label">CONDICIONES DE GARANTÍA:</p>
-      <p class="rct-policy">• 30 días en mano de obra desde la fecha de entrega.</p>
-      <p class="rct-policy">• No aplica por daños físicos, humedad, mal uso o intervención de terceros.</p>
-      <p class="rct-policy">• Solo cubre la falla por la cual fue reparado el equipo.</p>
-      <p class="rct-policy">• Conserve este documento para hacer válida la garantía.</p>
+      ${printBulletsHtml(pt.garantia, brand)}
       <p class="rct-dash">${D}</p>
       <div class="rct-sign"><div class="rct-sign-line"></div><p>FIRMA DE ENTREGA CONFORME</p></div>`;
   }
@@ -11620,13 +11751,14 @@ function printRecibo(ticket, type) {
       <img src="${qrImage}" alt="QR" width="160" height="160" />
     </div>`;
 
-  document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}${qrBlock}<p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p><p class="rct-dash">${D}</p></div>`;
+  document.querySelector("#print-receipt").innerHTML = `<div class="rct">${header}${body}${qrBlock}<p class="rct-thanks">★ ${escapeHtml(fillPrintVars(pt.graciasRecibo, brand))} ★</p><p class="rct-dash">${D}</p></div>`;
   doPrint();
 }
 
 function printPosRecibo() {
   if (!lastPosSale) return;
   const brand    = window.getBranchBrand(activeBranchId);
+  const pt       = getPrintTexts(activeBranchId);
   const D        = "─".repeat(32);
   const { items, total, method, discount, discountCode, clientName, date } = lastPosSale;
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
@@ -11655,9 +11787,8 @@ function printPosRecibo() {
       <div style="font-size:11px;text-align:center;margin-top:6px">Método: ${escapeHtml(method)}</div>
       ${clientName ? `<div style="font-size:11px;text-align:center">Cliente: ${escapeHtml(clientName)}</div>` : ""}
       ${hasRefaccion ? `<p class="rct-dash">${D}</p>
-        <p style="font-size:10px;text-align:center;margin:4px 0">Garantía en refacciones: 3 días naturales para cambio.</p>
-        <p style="font-size:10px;text-align:center;margin:0">No aplica en daños por mal uso o instalación inadecuada.</p>` : ""}
-      <p class="rct-thanks">★ Gracias por su compra ★</p>
+        ${pt.garantiaRefacciones.map(l => `<p style="font-size:10px;text-align:center;margin:2px 0">${escapeHtml(fillPrintVars(l, brand))}</p>`).join("")}` : ""}
+      <p class="rct-thanks">★ ${escapeHtml(fillPrintVars(pt.graciasPOS, brand))} ★</p>
       <p class="rct-dash">${D}</p>
     </div>`;
   const [y, m, d] = (date || dateStamp()).split("-");
@@ -11680,6 +11811,7 @@ function printTicket(ticket) {
   // Leer marca desde la sucursal del ticket (no necesariamente la activa en UI)
   const ticketBranch     = ticket.branch || activeBranchId;
   const brand            = window.getBranchBrand(ticketBranch);
+  const pt               = getPrintTexts(ticketBranch);
   const logoMonoSrc      = brand.logoMonoSrc || brand.logoSrc;
   const logoMonoFallback = brand.logoMonoFallback || brand.logoFallback || brand.logoSrc;
   const receiptHeader    = brand.receiptHeader || brand.displayName;
@@ -11754,13 +11886,11 @@ function printTicket(ticket) {
   <p class="rct-dash">${D}</p>
 
   <p class="rct-center"><strong>POLÍTICAS DE GARANTÍA</strong></p>
-  <p class="rct-policy">• 30 días de garantía en mano de obra.</p>
-  <p class="rct-policy">• La garantía no aplica por golpes, humedad, mal uso o intervención de terceros.</p>
-  <p class="rct-policy">• Conserve este recibo para cualquier aclaración.</p>
+  ${printBulletsHtml(pt.garantia, brand)}
 
   <p class="rct-dash">${D}</p>
 
-  <p class="rct-thanks">★ Gracias por confiar en ${escapeHtml(brand.displayName)} ★</p>
+  <p class="rct-thanks">★ ${escapeHtml(fillPrintVars(pt.graciasRecibo, brand))} ★</p>
 
   <p class="rct-dash">${D}</p>
 
@@ -11782,6 +11912,7 @@ function printTicket(ticket) {
 async function buildCotizacionCanvas(ticket) {
   if (typeof html2canvas !== "function") return null;
   const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
+  const pt       = getPrintTexts(ticket.branch || activeBranchId);
   const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
   const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
   const items    = ticket.quoteItems || [];
@@ -11852,7 +11983,7 @@ async function buildCotizacionCanvas(ticket) {
       </div>
     </div>
     <div style="background:${primary}12;border-top:1px solid ${primary}22;padding:9px 20px;font-size:11px;color:#999;text-align:center;line-height:1.5">
-      Vigencia 15 días · Los precios pueden variar según diagnóstico definitivo.
+      ${escapeHtml(fillPrintVars(pt.vigenciaCotizacion, brand))}
     </div>
     <div style="background:#fff;padding:10px 20px 16px;text-align:center;font-size:13px;font-weight:700;color:${primary};letter-spacing:.03em">
       ★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★
@@ -11910,6 +12041,7 @@ async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
     return;
   }
   const brand    = window.getBranchBrand(ticket.branch || activeBranchId);
+  const pt       = getPrintTexts(ticket.branch || activeBranchId);
   const primary  = brand.colors?.["--fz-primary"]   || "#085ACB";
   const secondary= brand.colors?.["--fz-secondary"] || "#2678E8";
   // Header del ticket tiene fondo de color → logo para fondo oscuro, sin filtro CSS
@@ -12012,7 +12144,7 @@ async function shareTicketPDF(ticketId, { text, forceDownload } = {}) {
 
     <!-- Pie -->
     <div style="background:${primary}12;border-top:1px solid ${primary}22;padding:9px 20px;font-size:11px;color:#888;text-align:center;line-height:1.5">
-      Garantía 30 días en mano de obra · No aplica por golpes, humedad o mal uso.
+      ${escapeHtml(pt.garantia.map(l => fillPrintVars(l, brand)).join(" · "))}
     </div>
     <div style="background:#fff;padding:10px 20px 14px;text-align:center;font-size:13px;font-weight:700;color:${primary};letter-spacing:.03em">
       ★ ${escapeHtml(brand.displayName)} · ${escapeHtml(brand.locationLabel||"")} ★
