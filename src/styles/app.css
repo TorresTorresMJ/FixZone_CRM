@@ -1193,7 +1193,12 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   color: var(--fz-white);
 }
 
-select option { color: #101217; }
+/* Antes: `color: #101217` (casi negro) — peleaba con `color-scheme: dark` de
+   arriba, que ya pinta la lista desplegada nativa con fondo oscuro. El texto
+   casi negro sobre ese fondo oscuro era ilegible salvo en la opción resaltada
+   (fondo azul del hover/selección), que es justo el bug que color-scheme:dark
+   se suponía debía evitar. */
+select option { color: var(--fz-white); background: var(--fz-gray-dark); }
 
 /* ── Kanban: columnas compactas, auto-fill en escritorio, hover reveal ──── */
 /* En escritorio las columnas se reparten el espacio; sólo hay scroll si la
