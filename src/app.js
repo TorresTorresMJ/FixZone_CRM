@@ -5899,7 +5899,11 @@ function renderWATemplates() {
 
 // ── Mensajes rápidos (repertorio copiable) ────────────────────────────────────
 const DEFAULT_QUICK_MESSAGES = [
-  { name: "Saludo inicial",        text: "¡Hola! 👋 Bienvenido a FixZone. ¿En qué podemos ayudarte hoy?" },
+  // Sin nombre de marca fijo a propósito — quick_messages es un solo set
+  // compartido entre las dos sucursales (app_settings, no segmentado por
+  // branch_id como el resto), así que "Bienvenido a FixZone" también le
+  // llegaría a un cliente de RefaxZone en Puebla si estuviera hardcodeado.
+  { name: "Saludo inicial",        text: "¡Hola! 👋 Bienvenido, ¿en qué podemos ayudarte hoy?" },
   { name: "Horarios",              text: "Nuestro horario de atención es de lunes a sábado de 10:00 a 20:00 hrs. ¡Te esperamos!" },
   { name: "Tiempo de reparación",  text: "El tiempo estimado de reparación es de 1 a 3 días hábiles dependiendo del diagnóstico. Te avisamos en cuanto esté listo 🔧" },
   { name: "Solicitud de garantía", text: "Con gusto revisamos tu equipo en garantía. Por favor trae el ticket de reparación y el equipo al local. Recuerda que la garantía cubre únicamente la falla original reparada." },
