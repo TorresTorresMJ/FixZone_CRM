@@ -722,13 +722,24 @@ function openPinLoginScreen() {
     loginEl.querySelectorAll("[data-digit]").forEach(b => b.addEventListener("click", () => {
       if (pin.length < maxLen) pin += b.dataset.digit;
       draw();
-      if (pin.length >= 4) submitPin();
+      clearTimeout(submitTimer);
+      // PINs are 4-6 digits — at 6 we know the user is done and submit right
+      // away; between 4 and 5 we wait a beat in case they keep typing, so a
+      // 5-6 digit PIN doesn't get cut short and submitted as just its first
+      // 4 digits (which always fails and used to wipe out what was typed).
+      if (pin.length >= maxLen) submitPin();
+      else if (pin.length >= 4) submitTimer = setTimeout(submitPin, 700);
     }));
-    loginEl.querySelector("[data-del]")?.addEventListener("click", () => { pin = pin.slice(0, -1); draw(); });
+    loginEl.querySelector("[data-del]")?.addEventListener("click", () => {
+      clearTimeout(submitTimer);
+      pin = pin.slice(0, -1); draw();
+    });
     loginEl.querySelector("#pin-login-username").addEventListener("input", (e) => { username = e.target.value.trim().toLowerCase(); });
     loginEl.querySelector("#pin-back-link").addEventListener("click", () => showLoginScreen());
   };
+  let submitTimer = null;
   const submitPin = async () => {
+    clearTimeout(submitTimer);
     if (!username) { draw("Escribe tu usuario primero."); return; }
     try {
       const { email, token } = await callSelfServiceAuth("login_with_pin", { username, pin });
