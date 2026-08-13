@@ -857,7 +857,7 @@ function openPinOffer(username) {
     dlg.querySelector("[data-del]")?.addEventListener("click", () => { pin = pin.slice(0, -1); render(); });
     dlg.querySelector('[data-pin="no"]').addEventListener("click", () => {
       dlg.close();
-      backToLoginWith(username);
+      autoLoginAfterReset(username);
     });
     dlg.querySelector('[data-pin="yes"]').addEventListener("click", async () => {
       if (pin.length < 4) { render("Pues ponlo, preciosa."); return; }
@@ -866,7 +866,7 @@ function openPinOffer(username) {
       try {
         await callSelfServiceAuth("set_pin", { username, pin });
         dlg.close();
-        backToLoginWith(username);
+        autoLoginAfterReset(username);
       } catch (err) {
         render(err.message);
       }
@@ -874,6 +874,31 @@ function openPinOffer(username) {
   };
   render();
   if (!dlg.open) dlg.showModal();
+}
+
+// La contraseña default del equipo tras un reset self-service — mismo valor
+// que DEFAULT_PASSWORD en supabase/functions/self-service-auth/index.ts y
+// create-employee/index.ts (ver también la validación en el formulario de
+// cambio de contraseña, más abajo). Repetida a propósito en vez de pedirla
+// por API: es un valor público conocido por todo el equipo, no un secreto.
+const RECOVERY_DEFAULT_PASSWORD = "miwaysillos05";
+
+// Tras un reset exitoso (con o sin PIN), inicia sesión automáticamente con la
+// contraseña default recién asignada en vez de regresar a la pantalla de
+// login pidiendo que la escriban a mano — antes de este fix, ese "vuelve a
+// escribir tu contraseña" se sentía como si la app los hubiera expulsado justo
+// después de confirmar que todo salió bien. afterLogin() ya se encarga de
+// forzar la pantalla de cambio de contraseña (force_password_change), así
+// que el usuario sigue sin poder quedarse con la default.
+async function autoLoginAfterReset(username) {
+  try {
+    const result = await attemptSupabaseLogin(username, RECOVERY_DEFAULT_PASSWORD);
+    if (!result.ok) throw new Error("auto-login falló");
+    currentSession = result.session;
+    await afterLogin(result.user);
+  } catch {
+    backToLoginWith(username);
+  }
 }
 
 function backToLoginWith(username) {
