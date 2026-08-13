@@ -753,7 +753,19 @@ async function callSelfServiceAuth(action, payload) {
   const { data, error } = await supabaseClient.functions.invoke("self-service-auth", {
     body: { action, payload },
   });
-  if (error) throw new Error(error.message || "Error de red al llamar función");
+  if (error) {
+    // supabase-js's FunctionsHttpError.message is a generic "Edge Function
+    // returned a non-2xx status code" — the real reason (from index.ts's
+    // `{success:false, error:"..."}` body, e.g. "PIN incorrecto") is only in
+    // error.context (the raw Response). Without this, every failure from
+    // self-service-auth showed that same unhelpful message regardless of cause.
+    let msg = error.message || "Error de red al llamar función";
+    try {
+      const body = await error.context?.json();
+      if (body?.error) msg = body.error;
+    } catch { /* context not JSON-readable, fall back to generic message */ }
+    throw new Error(msg);
+  }
   if (!data?.success) throw new Error(data?.error || "Error en la función");
   return data;
 }
@@ -8660,7 +8672,16 @@ async function callEdgeFunction(action, payload) {
   const { data, error } = await supabaseClient.functions.invoke("create-employee", {
     body: { action, payload },
   });
-  if (error) throw new Error(error.message || "Error de red al llamar función");
+  if (error) {
+    // See callSelfServiceAuth() above — FunctionsHttpError.message is generic;
+    // the real reason lives in error.context's JSON body.
+    let msg = error.message || "Error de red al llamar función";
+    try {
+      const body = await error.context?.json();
+      if (body?.error) msg = body.error;
+    } catch { /* context not JSON-readable, fall back to generic message */ }
+    throw new Error(msg);
+  }
   if (!data?.success) throw new Error(data?.error || "Error en la función");
   return data;
 }
