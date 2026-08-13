@@ -587,31 +587,6 @@ function findUsernameCandidates(typed) {
   });
 }
 
-// Overlay de confirmación tipo login-card, independiente del sistema de
-// #record-modal (ese es un <dialog> reservado a los formularios de registros).
-function askAreYouThisUser(fullName) {
-  return new Promise((resolve) => {
-    const overlay = document.createElement("div");
-    overlay.className = "username-guess-overlay";
-    overlay.innerHTML = `
-      <div class="login-card username-guess-card">
-        <p class="username-guess-question">¿Olvidaste tu usuario, preciosa? ¿Eres <strong>${escapeHtml(fullName)}</strong>?</p>
-        <div class="username-guess-actions">
-          <button type="button" class="ghost-button" data-guess="no">No</button>
-          <button type="button" class="primary-action" data-guess="yes">Sí</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-    overlay.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-guess]");
-      if (!btn) return;
-      overlay.remove();
-      resolve(btn.dataset.guess === "yes");
-    });
-  });
-}
-
 async function attemptSupabaseLogin(username, password) {
   const authEmail = `${username}@fixzone.internal`;
   const { data, error } = await supabaseClient.auth.signInWithPassword({
@@ -622,24 +597,19 @@ async function attemptSupabaseLogin(username, password) {
   return { ok: true, user: data.user, session: data.session };
 }
 
-// Pregunta candidato por candidato ("¿Eres X?"); en cuanto confirman, reintenta
-// el login con ESE usuario y la misma contraseña ya escrita. Si dicen "No" a
-// todos, o la contraseña no aplica para el candidato confirmado, vuelve al
-// login normal con el error genérico (nunca revela si el usuario existe).
+// Si lo tecleado es un alias/nombre reconocido (ver USERNAME_ALIASES), reintenta
+// el login directo con el usuario real y la misma contraseña ya escrita — sin
+// preguntar "¿eres X?" primero. Si ninguno coincide, error genérico normal
+// (nunca revela si el usuario existe); el link "¿Olvidaste tu contraseña?"
+// sigue ahí para que lo usen ellos mismos, no se ofrece automáticamente.
 async function tryUsernameAliasFlow(candidates, password) {
   for (const candidate of candidates) {
-    const isThem = await askAreYouThisUser(candidate.fullName);
-    if (!isThem) continue;
     const result = await attemptSupabaseLogin(candidate.username, password);
     if (result.ok) {
       currentSession = result.session;
       await afterLogin(result.user);
-      setTimeout(() => showToast(`Tu usuario es "${candidate.username}", bye chica `), 400);
-    } else {
-      showLoginScreen("Usuario o contraseña incorrectos.");
-      openRecoveryOffer(candidate.username);
+      return;
     }
-    return;
   }
   showLoginScreen("Usuario o contraseña incorrectos.");
 }

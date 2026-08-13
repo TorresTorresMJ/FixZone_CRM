@@ -105,35 +105,6 @@ select { color-scheme: dark; }
   letter-spacing: 1px;
 }
 
-/* ── "¿Eres X?" username-guess overlay ──────────────────────────────────── */
-.username-guess-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0,0,0,0.6);
-}
-
-.username-guess-card {
-  width: min(360px, calc(100vw - 32px));
-  padding: 32px 28px 28px;
-  text-align: center;
-}
-
-.username-guess-question {
-  margin: 0 0 24px;
-  font-size: 17px;
-}
-
-.username-guess-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.username-guess-actions button { flex: 1; }
-
 /* ── Recuperación de contraseña self-service (link + PIN) ───────────────────
    Ver supabase/functions/self-service-auth y CLAUDE.md, sección "Recuperación
    de contraseña". */
