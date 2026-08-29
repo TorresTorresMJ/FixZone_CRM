@@ -10,7 +10,7 @@
   <meta property="og:type"        content="website">
   <meta property="og:url"         content="https://fixzone.pages.dev/">
   <meta property="og:title"       content="FixZone — Reparación de Celulares, Mac y Apple Watch · Puerto Vallarta">
-  <meta property="og:description" content="Cambio de pantalla, batería, glass, microsoldadura y más. Garantía 30 días. Sin cita necesaria. Lun–Sáb 9–19h.">
+  <meta property="og:description" content="Cambio de pantalla, batería, glass, microsoldadura y más. Garantía 30 días. Sin cita necesaria. Lun–Vie 10–19h · Sáb 10–17h.">
   <meta property="og:image"       content="https://fixzone-crm.pages.dev/assets/brand/fixzone/og-image.png">
   <meta property="og:image:width"  content="1200">
   <meta property="og:image:height" content="1188">
@@ -40,9 +40,15 @@
     "openingHoursSpecification": [
       {
         "@type": "OpeningHoursSpecification",
-        "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-        "opens": "09:30",
+        "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+        "opens": "10:00",
         "closes": "19:00"
+      },
+      {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": ["Saturday"],
+        "opens": "10:00",
+        "closes": "17:00"
       }
     ],
     "sameAs": [
@@ -450,6 +456,9 @@
       .services li:nth-child(8)  { animation-delay: 0.25s; }
       .services li:nth-child(9)  { animation-delay: 0.28s; }
       .services li:nth-child(10) { animation-delay: 0.31s; }
+      .services li:nth-child(11) { animation-delay: 0.34s; }
+      .services li:nth-child(12) { animation-delay: 0.37s; }
+      .services li:nth-child(13) { animation-delay: 0.40s; }
     }
 
     /* ── UBICACIÓN ───────────────────────────────────────────────── */
@@ -462,15 +471,17 @@
     }
 
     .loc-map {
-      height: 120px;
+      height: 160px;
       background: repeating-linear-gradient(45deg, #0c1018, #0c1018 11px, #0f141d 11px, #0f141d 22px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: var(--mono);
-      font-size: 10px;
-      letter-spacing: 0.1em;
-      color: #3c4452;
+      position: relative;
+    }
+
+    .loc-map iframe {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      filter: grayscale(0.25) contrast(1.05) brightness(0.95);
     }
 
     .loc-foot {
@@ -687,7 +698,7 @@
       <span class="open-dot"></span>
       <span class="open-bar-text">Abierto hoy</span>
     </span>
-    <span class="open-bar-hours">Lun–Sáb · 9:30–19:00</span>
+    <span class="open-bar-hours">Lun–Vie 10–19 · Sáb 10–17</span>
   </div>
 
   <!-- HERO -->
@@ -715,7 +726,7 @@
       <div class="hero-chips">
         <a class="chip" href="tel:3349812755">
           <div class="chip-label">HORARIO</div>
-          <div class="chip-value">Lun–Sáb 9:30–19</div>
+          <div class="chip-value">Lun–Vie 10:00–19:00<br>Sáb 10:00–17:00</div>
         </a>
         <a class="chip" href="#ubicacion"
            onclick="document.querySelector('#ubicacion').scrollIntoView({behavior:'smooth'}); return false;">
@@ -832,20 +843,42 @@
         </button>
       </li>
 
+      <li>
+        <button class="svc-row" data-service="Migración de datos" data-multidevice="true">
+          <span class="svc-ic"><svg viewBox="0 0 24 24" width="27" height="27" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v10"/><path d="M8.2 10.3l3.8 3.8 3.8-3.8"/><path d="M4.5 16.8v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/></svg></span>
+          <span class="svc-name">Migración de datos</span>
+          <span class="svc-desc">Pasa tus contactos, fotos y datos a tu equipo nuevo sin perder nada.</span>
+        </button>
+      </li>
+
+      <li>
+        <button class="svc-row" data-service="Respaldo y recuperación de datos" data-multidevice="true">
+          <span class="svc-ic"><svg viewBox="0 0 24 24" width="27" height="27" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12a7.5 7.5 0 1 1 2.3 5.4"/><path d="M4.5 17.5v-4h4"/></svg></span>
+          <span class="svc-name">Respaldo y recuperación de datos</span>
+          <span class="svc-desc">Creamos una copia de tu información o intentamos recuperarla si tu equipo falló.</span>
+        </button>
+      </li>
+
     </ul>
   </section>
 
   <!-- UBICACIÓN -->
   <section class="location" id="ubicacion">
     <div class="loc-card">
-      <div class="loc-map">[ MAPA · COL. 5 DE DICIEMBRE ]</div>
+      <div class="loc-map">
+        <iframe
+          src="https://www.google.com/maps?cid=16566959033846251885&z=17&output=embed"
+          loading="lazy"
+          referrerpolicy="no-referrer-when-downgrade"
+          title="Ubicación de FixZone en Puerto Vallarta"></iframe>
+      </div>
       <div class="loc-foot">
         <div>
           <div class="loc-addr-main">Rep. de Chile 247-A</div>
           <div class="loc-addr-sub">Col. 5 de Diciembre · Puerto Vallarta</div>
         </div>
         <a class="maps-btn"
-           href="https://share.google/QL8GjbJRZoxnf1XEB"
+           href="https://maps.app.goo.gl/XxwJNj6XEQUHj8Mm9"
            target="_blank" rel="noopener noreferrer">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/>
@@ -919,14 +952,16 @@
 <script>
   /* ── HORARIO DINÁMICO — Puerto Vallarta UTC-6 (Jalisco, sin DST desde 2022) ── */
   (function () {
-    const OPEN_H = 9, CLOSE_H = 19;
+    const OPEN_H = 10;
     const utcMs  = Date.now() + (new Date().getTimezoneOffset() * 60000);
     const pv     = new Date(utcMs + (-6 * 3600000));
     const day    = pv.getDay();                       // 0=Dom … 6=Sáb
     const t      = pv.getHours() + pv.getMinutes() / 60;
 
-    const isWeekday = day >= 1 && day <= 6;
-    const isOpen    = isWeekday && t >= OPEN_H && t < CLOSE_H;
+    const isSaturday = day === 6;
+    const isOpenDay  = day >= 1 && day <= 6;           // lun–sáb
+    const CLOSE_H    = isSaturday ? 17 : 19;
+    const isOpen     = isOpenDay && t >= OPEN_H && t < CLOSE_H;
 
     const bar     = document.querySelector('.open-bar');
     const textEl  = document.querySelector('.open-bar-text');
@@ -939,10 +974,10 @@
       bar.classList.add('is-closed');
       textEl.textContent = 'Cerrado';
       let reopenMsg;
-      if (!isWeekday)          reopenMsg = 'el lunes 9:30';     // domingo
-      else if (t < OPEN_H)     reopenMsg = 'hoy 9:30';          // antes de abrir
-      else if (day === 6)      reopenMsg = 'el lunes 9:30';     // sábado noche
-      else                     reopenMsg = 'mañana 9:30';       // lun–vie noche
+      if (!isOpenDay)          reopenMsg = 'el lunes 10:00';    // domingo
+      else if (t < OPEN_H)     reopenMsg = 'hoy 10:00';         // antes de abrir
+      else if (isSaturday)     reopenMsg = 'el lunes 10:00';    // sábado tras cierre
+      else                     reopenMsg = 'mañana 10:00';      // lun–vie noche
       hoursEl.textContent = 'Abre ' + reopenMsg;
     }
   })();
