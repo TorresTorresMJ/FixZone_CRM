@@ -2460,7 +2460,8 @@ function renderPrecios() {
     <!-- Singleton variant popover (fixed, not clipped by overflow) -->
     <div id="pv-global-pop" style="display:none;position:fixed;z-index:9100;
       background:#13131f;border:1px solid rgba(255,255,255,.18);border-radius:10px;
-      padding:14px 16px;min-width:255px;box-shadow:0 10px 34px rgba(0,0,0,.75)">
+      padding:14px 16px;min-width:255px;max-height:calc(100vh - 16px);overflow-y:auto;
+      box-shadow:0 10px 34px rgba(0,0,0,.75)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <span id="pv-pop-title" style="font-size:12px;font-weight:600;opacity:.7;max-width:190px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -2492,30 +2493,60 @@ function renderPrecios() {
 
   const pvDoSave = async () => {
     if (!supabaseClient) return;
-    const upserts = [];
-    // Simple cells (price inputs in the table)
+    // Keyed by (dev,stype,variant) purely to avoid sending the same popover
+    // row twice within one save (e.g. two blank-label rows in one session).
+    const upsertMap = new Map();
+    const pvKey = (dev, stype, variant) => `${dev}|${stype}|${variant}`;
+    const popoverActive = pvCurDev && pvPopRows?.children.length;
+    // Simple cells (price inputs in the table) — skip the cell the popover is
+    // currently editing (or just closed): the popover is the authoritative
+    // copy of that same cell's row(s).
     matrixTable?.querySelectorAll(".pv-price").forEach(inp => {
+      if (popoverActive && inp.dataset.device===pvCurDev && inp.dataset.stype===pvCurStype) return;
       const price = Number(inp.value)||0, pid = inp.dataset.pid||"";
       if (!price && !pid) return;
-      upserts.push({ id:pid||crypto.randomUUID(), device_model:inp.dataset.device,
-        service_type_id:inp.dataset.stype, price, branch_id:branchId, variant:"" });
+      upsertMap.set(pvKey(inp.dataset.device, inp.dataset.stype, ""),
+        { id:pid||crypto.randomUUID(), isNew:!pid, device_model:inp.dataset.device,
+          service_type_id:inp.dataset.stype, price, branch_id:branchId, variant:"" });
     });
-    // Popover rows (variant cell currently open)
-    if (pvPop?.style.display!=="none" && pvCurDev) {
+    // Popover rows (variant cell currently open, or last one edited before closing)
+    if (popoverActive) {
       pvPopRows?.querySelectorAll(".pv-row").forEach(row => {
         const pi = row.querySelector(".pv-price");
         const price = Number(pi?.value)||0, pid = pi?.dataset.pid||"";
         if (!price && !pid) return;
-        upserts.push({ id:pid||crypto.randomUUID(), device_model:pvCurDev,
-          service_type_id:pvCurStype, price, branch_id:branchId,
-          variant:row.querySelector(".pv-label")?.value.trim()||"" });
+        const variant = row.querySelector(".pv-label")?.value.trim()||"";
+        upsertMap.set(pvKey(pvCurDev, pvCurStype, variant),
+          { id:pid||crypto.randomUUID(), isNew:!pid, device_model:pvCurDev,
+            service_type_id:pvCurStype, price, branch_id:branchId, variant });
       });
     }
-    if (!upserts.length) { pvStatus("saved"); return; }
-    const { data, error } = await supabaseClient.from("service_prices")
-      .upsert(upserts, { onConflict:"device_model,service_type_id,branch_id,variant" }).select();
-    if (error) { console.error("precio save:", error); pvStatus("error"); return; }
-    (data||[]).forEach(r => {
+    const all = [...upsertMap.values()];
+    if (!all.length) { pvStatus("saved"); return; }
+    // Existing rows (already have a real id) must upsert against their own
+    // primary key, NOT the (device_model,service_type_id,branch_id,variant)
+    // natural key — that's exactly what changing a variant label edits, so
+    // an onConflict target on it can no longer find the row being renamed
+    // and falls back to a plain INSERT that reuses the same id, colliding
+    // with the row's own primary key ("duplicate key value violates unique
+    // constraint service_prices_pkey"). Genuinely new rows (no id yet) still
+    // need the natural-key onConflict, so an accidental duplicate combo
+    // updates the existing row instead of erroring.
+    const existing = all.filter(r=>!r.isNew).map(({isNew,...r})=>r);
+    const fresh    = all.filter(r=>r.isNew).map(({isNew,...r})=>r);
+    const results = [];
+    if (existing.length) {
+      const { data, error } = await supabaseClient.from("service_prices").upsert(existing).select();
+      if (error) { console.error("precio save:", error); pvStatus("error"); return; }
+      results.push(...(data||[]));
+    }
+    if (fresh.length) {
+      const { data, error } = await supabaseClient.from("service_prices")
+        .upsert(fresh, { onConflict:"device_model,service_type_id,branch_id,variant" }).select();
+      if (error) { console.error("precio save:", error); pvStatus("error"); return; }
+      results.push(...(data||[]));
+    }
+    results.forEach(r => {
       const upd = { id:r.id, deviceModel:r.device_model, serviceTypeId:r.service_type_id,
         price:Number(r.price||0), branchId:r.branch_id, variant:r.variant||"" };
       const idx = state.servicePrices.findIndex(p=>p.id===r.id);
@@ -2595,9 +2626,16 @@ function renderPrecios() {
     const svcName=types.find(t=>t.id===stype)?.name||"";
     pvPopTitle.textContent=`${dev} — ${svcName}`;
     pvPop.style.display="block";
-    const r=anchor.getBoundingClientRect(), pw=260, ww=window.innerWidth;
+    const r=anchor.getBoundingClientRect(), pw=260, ww=window.innerWidth, wh=window.innerHeight;
     let l=r.left; if(l+pw>ww-8) l=ww-pw-8;
-    pvPop.style.left=`${Math.max(8,l)}px`; pvPop.style.top=`${r.bottom+6}px`;
+    pvPop.style.left=`${Math.max(8,l)}px`;
+    // Prefer opening below the anchor; flip above it when there isn't enough
+    // room below the viewport bottom (fixed positioning means no scroll can
+    // ever reach it once it renders past window height).
+    const ph = pvPop.offsetHeight;
+    let t = r.bottom+6;
+    if (t+ph > wh-8) t = Math.max(8, r.top-ph-6);
+    pvPop.style.top = `${t}px`;
     pvPopRows.querySelector(".pv-price")?.focus();
   };
 
