@@ -50,6 +50,24 @@ Extrae los siguientes campos y devuelve SOLO un JSON válido sin explicaciones:
 }
 Si un campo no es visible, usa null para strings y 0 para números. La fecha de hoy es ${new Date().toISOString().slice(0,10)}.`;
 
+    const productPrompt = `Analiza esta foto de un ticket o comprobante de compra de productos/accesorios para revender en una tienda de reparación de celulares (fundas, cables, cargadores, audífonos, etc.).
+Extrae los siguientes campos y devuelve SOLO un JSON válido sin explicaciones:
+{
+  "date": "YYYY-MM-DD",         // fecha de la compra (si no se ve claramente, usa la fecha de hoy)
+  "supplier": "nombre",         // nombre de la tienda o proveedor
+  "currency": "EUR",            // código de moneda tal como aparece impreso en el ticket (EUR, USD, MXN, etc.) según el símbolo o texto visible — si no es claro, usa "MXN"
+  "totalAmount": 0.00,          // importe TOTAL del ticket, en la moneda original (currency) tal como está impreso — NO conviertas a otra moneda
+  "items": [                    // UNA entrada por cada producto o línea distinta del ticket
+    {
+      "description": "descripción",  // artículo de esa línea
+      "quantity": 1,                 // cantidad (número entero, default 1)
+      "unitPrice": 0.00,             // precio unitario de esa línea, en la moneda original (currency)
+      "total": 0.00                  // importe total de esa línea (quantity × unitPrice), en la moneda original (currency)
+    }
+  ]
+}
+Incluye TODAS las líneas de producto que aparezcan en el ticket, no solo la primera. Si un campo no es visible, usa null para strings, 0 para números y [] si no hay artículos. La fecha de hoy es ${new Date().toISOString().slice(0,10)}.`;
+
     const invoicePrompt = `Analiza esta foto de una factura, ticket de compra o comprobante de pago.
 Extrae los siguientes campos y devuelve SOLO un JSON válido sin explicaciones:
 {
@@ -65,6 +83,7 @@ Si un campo no es visible, usa null para strings y 0 para números. La fecha de 
 
     const prompt = formType === "transaction" ? transactionPrompt
       : formType === "invoice" ? invoicePrompt
+      : formType === "product" ? productPrompt
       : supplyPrompt;
 
     const response = await fetch(

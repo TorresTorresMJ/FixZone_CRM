@@ -203,7 +203,9 @@ const formSchemas = {
     fields: [
       ["branch","Sucursal","select",BRANCHES],["name","Nombre","text"],["sku","SKU","text"],
       ["productType","Tipo","select",["refaccion","producto","insumo"]],
-      ["category","Categoria","select",PRODUCT_CATEGORIES],["stock","Stock","number"],["minStock","Minimo","number"],["price","Precio","number"],
+      ["category","Categoria","select",PRODUCT_CATEGORIES],["stock","Stock","number"],["minStock","Minimo","number"],
+      ["unitCost","Costo de compra","number",null,false,true],
+      ["price","Precio al cliente","number"],
     ],
   },
   ticket: {
@@ -1132,7 +1134,7 @@ async function loadSupabaseState() {
     }),
     products: (pRes.data||[]).map(p => ({
       id:p.id, name:p.name, sku:p.sku||"", category:p.category, stock:Number(p.stock||0),
-      minStock:Number(p.min_stock||0), price:Number(p.sale_price||p.unit_cost||0),
+      minStock:Number(p.min_stock||0), price:Number(p.sale_price||0), unitCost:Number(p.unit_cost||0),
       productType:p.product_type||"refaccion",
       branch:branchRows.find(b=>b.id===p.branch_id)?.name||BRANCHES[0],
     })),
@@ -1488,7 +1490,7 @@ function renderProducts() {
 
   items = [...items].sort((a, b) => {
     let va = a[productSortKey], vb = b[productSortKey];
-    if (productSortKey === "stock" || productSortKey === "price") {
+    if (productSortKey === "stock" || productSortKey === "price" || productSortKey === "unitCost") {
       va = Number(va||0); vb = Number(vb||0);
       return productSortDir === "asc" ? va - vb : vb - va;
     }
@@ -1517,7 +1519,8 @@ function renderProducts() {
           ${th("productType","Tipo")}
           ${th("stock","Stock",true)}
           ${th("minStock","Stk Mín",true)}
-          ${th("price","Costo",true)}
+          ${th("unitCost","Costo",true)}
+          ${th("price","Precio",true)}
           <th style="cursor:default;text-align:right">Acciones</th>
         </tr></thead>
         <tbody>
@@ -1537,6 +1540,7 @@ function renderProducts() {
               <td><span class="${badgeCls}">${typeLabel}</span></td>
               <td style="text-align:right"><span class="${stockCls}">${stock}</span></td>
               <td style="text-align:right;color:rgba(255,255,255,.4);font-size:12px">${min > 0 ? min : "—"}</td>
+              <td style="text-align:right;color:rgba(255,255,255,.5)">${p.unitCost ? money.format(p.unitCost) : "—"}</td>
               <td style="text-align:right;font-weight:600">${money.format(p.price)}</td>
               <td style="text-align:right;white-space:nowrap">
                 <button class="mini-button" data-edit-product="${p.id}" style="font-size:11px;padding:2px 8px">Editar</button>
@@ -6613,6 +6617,7 @@ function openEditProduct(productId) {
   formFields.innerHTML = formSchemas["product"].fields.map(([name,label,ftype,opts,wide,optional]) =>
     fieldTemplate(name, label, ftype, opts, wide, product[name] ?? "", optional)
   ).join("");
+  injectProductPriceCalcUI();
   openModal();
 }
 
@@ -6630,6 +6635,7 @@ async function updateRemoteProduct(productId, data) {
     product_type: data.productType || "refaccion",
     stock:        Number(data.stock || 0),
     min_stock:    Number(data.minStock || 0),
+    unit_cost:    Number(data.unitCost || 0),
     sale_price:   Number(data.price || 0),
     branch_id:    await branchIdByName(data.branch || activeBranchId),
   }).eq("id", productId);
@@ -7367,6 +7373,7 @@ function openForm(type, prefill = {}) {
   initDeviceAutocomplete();
   if (type === "ticket" || type === "cotizacion") { initClientAutocomplete(); initUnlockCodeField(); }
   if (type === "ticket") { initPriceAutofill(); initDiscountAutofill(); initTicketCotizadorWidget(); initTicketItemsBuilder(prefill.quoteItems||[]); }
+  if (type === "product") injectProductPriceCalcUI();
   openModal();
 }
 
@@ -8875,8 +8882,85 @@ async function createRemoteClient(r) {
 }
 
 async function createRemoteProduct(r) {
-  const { error } = await supabaseClient.from("products").insert({ name:r.name, sku:r.sku||null, category:r.category, product_type:r.productType||"refaccion", stock:r.stock, min_stock:r.minStock, sale_price:r.price, branch_id:await branchIdByName(r.branch) });
+  const { error } = await supabaseClient.from("products").insert({ name:r.name, sku:r.sku||null, category:r.category, product_type:r.productType||"refaccion", stock:r.stock, min_stock:r.minStock, unit_cost:Number(r.unitCost||0), sale_price:r.price, branch_id:await branchIdByName(r.branch) });
   if (error) throw error;
+}
+
+// ── Calculadora de precio con margen (Productos) ─────────────────────────────
+// Wires a "🧮 Calcular con margen" toggle next to a sale-price field: while
+// active, precio = costo × (1 + margen%/100), recalculated live as cost/margen
+// change; typing directly into the price field switches back to manual mode.
+// Reused by both the Producto form (injectProductPriceCalcUI) and each line
+// of the "Escanear ticket de compra" review (showProductScanReview).
+// Returns { recompute, isCalcMode } so callers that update costEl.value
+// programmatically (e.g. recalcAllCosts() after fetching an exchange rate) can
+// re-trigger the price calc directly, without dispatching a synthetic "input"
+// event on costEl — that would also fire any other "input" listener attached
+// to costEl (like the one that flips a row's cost out of auto-recalc mode).
+function wireMarginCalcToggle({ costEl, priceEl, toggleBtn, pctWrap, pctEl, idleLabel = "🧮 Calcular con margen", activeLabel = "✎ Escribir manual" }) {
+  if (!costEl || !priceEl || !toggleBtn || !pctWrap || !pctEl) return { recompute(){}, isCalcMode:()=>false };
+  let calcMode = false;
+  function recompute() { priceEl.value = round2(Number(costEl.value||0) * (1 + Number(pctEl.value||0)/100)); }
+  toggleBtn.addEventListener("click", () => {
+    calcMode = !calcMode;
+    pctWrap.style.display = calcMode ? "inline-flex" : "none";
+    toggleBtn.textContent = calcMode ? activeLabel : idleLabel;
+    if (calcMode) recompute();
+  });
+  pctEl.addEventListener("input", () => { if (calcMode) recompute(); });
+  costEl.addEventListener("input", () => { if (calcMode) recompute(); });
+  priceEl.addEventListener("input", () => {
+    if (!calcMode) return;
+    calcMode = false; pctWrap.style.display = "none"; toggleBtn.textContent = idleLabel;
+  });
+  return { recompute, isCalcMode: () => calcMode };
+}
+
+// Injects the margin-calc toggle right after the "Precio al cliente" field in
+// the Producto create/edit form (#unitCost and #price already exist from
+// formSchemas.product by the time this is called).
+function injectProductPriceCalcUI() {
+  const priceField = formFields.querySelector("#price")?.closest(".field");
+  const costEl = formFields.querySelector("#unitCost");
+  if (!priceField || !costEl) return;
+  priceField.insertAdjacentHTML("afterend", `
+    <div class="field is-wide" style="margin-top:-10px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" id="price-calc-toggle" class="mini-button" style="font-size:11px;padding:3px 10px">🧮 Calcular con margen</button>
+        <span id="price-calc-pct-wrap" style="display:none;align-items:center;gap:6px;font-size:12px">
+          Margen
+          <input type="number" id="price-margin-pct" step="1" min="0" value="30"
+            style="width:60px;min-height:32px;border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:0 6px;background:rgba(255,255,255,.06);color:inherit" />
+          %
+        </span>
+      </div>
+    </div>`);
+  wireMarginCalcToggle({
+    costEl,
+    priceEl:  formFields.querySelector("#price"),
+    toggleBtn: formFields.querySelector("#price-calc-toggle"),
+    pctWrap:   formFields.querySelector("#price-calc-pct-wrap"),
+    pctEl:     formFields.querySelector("#price-margin-pct"),
+  });
+}
+
+// Tasa de cambio histórica vía Frankfurter (API pública basada en el BCE, sin
+// llave, CORS abierto) — se usa solo como referencia/corroboración del monto
+// que realmente se cobró en la tarjeta (ver showProductScanReview); nunca es
+// la única fuente para el costo en MXN.
+async function fetchHistoricalRate(dateStr, currency) {
+  if (currency === "MXN") return { rate: 1, date: dateStr };
+  try {
+    const res = await fetch(`https://api.frankfurter.app/${dateStr}?from=${currency}&to=MXN`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const rate = json?.rates?.MXN;
+    if (!rate) throw new Error("Sin tasa MXN en la respuesta");
+    return { rate, date: json.date };
+  } catch (err) {
+    console.warn("No se pudo obtener tasa de cambio histórica:", err);
+    return null;
+  }
 }
 
 // Alta rápida de un insumo nuevo desde el autocompletado de "Compra de insumo" —
@@ -9562,7 +9646,10 @@ const RSC_MI_INPUT_STYLE = "min-height:38px;border:1px solid rgba(255,255,255,0.
 function openReceiptScanner(formType, txType) {
   const dlg = document.createElement("dialog");
   dlg.className = "modal";
-  dlg.style.cssText = "max-width:420px;padding:0;border-radius:16px";
+  // El review de Productos (showProductScanReview) tiene filas más anchas
+  // (tipo, categoría, costo, precio, margen) que el review de Insumos — se le
+  // da más espacio horizontal al diálogo cuando ese es el flujo activo.
+  dlg.style.cssText = formType === "product" ? "max-width:720px;padding:0;border-radius:16px" : "max-width:420px;padding:0;border-radius:16px";
   dlg.innerHTML = `
     <div style="padding:22px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -9603,6 +9690,8 @@ function openReceiptScanner(formType, txType) {
           <button id="rsc-multi-save" class="primary-action" style="flex:1">Guardar todos</button>
         </div>
       </div>
+
+      <div id="rsc-product-area" style="display:none"></div>
     </div>`;
   document.body.appendChild(dlg);
 
@@ -9652,6 +9741,13 @@ function openReceiptScanner(formType, txType) {
   });
 
   function openPrefilledForm(fields, viaOcr) {
+    // Ticket de compra de productos vendibles: siempre pasa por la revisión con
+    // conversión de moneda + calculadora de precio, sin importar cuántas líneas
+    // traiga (a diferencia de Insumos, donde un solo artículo va directo al form).
+    if (formType === "product") {
+      showProductScanReview(fields);
+      return;
+    }
     // Recibos con varios artículos: revisar y guardar cada línea como un insumo separado
     if (formType === "supply" && Array.isArray(fields.items) && fields.items.length > 1) {
       showMultiItemReview(fields);
@@ -9788,6 +9884,235 @@ function openReceiptScanner(formType, txType) {
         showToast(`${rows.length} insumos registrados.`);
       } catch (err) {
         miStatusEl.textContent = `Error: ${err.message}`;
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+      }
+    });
+  }
+
+  // Escaneo de ticket de compra de Productos vendibles. A diferencia de
+  // showMultiItemReview (Insumos), este flujo agrega un paso de moneda: el
+  // ticket suele venir en EUR (viaje/compra en el extranjero), así que el
+  // costo real en MXN se calcula con lo que efectivamente se cargó a la
+  // tarjeta — no con el total impreso en el ticket ni con una tasa "oficial"
+  // ciega. La tasa histórica (Frankfurter/BCE) solo se muestra como
+  // referencia para detectar un monto tecleado mal, nunca como fuente única.
+  function showProductScanReview(fields) {
+    captureArea.style.display = "none";
+    previewArea.style.display = "none";
+    retakeBtn.style.display = "none";
+    analyzeBtn.style.display = "none";
+
+    const singleAmount = fields.totalAmount || fields.amount || fields.total || 0;
+    const items = Array.isArray(fields.items) && fields.items.length ? fields.items : [{
+      description: fields.item || "", quantity: fields.quantity || 1,
+      unitPrice: singleAmount, total: singleAmount,
+    }];
+    const currency = (fields.currency || "MXN").toUpperCase();
+    const totalOrig = Number(fields.totalAmount || fields.total || items.reduce((s,it)=>s+Number(it.total||0),0)) || 0;
+
+    const productArea = dlg.querySelector("#rsc-product-area");
+    productArea.innerHTML = `
+      <p style="font-weight:600;font-size:14px;margin:0 0 12px">Revisa los artículos antes de guardarlos en Productos</p>
+
+      <div id="rsp-currency-box" style="margin-bottom:14px;padding:12px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)">
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:110px">
+            <label style="font-size:11px;opacity:.6;display:block;margin-bottom:3px">Fecha de la compra</label>
+            <input id="rsp-date" type="date" style="${RSC_MI_INPUT_STYLE}width:100%" />
+          </div>
+          <div style="flex:1;min-width:90px">
+            <label style="font-size:11px;opacity:.6;display:block;margin-bottom:3px">Moneda del ticket</label>
+            <select id="rsp-currency" style="${RSC_MI_INPUT_STYLE}width:100%">
+              <option value="EUR">EUR (€)</option>
+              <option value="USD">USD ($)</option>
+              <option value="MXN">MXN ($)</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:110px">
+            <label style="font-size:11px;opacity:.6;display:block;margin-bottom:3px">Total ticket (moneda original)</label>
+            <input id="rsp-total-orig" type="number" step="0.01" min="0" style="${RSC_MI_INPUT_STYLE}width:100%" />
+          </div>
+        </div>
+        <div id="rsp-mxn-row" style="display:none;gap:8px;align-items:end;flex-wrap:wrap">
+          <div style="flex:1;min-width:150px">
+            <label style="font-size:11px;opacity:.6;display:block;margin-bottom:3px">¿Cuánto se cargó a tu tarjeta en pesos?</label>
+            <input id="rsp-total-mxn" type="number" step="0.01" min="0" placeholder="Monto real cobrado en MXN" style="${RSC_MI_INPUT_STYLE}width:100%" />
+          </div>
+          <button type="button" id="rsp-fetch-rate" class="mini-button" style="white-space:nowrap">🌐 Buscar tasa de ese día</button>
+        </div>
+        <p id="rsp-rate-status" style="font-size:11px;margin:8px 0 0;opacity:.7"></p>
+      </div>
+
+      <div id="rsp-items" style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow:auto"></div>
+      <button id="rsp-add" type="button" class="ghost-button" style="width:100%;margin-top:10px">+ Agregar línea</button>
+      <p id="rsp-status" style="font-size:12px;margin:10px 0 0;opacity:.6;text-align:center"></p>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button id="rsp-cancel" class="ghost-button" style="flex:1">Cancelar</button>
+        <button id="rsp-save" class="primary-action" style="flex:1">Guardar todos</button>
+      </div>`;
+    productArea.style.display = "block";
+
+    const dateEl       = productArea.querySelector("#rsp-date");
+    const currencyEl    = productArea.querySelector("#rsp-currency");
+    const totalOrigEl   = productArea.querySelector("#rsp-total-orig");
+    const mxnRow         = productArea.querySelector("#rsp-mxn-row");
+    const totalMxnEl     = productArea.querySelector("#rsp-total-mxn");
+    const fetchRateBtn   = productArea.querySelector("#rsp-fetch-rate");
+    const rateStatusEl   = productArea.querySelector("#rsp-rate-status");
+    const itemsEl        = productArea.querySelector("#rsp-items");
+    const addBtn         = productArea.querySelector("#rsp-add");
+    const cancelBtn       = productArea.querySelector("#rsp-cancel");
+    const saveBtn         = productArea.querySelector("#rsp-save");
+    const statusEl2       = productArea.querySelector("#rsp-status");
+
+    dateEl.value     = fields.date || dateStamp();
+    currencyEl.value = ["EUR","USD","MXN"].includes(currency) ? currency : "MXN";
+    totalOrigEl.value = totalOrig || "";
+
+    // effectiveRate: MXN reales / total en moneda original — se calcula con lo
+    // que la tarjeta cobró, no con la tasa oficial (que solo sirve de referencia).
+    function effectiveRate() {
+      if (currencyEl.value === "MXN") return 1;
+      const mxn  = Number(totalMxnEl.value || 0);
+      const orig = Number(totalOrigEl.value || 0);
+      if (!mxn || !orig) return null;
+      return mxn / orig;
+    }
+
+    function recalcAllCosts() {
+      const rate = effectiveRate();
+      if (rate == null) return; // sin tasa aún: deja lo que haya
+      itemsEl.querySelectorAll(".rsp-row").forEach(row => {
+        if (row.dataset.costAuto !== "true") return;
+        const costEl   = row.querySelector("[data-rp-cost]");
+        const unitOrig = Number(row.dataset.unitPriceOrig || 0);
+        costEl.value = round2(unitOrig * rate);
+        // Recalcula el precio final si esa línea está en modo "calcular con
+        // margen" — sin dispatch de evento sintético (ver nota en wireMarginCalcToggle).
+        if (row._marginCalc?.isCalcMode()) row._marginCalc.recompute();
+      });
+    }
+
+    function toggleCurrencyUi() {
+      const isMxn = currencyEl.value === "MXN";
+      mxnRow.style.display = isMxn ? "none" : "flex";
+      if (isMxn) { totalMxnEl.value = ""; recalcAllCosts(); }
+    }
+    toggleCurrencyUi();
+    currencyEl.addEventListener("change", toggleCurrencyUi);
+    totalMxnEl.addEventListener("input", recalcAllCosts);
+    totalOrigEl.addEventListener("input", recalcAllCosts);
+
+    fetchRateBtn.addEventListener("click", async () => {
+      rateStatusEl.textContent = "Buscando tasa histórica…";
+      fetchRateBtn.disabled = true;
+      const result = await fetchHistoricalRate(dateEl.value || dateStamp(), currencyEl.value);
+      fetchRateBtn.disabled = false;
+      if (!result) {
+        rateStatusEl.textContent = "No se pudo obtener la tasa oficial (sin conexión o fecha no disponible). Captura tú el monto en pesos.";
+        return;
+      }
+      const officialEstimate = round2(totalOrig * result.rate);
+      let msg = `Tasa oficial del ${result.date}: 1 ${currencyEl.value} = ${result.rate.toFixed(4)} MXN → equivaldría a ${money.format(officialEstimate)}.`;
+      if (!totalMxnEl.value) {
+        totalMxnEl.value = officialEstimate;
+        msg += " Se sugirió ese monto — ajústalo si tu tarjeta cobró distinto (comisión bancaria, redondeo, etc.).";
+        recalcAllCosts();
+      } else {
+        const real = Number(totalMxnEl.value);
+        const diffPct = Math.abs(real - officialEstimate) / officialEstimate * 100;
+        if (diffPct > 15) {
+          msg += ` ⚠️ Lo que capturaste (${money.format(real)}) difiere ${Math.round(diffPct)}% de la tasa oficial — revisa el monto.`;
+        } else {
+          msg += ` Tu monto capturado (${money.format(real)}) es consistente.`;
+        }
+      }
+      rateStatusEl.textContent = msg;
+    });
+
+    function addRow(item) {
+      const row = document.createElement("div");
+      row.className = "rsp-row";
+      row.dataset.costAuto = "true";
+      const fallbackUnit = (item.total && item.quantity) ? item.total/item.quantity : item.total;
+      row.dataset.unitPriceOrig = String(Number((item.unitPrice ?? fallbackUnit) || 0));
+      row.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:8px";
+      row.innerHTML = `
+        <input type="checkbox" data-rp-include checked style="min-height:auto" />
+        <input type="text" data-rp-desc placeholder="Nombre" style="${RSC_MI_INPUT_STYLE}flex:2;min-width:110px" />
+        <select data-rp-type style="${RSC_MI_INPUT_STYLE}width:100px">
+          <option value="producto">Vendible</option>
+          <option value="refaccion">Refacción</option>
+        </select>
+        <select data-rp-category style="${RSC_MI_INPUT_STYLE}width:110px">
+          ${PRODUCT_CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join("")}
+        </select>
+        <input type="number" data-rp-qty placeholder="Cant." step="1" min="1" style="${RSC_MI_INPUT_STYLE}width:55px" />
+        <input type="number" data-rp-cost placeholder="Costo MXN" step="0.01" min="0" style="${RSC_MI_INPUT_STYLE}width:95px" title="Costo unitario en pesos" />
+        <span style="font-size:11px;opacity:.5">→</span>
+        <input type="number" data-rp-price placeholder="Precio cliente" step="0.01" min="0" style="${RSC_MI_INPUT_STYLE}width:100px" />
+        <button type="button" data-rp-calc class="mini-button" style="font-size:10px;padding:3px 6px" title="Calcular con margen sobre el costo">🧮</button>
+        <span data-rp-pct-wrap style="display:none;align-items:center;gap:3px;font-size:11px">
+          <input type="number" data-rp-pct step="1" min="0" value="30" style="${RSC_MI_INPUT_STYLE}width:44px" />%
+        </span>
+        <button type="button" data-rp-remove class="icon-button" style="font-size:14px">✕</button>`;
+      row.querySelector("[data-rp-desc]").value = item.description || "";
+      row.querySelector("[data-rp-qty]").value  = item.quantity || 1;
+      if (item.category && PRODUCT_CATEGORIES.includes(item.category)) row.querySelector("[data-rp-category]").value = item.category;
+      else row.querySelector("[data-rp-category]").value = "Accesorio";
+      row.querySelector("[data-rp-remove]").addEventListener("click", () => row.remove());
+      row.querySelector("[data-rp-cost]").addEventListener("input", () => { row.dataset.costAuto = "false"; });
+      row._marginCalc = wireMarginCalcToggle({
+        costEl:    row.querySelector("[data-rp-cost]"),
+        priceEl:   row.querySelector("[data-rp-price]"),
+        toggleBtn: row.querySelector("[data-rp-calc]"),
+        pctWrap:   row.querySelector("[data-rp-pct-wrap]"),
+        pctEl:     row.querySelector("[data-rp-pct]"),
+        idleLabel: "🧮", activeLabel: "✎",
+      });
+      itemsEl.appendChild(row);
+    }
+
+    itemsEl.innerHTML = "";
+    items.forEach(addRow);
+    recalcAllCosts();
+    addBtn.addEventListener("click", () => addRow({ description: "", quantity: 1, unitPrice: 0 }));
+    cancelBtn.addEventListener("click", () => dlg.close());
+
+    saveBtn.addEventListener("click", async () => {
+      const rows = [...itemsEl.querySelectorAll(".rsp-row")].filter(row =>
+        row.querySelector("[data-rp-include]").checked &&
+        row.querySelector("[data-rp-desc]").value.trim()
+      );
+      if (!rows.length) {
+        statusEl2.textContent = "Marca al menos un artículo para guardar.";
+        return;
+      }
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      try {
+        for (let i = 0; i < rows.length; i++) {
+          statusEl2.textContent = `Guardando ${i + 1} de ${rows.length}…`;
+          const row = rows[i];
+          await createRemoteProduct({
+            branch:      activeBranchId,
+            name:        row.querySelector("[data-rp-desc]").value.trim(),
+            sku:         "",
+            productType: row.querySelector("[data-rp-type]").value,
+            category:    row.querySelector("[data-rp-category]").value,
+            stock:       Number(row.querySelector("[data-rp-qty]").value || 1),
+            minStock:    0,
+            unitCost:    Number(row.querySelector("[data-rp-cost]").value || 0),
+            price:       Number(row.querySelector("[data-rp-price]").value || 0),
+          });
+        }
+        await reloadState();
+        render();
+        dlg.close();
+        showToast(`${rows.length} producto(s) agregados al inventario.`);
+      } catch (err) {
+        statusEl2.textContent = `Error: ${err.message}`;
         saveBtn.disabled = false;
         cancelBtn.disabled = false;
       }
@@ -11005,6 +11330,10 @@ document.querySelectorAll("[data-open-form]").forEach(btn => {
     else openForm(ft);
   });
 });
+
+// "Escanear ticket de compra" (Productos) — manual ya está cubierto por "+ Producto",
+// así que este botón va directo al escáner en vez de mostrar el chooser scan-or-manual.
+document.querySelector("#btn-scan-product")?.addEventListener("click", () => openReceiptScanner("product"));
 
 document.querySelector("#quick-ticket").addEventListener("click", () => openForm("ticket"));
 document.querySelector("#quick-pos").addEventListener("click", () => setView("pos"));
