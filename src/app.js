@@ -90,12 +90,12 @@ const PERMISSIONS = {
   // Frontend roles
   it:        { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   admin:     { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","automatizacion"],           canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
-  standard:  { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  standard:  { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports","automatizacion"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   marketing: { tabs: ["dashboard","cotizaciones","clients","tickets","diseno","automatizacion"],                                  canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
   // DB roles (map to equivalent frontend permission sets)
   owner:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports","users","soporte","diseno","automatizacion"], canDeleteClients: true, canDeleteTickets: true, canDeleteTask: true, canManageUsers: true, canManageFinance: true, canExportXLS: true },
   sales:      { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","precios","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: true, canExportXLS: true },
-  technician: { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
+  technician: { tabs: ["dashboard","cotizaciones","clients","products","tickets","supplies","pos","finance","reports","automatizacion"],                  canDeleteClients: false, canDeleteTickets: true, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: true },
   viewer:     { tabs: ["dashboard","reports"],                                                                      canDeleteClients: false, canDeleteTickets: false, canDeleteTask: false, canManageUsers: false, canManageFinance: false, canExportXLS: false },
 };
 
@@ -5471,13 +5471,6 @@ function getBrandOverrides() {
 }
 function saveBrandOverrides(overrides) {
   localStorage.setItem(BRAND_OVERRIDES_KEY, JSON.stringify(overrides));
-}
-function applyBrandOverrides() {
-  const all = getBrandOverrides();
-  const over = all[activeBranchId];
-  if (!over) return;
-  const root = document.documentElement;
-  Object.entries(over).forEach(([k, v]) => root.style.setProperty(k, v));
 }
 
 function renderBrandEditor() {

@@ -511,7 +511,7 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 .metric-grid > .metric   { flex: 1 1 0; min-width: 90px; }
 .report-grid > .report-card { flex: 1 1 0; min-width: 80px; }
 
-.metric, .product-card, .report-card, .home, .kanban-column {
+.metric, .report-card, .home, .kanban-column {
   border: 1px solid rgba(255,255,255,0.09);
   border-radius: 8px;
   background: rgba(28,28,28,0.82);
@@ -538,8 +538,7 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
   .skeleton-card { animation: none; }
 }
 
-.product-card { padding: 18px; }
-.metric span, .product-card span, .report-card span, .muted { color: var(--fz-gray-light); }
+.metric span, .report-card span, .muted { color: var(--fz-gray-light); }
 
 /* .metric y .report-card son "contenedores de consulta" (container queries) —
    su letra/números escalan con el ancho de SU PROPIA tarjeta (cqw), no con el
@@ -753,8 +752,6 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
 .paid-amount { color: #7af0b1; }
 
 /* ── Ticket detail view (read-only modal) ───────────────────────────────── */
-.ticket-detail-view { display: flex; flex-direction: column; gap: 16px; }
-.tdv-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .tdv-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -811,7 +808,7 @@ h2 { font-family: var(--fz-font-body); font-size: 15px; font-weight: 600; letter
   background: rgba(255,83,83,0.2);
 }
 
-.ticket-topline, .activity-item, .product-meta {
+.ticket-topline, .activity-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -938,20 +935,6 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .inv-legend span { display:flex; align-items:center; gap:5px; }
 .inv-legend-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
 
-.stock-bar {
-  height: 7px;
-  margin-top: 14px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.08);
-}
-
-.stock-bar span {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--fz-primary), #36c6a7);
-}
-
 /* ── Kanban ──────────────────────────────────────────────────────────────── */
 .kanban {
   display: flex;
@@ -1047,18 +1030,6 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
   display: block;
   line-height: 1;
 }
-
-.marketing-card .mkt-edit-btn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  padding: 1px 7px;
-  font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.marketing-card:hover .mkt-edit-btn { opacity: 1; }
-.marketing-card-edit-mode .marketing-card .mkt-edit-btn { opacity: 1; }
 
 /* ── Auto flow cards ─────────────────────────────────────────────────────── */
 .auto-flows-grid {
@@ -1186,8 +1157,7 @@ select option { color: var(--fz-white); background: var(--fz-gray-dark); }
   transition: max-height .22s ease, opacity .15s ease;
 }
 .ticket-card:hover .ticket-actions,
-.ticket-card:focus-within .ticket-actions,
-.ticket-card.is-expanded .ticket-actions {
+.ticket-card:focus-within .ticket-actions {
   max-height: 72px;
   opacity: 1;
   pointer-events: auto;
@@ -2441,21 +2411,6 @@ tbody tr:hover td {
 }
 .empty-state p { margin: 0; font-size: 13px; }
 .empty-state .ghost-button { font-size: 12px; }
-
-/* ── Keyboard shortcut badges ────────────────────────────────────────────── */
-.kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1px 5px;
-  border: 1px solid rgba(255,255,255,0.18);
-  border-radius: 4px;
-  font-size: 12px;
-  font-family: monospace;
-  color: var(--fz-gray-light);
-  background: rgba(255,255,255,0.06);
-  line-height: 1.4;
-}
 
 /* ── Success toast ───────────────────────────────────────────────────────── */
 .success-toast {
