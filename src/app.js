@@ -9939,7 +9939,6 @@ function openReceiptScanner(formType, txType) {
             <label style="font-size:11px;opacity:.6;display:block;margin-bottom:3px">¿Cuánto se cargó a tu tarjeta en pesos?</label>
             <input id="rsp-total-mxn" type="number" step="0.01" min="0" placeholder="Monto real cobrado en MXN" style="${RSC_MI_INPUT_STYLE}width:100%" />
           </div>
-          <button type="button" id="rsp-fetch-rate" class="mini-button" style="white-space:nowrap">🌐 Buscar tasa de ese día</button>
         </div>
         <p id="rsp-rate-status" style="font-size:11px;margin:8px 0 0;opacity:.7"></p>
       </div>
@@ -9958,7 +9957,6 @@ function openReceiptScanner(formType, txType) {
     const totalOrigEl   = productArea.querySelector("#rsp-total-orig");
     const mxnRow         = productArea.querySelector("#rsp-mxn-row");
     const totalMxnEl     = productArea.querySelector("#rsp-total-mxn");
-    const fetchRateBtn   = productArea.querySelector("#rsp-fetch-rate");
     const rateStatusEl   = productArea.querySelector("#rsp-rate-status");
     const itemsEl        = productArea.querySelector("#rsp-items");
     const addBtn         = productArea.querySelector("#rsp-add");
@@ -9997,39 +9995,51 @@ function openReceiptScanner(formType, txType) {
     function toggleCurrencyUi() {
       const isMxn = currencyEl.value === "MXN";
       mxnRow.style.display = isMxn ? "none" : "flex";
-      if (isMxn) { totalMxnEl.value = ""; recalcAllCosts(); }
+      if (isMxn) { totalMxnEl.value = ""; rateStatusEl.textContent = ""; recalcAllCosts(); }
     }
-    toggleCurrencyUi();
-    currencyEl.addEventListener("change", toggleCurrencyUi);
-    totalMxnEl.addEventListener("input", recalcAllCosts);
-    totalOrigEl.addEventListener("input", recalcAllCosts);
 
-    fetchRateBtn.addEventListener("click", async () => {
-      rateStatusEl.textContent = "Buscando tasa histórica…";
-      fetchRateBtn.disabled = true;
+    // En cuanto hay monto real (MXN) + total original, ya se puede calcular
+    // la tasa aplicada y el costo de cada línea al instante — sin esperar a
+    // internet. La consulta a la tasa histórica (Frankfurter/BCE) corre en
+    // segundo plano, con un pequeño debounce mientras se sigue escribiendo,
+    // solo para corroborar/avisar si el monto capturado se ve mal — nunca es
+    // necesaria para que el cálculo principal funcione.
+    let rateCheckTimer = null;
+
+    function showLocalRateStatus() {
+      const rate = effectiveRate();
+      rateStatusEl.textContent = (rate == null || currencyEl.value === "MXN")
+        ? ""
+        : `Tasa aplicada: 1 ${currencyEl.value} = ${rate.toFixed(4)} MXN (calculada con tu monto real). Verificando tasa oficial…`;
+    }
+
+    async function checkOfficialRate() {
+      const rate = effectiveRate();
+      if (rate == null || currencyEl.value === "MXN") return;
       const result = await fetchHistoricalRate(dateEl.value || dateStamp(), currencyEl.value);
-      fetchRateBtn.disabled = false;
       if (!result) {
-        rateStatusEl.textContent = "No se pudo obtener la tasa oficial (sin conexión o fecha no disponible). Captura tú el monto en pesos.";
+        rateStatusEl.textContent = `Tasa aplicada: 1 ${currencyEl.value} = ${rate.toFixed(4)} MXN (calculada con tu monto real). No se pudo corroborar contra la tasa oficial — sin conexión.`;
         return;
       }
-      const officialEstimate = round2(totalOrig * result.rate);
-      let msg = `Tasa oficial del ${result.date}: 1 ${currencyEl.value} = ${result.rate.toFixed(4)} MXN → equivaldría a ${money.format(officialEstimate)}.`;
-      if (!totalMxnEl.value) {
-        totalMxnEl.value = officialEstimate;
-        msg += " Se sugirió ese monto — ajústalo si tu tarjeta cobró distinto (comisión bancaria, redondeo, etc.).";
-        recalcAllCosts();
-      } else {
-        const real = Number(totalMxnEl.value);
-        const diffPct = Math.abs(real - officialEstimate) / officialEstimate * 100;
-        if (diffPct > 15) {
-          msg += ` ⚠️ Lo que capturaste (${money.format(real)}) difiere ${Math.round(diffPct)}% de la tasa oficial — revisa el monto.`;
-        } else {
-          msg += ` Tu monto capturado (${money.format(real)}) es consistente.`;
-        }
-      }
+      const officialEstimate = round2(Number(totalOrigEl.value||0) * result.rate);
+      const real = Number(totalMxnEl.value||0);
+      const diffPct = officialEstimate ? Math.abs(real - officialEstimate) / officialEstimate * 100 : 0;
+      let msg = `Tasa aplicada: 1 ${currencyEl.value} = ${rate.toFixed(4)} MXN. Tasa oficial del ${result.date}: ${result.rate.toFixed(4)} MXN (≈ ${money.format(officialEstimate)}).`;
+      if (diffPct > 15) msg += ` ⚠️ Tu monto difiere ${Math.round(diffPct)}% de la tasa oficial — revisa que esté bien capturado.`;
       rateStatusEl.textContent = msg;
-    });
+    }
+
+    function scheduleRateCheck() {
+      showLocalRateStatus();
+      clearTimeout(rateCheckTimer);
+      rateCheckTimer = setTimeout(checkOfficialRate, 700);
+    }
+
+    toggleCurrencyUi();
+    currencyEl.addEventListener("change", () => { toggleCurrencyUi(); scheduleRateCheck(); });
+    dateEl.addEventListener("change", scheduleRateCheck);
+    totalMxnEl.addEventListener("input", () => { recalcAllCosts(); scheduleRateCheck(); });
+    totalOrigEl.addEventListener("input", () => { recalcAllCosts(); scheduleRateCheck(); });
 
     function addRow(item) {
       const row = document.createElement("div");
