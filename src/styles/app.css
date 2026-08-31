@@ -911,6 +911,11 @@ th { color: var(--fz-gray-light); font-size: 12px; text-transform: uppercase; }
 .inventory-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.018); }
 .inventory-table tbody tr:hover td { background: rgba(255,255,255,0.055) !important; }
 
+/* Finance table sortable column headers (#finance-view) */
+.fin-sort-th:hover { background: rgba(255,255,255,0.10); color: #fff; }
+.fin-sort-th.is-active { color: var(--fz-primary) !important; }
+.fin-sort-arrow { font-size: 10px; margin-left: 2px; }
+
 /* Conditional row formatting */
 .inventory-table tbody tr.row-out-stock td { background: rgba(239,68,68,0.10) !important; }
 .inventory-table tbody tr.row-out-stock:hover td { background: rgba(239,68,68,0.17) !important; }

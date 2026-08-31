@@ -362,6 +362,7 @@
               <button class="mini-button fin-type-filter" data-fin-type="Ingreso">Ingresos</button>
               <button class="mini-button fin-type-filter" data-fin-type="Egreso">Egresos</button>
             </div>
+            <select id="finance-payment-select" class="mini-button" style="font-size:12px;padding:6px 10px"></select>
             <button class="ghost-button" data-export-sheet="transactions">XLS</button>
             <button class="mini-button" id="btn-new-ingreso" onclick="openTransactionForm('Ingreso')">+ Ingreso</button>
             <button class="mini-button danger-btn" id="btn-new-egreso" onclick="openTransactionForm('Egreso')">+
@@ -374,12 +375,13 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Tipo</th>
-                <th>Concepto</th>
-                <th>Categoría</th>
-                <th style="text-align:right">Monto</th>
+              <tr id="finance-thead-row">
+                <th class="fin-sort-th" data-sort-field="date" style="cursor:pointer;user-select:none">Fecha<span class="fin-sort-arrow"></span></th>
+                <th class="fin-sort-th" data-sort-field="type" style="cursor:pointer;user-select:none">Tipo<span class="fin-sort-arrow"></span></th>
+                <th class="fin-sort-th" data-sort-field="concept" style="cursor:pointer;user-select:none">Concepto<span class="fin-sort-arrow"></span></th>
+                <th class="fin-sort-th" data-sort-field="category" style="cursor:pointer;user-select:none">Categoría<span class="fin-sort-arrow"></span></th>
+                <th class="fin-sort-th" data-sort-field="paymentMethod" style="cursor:pointer;user-select:none">Método de pago<span class="fin-sort-arrow"></span></th>
+                <th class="fin-sort-th" data-sort-field="amount" style="text-align:right;cursor:pointer;user-select:none">Monto<span class="fin-sort-arrow"></span></th>
                 <th></th>
               </tr>
             </thead>

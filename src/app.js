@@ -3064,6 +3064,9 @@ function checkoutPos() {
 let financePeriod = "month"; // "today" | "week" | "month" | "all" | "custom"
 let financeTypeFilter = "all"; // "all" | "Ingreso" | "Egreso"
 let financeCustomMonth = ""; // "YYYY-MM" cuando financePeriod==="custom"
+let financePaymentFilter = "all"; // "all" | uno de POS_PAYMENT_METHODS
+let financeSortField = "date"; // "date" | "type" | "concept" | "category" | "paymentMethod" | "amount"
+let financeSortDir = "desc"; // "asc" | "desc"
 
 function localDateMinus(days) {
   const d = new Date(); d.setDate(d.getDate() - days);
@@ -3093,7 +3096,22 @@ function financeFilteredTxs() {
     all = all.filter(t => t.date >= mFrom && t.date <= mTo);
   }
   if (financeTypeFilter !== "all") all = all.filter(t => t.type === financeTypeFilter);
+  if (financePaymentFilter !== "all") all = all.filter(t => (t.paymentMethod||"") === financePaymentFilter);
   return all;
+}
+
+// Ordena por la columna/dirección elegida en el encabezado de la tabla (ver
+// #finance-sort-th en renderFinance). "amount" ordena numérico; el resto,
+// como texto (localeCompare) — las fechas "YYYY-MM-DD" ordenan bien como texto.
+function sortFinanceTxs(txs) {
+  const dir = financeSortDir === "asc" ? 1 : -1;
+  const field = financeSortField;
+  return [...txs].sort((a, b) => {
+    if (field === "amount") return ((a.amount||0) - (b.amount||0)) * dir;
+    const av = a[field] || "";
+    const bv = b[field] || "";
+    return av.localeCompare(bv) * dir || (a.date||"").localeCompare(b.date||"");
+  });
 }
 
 function renderFinance() {
@@ -3109,6 +3127,22 @@ function renderFinance() {
     b.classList.toggle("is-active", b.dataset.fin === financePeriod));
   document.querySelectorAll(".fin-type-filter").forEach(b =>
     b.classList.toggle("is-active", b.dataset.finType === financeTypeFilter));
+
+  const financePaymentSelectEl = document.querySelector("#finance-payment-select");
+  if (financePaymentSelectEl) {
+    financePaymentSelectEl.innerHTML = `<option value="all">Todos los métodos</option>${
+      POS_PAYMENT_METHODS.map(m => `<option value="${m}"${financePaymentFilter===m?" selected":""}>${m}</option>`).join("")
+    }`;
+    financePaymentSelectEl.value = financePaymentFilter;
+  }
+
+  // Sort arrows on the clickable table headers
+  document.querySelectorAll(".fin-sort-th").forEach(th => {
+    const arrow = th.querySelector(".fin-sort-arrow");
+    const active = th.dataset.sortField === financeSortField;
+    th.classList.toggle("is-active", active);
+    if (arrow) arrow.textContent = active ? (financeSortDir === "asc" ? " ▲" : " ▼") : "";
+  });
 
   const financeMonthSelectEl = document.querySelector("#finance-month-select");
   if (financeMonthSelectEl) {
@@ -3148,12 +3182,13 @@ function renderFinance() {
     </div>`;
 
   // Table
-  document.querySelector("#transactions-table").innerHTML = bySearch(txs).map(i=>`
+  document.querySelector("#transactions-table").innerHTML = sortFinanceTxs(bySearch(txs)).map(i=>`
     <tr>
       <td style="white-space:nowrap">${i.date}</td>
       <td><span class="type-pill ${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type}</span></td>
-      <td>${escapeHtml(i.concept)}${i.paymentMethod?`<span style="display:block;font-size:10px;color:rgba(255,255,255,.35);margin-top:2px">${escapeHtml(i.paymentMethod)}</span>`:""}</td>
+      <td>${escapeHtml(i.concept)}</td>
       <td><span class="muted">${escapeHtml(i.category)}</span></td>
+      <td><span class="muted">${escapeHtml(i.paymentMethod||"—")}</span></td>
       <td style="text-align:right"><strong class="${i.type==="Ingreso"?"type-income":"type-expense"}">${i.type==="Ingreso"?"+":"-"}${money.format(i.amount)}</strong></td>
       <td>
         <div class="action-row" style="justify-content:flex-end;gap:6px">
@@ -3161,7 +3196,7 @@ function renderFinance() {
           ${perms.canManageFinance?`<button class="mini-button danger-btn" data-delete-tx="${i.id}">Eliminar</button>`:""}
         </div>
       </td>
-    </tr>`).join("")||tableEmpty(6);
+    </tr>`).join("")||tableEmpty(7);
 }
 
 let reportsPeriod = "month"; // "today" | "week" | "month" | "all" | "custom"
@@ -4600,13 +4635,29 @@ function renderReports() {
           <div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:2px">${pct}% del total</div>
         </div>`;
       }).join("");
+
+      // Tarjetas (débito/crédito) + transferencia — todo lo que no es efectivo, ni
+      // link de pago ni "otro". Además del total, indica cuál de los 3 tuvo más
+      // movimientos en el período (no necesariamente el de mayor monto).
+      const NO_CASH_METHODS = ["Terminal TD","Terminal TC","Transferencia"];
+      const noCashTotal = NO_CASH_METHODS.reduce((s,m) => s + (byMethod[m]||0), 0);
+      const noCashCounts = {};
+      NO_CASH_METHODS.forEach(m => { noCashCounts[m] = ingresos.filter(t => (t.paymentMethod||"Sin registrar") === m).length; });
+      const topNoCashMethod = NO_CASH_METHODS.reduce((best,m) => noCashCounts[m] > (noCashCounts[best]||0) ? m : best, NO_CASH_METHODS[0]);
+      const noCashCard = noCashTotal > 0 ? `
+        <div style="flex:1;min-width:220px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.3);border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;color:rgba(255,255,255,.55);margin-bottom:3px">Tarjetas (TD+TC) + Transferencia</div>
+          <div style="font-size:16px;font-weight:700;color:#2ecc71">${money.format(noCashTotal)}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4);margin-top:2px">${totalIngresos>0?Math.round(noCashTotal/totalIngresos*100):0}% del total · más usado: ${escapeHtml(topNoCashMethod)} (${noCashCounts[topNoCashMethod]} mov.)</div>
+        </div>` : "";
+
       pmEl.innerHTML = sorted.length ? `
         <div class="card" style="margin-top:16px;border-left:3px solid var(--fz-primary)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
             <h3 style="margin:0;font-size:14px">💳 Ingresos por método de pago — ${periodLabel}</h3>
             <span style="font-size:11px;color:rgba(255,255,255,.4)">${ingresos.length} movimiento${ingresos.length!==1?"s":""} · ${money.format(totalIngresos)} total</span>
           </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">${methodCards}</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">${methodCards}${noCashCard}</div>
         </div>` : "";
 
       pmEl.querySelectorAll("[data-dd-method]").forEach(el => {
@@ -11042,9 +11093,20 @@ document.querySelector("#finance-view")?.addEventListener("click", e => {
   if (periodBtn) { financePeriod = periodBtn.dataset.fin; financeCustomMonth = ""; renderFinance(); return; }
   const typeBtn = e.target.closest(".fin-type-filter");
   if (typeBtn) { financeTypeFilter = typeBtn.dataset.finType; renderFinance(); return; }
+  // Clicking a column header sorts by it; clicking the already-active header flips direction.
+  const sortTh = e.target.closest(".fin-sort-th");
+  if (sortTh) {
+    const field = sortTh.dataset.sortField;
+    if (financeSortField === field) financeSortDir = financeSortDir === "asc" ? "desc" : "asc";
+    else { financeSortField = field; financeSortDir = field === "date" || field === "amount" ? "desc" : "asc"; }
+    renderFinance();
+    return;
+  }
 });
 
 document.querySelector("#finance-view")?.addEventListener("change", e => {
+  const paymentSel = e.target.closest("#finance-payment-select");
+  if (paymentSel) { financePaymentFilter = paymentSel.value; renderFinance(); return; }
   const sel = e.target.closest("#finance-month-select");
   if (!sel || !sel.value) return;
   financePeriod = "custom";
