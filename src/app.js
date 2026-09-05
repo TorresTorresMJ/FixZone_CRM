@@ -327,7 +327,7 @@ function normalizeState(data) {
   next.invoices     = next.invoices         || [];
   next.tickets = next.tickets.map((t, i) => ({
     ...t,
-    tracking:      t.tracking      || nextTracking(i+1),
+    tracking:      t.tracking      || nextTracking(i+1, t.branch),
     productName:   t.productName   || t.device || "Equipo sin nombre",
     status:        stageMap[t.status] || t.status || "Recibido",
     repairAmount:  Number(t.repairAmount ?? t.total ?? 0),
@@ -340,18 +340,49 @@ function normalizeState(data) {
   return next;
 }
 
-function nextTracking(seq) { return `[FZ] ${String(seq).padStart(4,"0")}`; }
-function nextTicketSequence() {
+// service_tickets.tracking_number tiene "unique" en la base de datos — el folio
+// completo debe ser único en TODA la tabla, sin importar sucursal. Antes de esta
+// numeración por prefijo, ambas sucursales compartían un solo contador global
+// ("[FZ] 0057" podía ser el ticket #57 de Vallarta o el de Puebla, según quién
+// hubiera creado un ticket más recientemente) — cada ticket nuevo de una sucursal
+// "adelantaba" el conteo de la otra, y el conteo visible de cada una dejaba de
+// ser un correlativo limpio de sus propios tickets.
+// Fix: cada sucursal tiene su propio prefijo (Vallarta sigue con "[FZ]"/"[COT]",
+// Puebla usa "[FZ-PB]"/"[COT-PB]"), así que las dos secuencias son independientes
+// por construcción y NUNCA pueden chocar contra el unique de la base de datos,
+// sin importar cuántos tickets tenga cada una. Esto NO renumera ni toca ningún
+// ticket ya existente (los folios [FZ] mezclados históricos de Puebla se quedan
+// como están) — solo cambia el prefijo/cálculo de los folios NUEVOS de aquí en
+// adelante.
+function ticketPrefixForBranch(branch) { return branch === "Puebla" ? "[FZ-PB]" : "[FZ]"; }
+function cotPrefixForBranch(branch)    { return branch === "Puebla" ? "[COT-PB]" : "[COT]"; }
+// Coincide con cualquier prefijo de cotización sin importar sucursal ("[COT]" o
+// "[COT-PB]") — usado por los reportes que necesitan excluir/incluir cotizaciones
+// por texto de folio en vez de por `status` (que cambia a "Recibido" al aprobar).
+function isCotFolio(tracking) { return /^\[COT/.test(tracking||""); }
+function nextTracking(seq, branch) { return `${ticketPrefixForBranch(branch)} ${String(seq).padStart(4,"0")}`; }
+// branch: sucursal del ticket que se está por crear/aprobar (no necesariamente
+// activeBranchId — ver call sites). Se filtra igual que branchTickets()
+// (permisivo: un registro histórico sin branch cuenta para cualquier sucursal)
+// para que la numeración de cada sucursal avance solo con SUS PROPIOS tickets
+// y no se "adelante" cada vez que la otra sucursal crea uno.
+function nextTicketSequence(branch) {
+  const b = branch || activeBranchId;
+  const prefix = ticketPrefixForBranch(b);
   const seqs = state.tickets
-    .filter(t => String(t.tracking||"").startsWith("[FZ]"))
+    .filter(t => String(t.tracking||"").startsWith(prefix))
+    .filter(t => !t.branch || t.branch === b)
     .map(t => Number(String(t.tracking||"").replace(/\D/g,""))).filter(Boolean);
   return Math.max(0,...seqs)+1;
 }
-function nextCotTracking() {
+function nextCotTracking(branch) {
+  const b = branch || activeBranchId;
+  const prefix = cotPrefixForBranch(b);
   const seqs = state.tickets
-    .filter(t => String(t.tracking||"").startsWith("[COT]"))
+    .filter(t => String(t.tracking||"").startsWith(prefix))
+    .filter(t => !t.branch || t.branch === b)
     .map(t => Number(String(t.tracking||"").replace(/\D/g,""))).filter(Boolean);
-  return `[COT] ${String(Math.max(0,...seqs)+1).padStart(4,"0")}`;
+  return `${prefix} ${String(Math.max(0,...seqs)+1).padStart(4,"0")}`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1765,8 +1796,10 @@ function approveQuoteToTicket(ticketId) {
       if (!ticket) return;
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId);
 
-      // Assign a new [FZ] tracking number for the ticket
-      const newTracking = nextTracking(nextTicketSequence());
+      // Assign a new [FZ] tracking number for the ticket, scoped to the quote's
+      // own branch — not necessarily activeBranchId (Monica/all_branches_access
+      // could be approving a Puebla quote while viewing the Vallarta tab).
+      const newTracking = nextTracking(nextTicketSequence(ticket.branch), ticket.branch);
       const cotRef      = ticket.tracking; // e.g. [COT] 0003
 
       // The cotización form has no "Falla / trabajo" or "Tipo de servicio" fields —
@@ -1833,7 +1866,44 @@ function ticketAmounts(ticket) {
   return { repair, subtotal, discount, total };
 }
 
-function ticketCard(ticket, perms, idx = 0) {
+// Sugerencias inteligentes de "qué hacer hoy" con este ticket, calculadas a partir
+// de campos que ya existen (no requieren migración nueva). Usadas solo en el
+// dashboard (ver renderMetrics/#active-ticket-list) — el kanban de Tickets sigue
+// mostrando la tarjeta normal sin este bloque, para no duplicar la información
+// en dos vistas a la vez. Cada sugerencia trae su propio data-attr de acción,
+// reusando los mismos handlers delegados que ya wirean data-wa-ticket/
+// data-abono-ticket/data-edit-ticket en el resto de la app — no se agrega
+// ningún listener nuevo.
+function ticketSuggestions(ticket) {
+  const { total: repair } = ticketAmounts(ticket);
+  const paid = ticket.paymentStatus === "Pagado";
+  const out = [];
+
+  if (ticket.status === "Listo") {
+    out.push({ icon:"✅", text:"Avisar: equipo listo", color:"#25d366", bg:"rgba(37,211,102,.12)", border:"rgba(37,211,102,.35)", attr:`data-wa-ticket="${ticket.id}"` });
+    if (repair > 0 && !paid) out.push({ icon:"💰", text:"Registrar pago", color:"#2ecc71", bg:"rgba(46,204,113,.12)", border:"rgba(46,204,113,.35)", attr:`data-abono-ticket="${ticket.id}"` });
+  } else if (repair === 0 && ticket.status !== "Cancelado") {
+    out.push({ icon:"💲", text:"Falta definir precio", color:"#3498db", bg:"rgba(52,152,219,.12)", border:"rgba(52,152,219,.35)", attr:`data-edit-ticket="${ticket.id}"` });
+  } else if (ticket.status === "En reparacion") {
+    const changed = ticket.stageChangedAt || ticket.updatedAt || ticket.createdAt;
+    const days = changed ? Math.floor((Date.now() - new Date(changed).getTime()) / 86400000) : 0;
+    if (days >= 3) out.push({ icon:"⏰", text:`Sin avance hace ${days} días`, color:"#ff5c5c", bg:"rgba(255,92,92,.12)", border:"rgba(255,92,92,.35)" });
+  }
+  return out.slice(0, 2);
+}
+
+function ticketSuggestionsHtml(ticket) {
+  const suggestions = ticketSuggestions(ticket);
+  if (!suggestions.length) return "";
+  return `<div class="ticket-suggestions" style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+    ${suggestions.map(s => s.attr
+      ? `<button class="mini-button" ${s.attr} style="width:100%;justify-content:flex-start;gap:6px;font-size:11px;font-weight:600;color:${s.color};background:${s.bg};border-color:${s.border}"><span>${s.icon}</span><span>${s.text}</span></button>`
+      : `<div style="width:100%;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;color:${s.color};background:${s.bg};border:1px solid ${s.border}"><span>${s.icon}</span> ${s.text}</div>`
+    ).join("")}
+  </div>`;
+}
+
+function ticketCard(ticket, perms, idx = 0, opts = {}) {
   perms = perms || currentPerms();
   const paid    = ticket.paymentStatus === "Pagado";
   const { subtotal, discount: ticketDiscount, total } = ticketAmounts(ticket);
@@ -4198,7 +4268,7 @@ function renderReports() {
       if (!deviceMap[name]) deviceMap[name] = { count:0, revenue:0, completed:0 };
       deviceMap[name].count++;
       // Cotizaciones no generan ingreso real; tickets cancelados se reembolsaron — ninguno cuenta como revenue
-      if (!t.tracking?.startsWith("[COT]") && t.status!=="Cancelado") deviceMap[name].revenue += Number(t.repairAmount||0);
+      if (!isCotFolio(t.tracking) && t.status!=="Cancelado") deviceMap[name].revenue += Number(t.repairAmount||0);
       if (["Listo","Entregado"].includes(t.status)) deviceMap[name].completed++;
     }
     const deviceRanking = Object.entries(deviceMap)
@@ -4267,7 +4337,7 @@ function renderReports() {
 
   // Productivity by employee (cotizaciones excluded — no es trabajo completado)
   const byEmp = {};
-  for (const t of bTickets.filter(t => !t.tracking?.startsWith("[COT]"))) {
+  for (const t of bTickets.filter(t => !isCotFolio(t.tracking))) {
     const emp = t.assignedTo || "Sin asignar";
     if (!byEmp[emp]) byEmp[emp] = { tickets:0, completed:0, revenue:0 };
     byEmp[emp].tickets++;
@@ -4312,7 +4382,7 @@ function renderReports() {
     if (t.type==="Ingreso") byMonth[ym].income  += Number(t.amount||0);
     else                    byMonth[ym].expense += Number(t.amount||0);
   }
-  for (const t of branchTickets().filter(t => !t.tracking?.startsWith("[COT]"))) {
+  for (const t of branchTickets().filter(t => !isCotFolio(t.tracking))) {
     const ym = (t.createdAt||"").slice(0,7); if (!ym) continue;
     if (!byMonth[ym]) byMonth[ym] = { income:0, expense:0, tickets:0 };
     byMonth[ym].tickets++;
@@ -4438,7 +4508,7 @@ function renderReports() {
     // Al aprobar una COT su tracking cambia de "[COT] XXXX" a "[FZ] XXXX",
     // pero cotizacionRef queda con el folio original. Ambos filtros son necesarios
     // para no perder conversiones en la tasa de conversión.
-    const allCots    = branchTickets().filter(t => t.tracking?.startsWith("[COT]") || !!t.cotizacionRef);
+    const allCots    = branchTickets().filter(t => isCotFolio(t.tracking) || !!t.cotizacionRef);
     const periodCots = allCots.filter(t => t.createdAt >= from && t.createdAt <= to);
     const converted  = periodCots.filter(t => t.convertedToTicket);
     const pending    = periodCots.filter(t => !t.convertedToTicket && t.status === "Cotizacion");
@@ -8687,7 +8757,7 @@ recordForm.addEventListener("submit", async e => {
   data.id = `${activeForm}-${Date.now()}`;
 
   if (activeForm==="ticket" || activeForm==="cotizacion") {
-    data.tracking      = activeForm==="cotizacion" ? nextCotTracking() : nextTracking(nextTicketSequence());
+    data.tracking      = activeForm==="cotizacion" ? nextCotTracking(data.branch||activeBranchId) : nextTracking(nextTicketSequence(data.branch||activeBranchId), data.branch||activeBranchId);
     data.repairAmount  = round2(data.repairAmount||0);
     data.quoteItems = JSON.parse(data.quoteItemsJson || "[]");
     delete data.quoteItemsJson;
