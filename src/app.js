@@ -1478,8 +1478,10 @@ function renderMetrics() {
       : "";
   }
 
+  const dashboardPerms = currentPerms();
   document.querySelector("#active-ticket-list").innerHTML = branchTickets()
-    .filter(t=>t.status!=="Entregado" && t.status!=="Cotizacion" && t.status!=="Cancelado").slice(0,5).map(ticketCard).join("")
+    .filter(t=>t.status!=="Entregado" && t.status!=="Cotizacion" && t.status!=="Cancelado").slice(0,5)
+    .map((t,i)=>ticketCard(t, dashboardPerms, i, {showSuggestions:true})).join("")
     ||emptyMessage("No hay tickets activos.", {label:"+ Nuevo ticket", onclick:"openForm('ticket')"});
 
   document.querySelector("#recent-activity").innerHTML = branchTxs
@@ -1897,7 +1899,7 @@ function ticketSuggestionsHtml(ticket) {
   if (!suggestions.length) return "";
   return `<div class="ticket-suggestions" style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
     ${suggestions.map(s => s.attr
-      ? `<button class="mini-button" ${s.attr} style="width:100%;justify-content:flex-start;gap:6px;font-size:11px;font-weight:600;color:${s.color};background:${s.bg};border-color:${s.border}"><span>${s.icon}</span><span>${s.text}</span></button>`
+      ? `<button class="mini-button" ${s.attr} style="width:100%;display:flex;align-items:center;justify-content:flex-start;gap:6px;font-size:11px;font-weight:600;color:${s.color};background:${s.bg};border-color:${s.border}"><span>${s.icon}</span><span>${s.text}</span></button>`
       : `<div style="width:100%;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;color:${s.color};background:${s.bg};border:1px solid ${s.border}"><span>${s.icon}</span> ${s.text}</div>`
     ).join("")}
   </div>`;
@@ -1954,8 +1956,10 @@ function ticketCard(ticket, perms, idx = 0, opts = {}) {
     ? `<div data-timer-badge data-timer-target="${escapeHtml(ticket.timerTargetAt)}" style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:${timerBadge.bg};border:1px solid ${timerBadge.border};color:${timerBadge.color}">⏱️ ${timerBadge.label}</div>`
     : "";
 
+  const suggestionsHtml = opts.showSuggestions ? ticketSuggestionsHtml(ticket) : "";
+
   return `<article class="ticket-card" style="--i:${idx}" draggable="true"
-    onclick="if(!event.target.closest('.ticket-actions')&&!event.target.closest('[data-toggle-waiting]')&&!event.target.closest('[data-toggle-timer]'))viewTicketDetail('${ticket.id}')"
+    onclick="if(!event.target.closest('.ticket-actions')&&!event.target.closest('.ticket-suggestions')&&!event.target.closest('[data-toggle-waiting]')&&!event.target.closest('[data-toggle-timer]'))viewTicketDetail('${ticket.id}')"
     ondragstart="event.dataTransfer.setData('ticketId','${ticket.id}');this.style.opacity='.5'"
     ondragend="this.style.opacity=''">
     <div class="ticket-topline">
@@ -1976,6 +1980,7 @@ function ticketCard(ticket, perms, idx = 0, opts = {}) {
     ${ticket.status==="Cancelado"&&ticket.cancelReason==="Irreparable" ? `<div style="margin-top:6px;font-size:11px;padding:3px 7px;border-radius:5px;background:rgba(255,92,92,.15);border:1px solid rgba(255,92,92,.35);color:#ff5c5c">🔧 Irreparable</div>` : ""}
     ${timerHtml}
     ${dueDateHtml}
+    ${suggestionsHtml}
     ${priceHtml}
     ${itemsCountHtml}
     <div class="ticket-actions">
